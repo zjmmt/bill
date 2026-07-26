@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ledger_title">帳本</string>
+    <string name="ledger_heading">已入帳流水</string>
+    <string name="ledger_intro">這裡只顯示平衡且有效的分錄。撤銷會保留稽核記錄，並把手動交易還原到草稿匣。</string>
+    <string name="ledger_empty_title">尚未有已入帳流水</string>
+    <string name="ledger_empty_body">先輸入一筆收入或支出，核對資金帳戶後再確認入帳。</string>
+    <string name="enter_transaction">輸入一筆交易</string>
+    <string name="transaction_expense">支出</string>
+    <string name="transaction_income">收入</string>
+    <string name="transaction_movement">調整</string>
+    <string name="undo_and_restore">撤銷並還原草稿</string>
+    <string name="undoing">正在撤銷…</string>
+</resources>

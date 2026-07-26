@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ledger_title">账本</string>
+    <string name="ledger_heading">已记账流水</string>
+    <string name="ledger_intro">这里仅显示平衡且有效的分录。撤销会保留审计记录，并把手工交易恢复到草稿箱。</string>
+    <string name="ledger_empty_title">还没有已记账流水</string>
+    <string name="ledger_empty_body">先录入一笔收入或支出，核对资金账户后再确认记账。</string>
+    <string name="enter_transaction">录入一笔交易</string>
+    <string name="transaction_expense">支出</string>
+    <string name="transaction_income">收入</string>
+    <string name="transaction_movement">调整</string>
+    <string name="undo_and_restore">撤销并恢复草稿</string>
+    <string name="undoing">正在撤销…</string>
+</resources>

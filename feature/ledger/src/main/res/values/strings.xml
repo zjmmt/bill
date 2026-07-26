@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="ledger_title">LEDGER</string>
+    <string name="ledger_heading">Posted transactions</string>
+    <string name="ledger_intro">Only balanced, active entries appear here. Undo keeps the audit trail and returns a manual transaction to Drafts.</string>
+    <string name="ledger_empty_title">No posted transactions</string>
+    <string name="ledger_empty_body">Enter an expense or income item, review its funding account, then confirm it.</string>
+    <string name="enter_transaction">Enter a transaction</string>
+    <string name="transaction_expense">Expense</string>
+    <string name="transaction_income">Income</string>
+    <string name="transaction_movement">Adjustment</string>
+    <string name="undo_and_restore">Undo and restore draft</string>
+    <string name="undoing">Undoing…</string>
+</resources>

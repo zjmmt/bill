@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accounts_title">ACCOUNTS</string>
+    <string name="accounts_heading">Funding accounts</string>
+    <string name="accounts_intro">Accounts hold money or debt. Payment channels remain separate and are never treated as accounts automatically.</string>
+    <string name="add_account">Add account</string>
+    <string name="accounts_empty_title">Create the first account</string>
+    <string name="accounts_empty_body">Add cash, a bank account, an e-wallet balance, or a credit card before confirming manual drafts.</string>
+    <string name="amount_owed">Amount owed</string>
+    <string name="create_account_title">New account</string>
+    <string name="create_account_explanation">The opening balance is posted as a balanced adjustment. USD is available only for bank accounts and credit cards; no exchange-rate conversion is performed.</string>
+    <string name="account_name">Account name</string>
+    <string name="account_type">Account type</string>
+    <string name="account_currency">Currency</string>
+    <string name="account_currency_cny">Chinese yuan (CNY)</string>
+    <string name="account_currency_usd">US dollar (USD)</string>
+    <string name="account_currency_other">Other currency</string>
+    <string name="opening_balance">Opening balance</string>
+    <string name="opening_balance_hint">Leave blank for zero. Enter up to two decimal places.</string>
+    <string name="create_account">Create account</string>
+    <string name="creating_account">Creating…</string>
+    <string name="cancel">Cancel</string>
+    <string name="account_type_cash">Cash</string>
+    <string name="account_type_bank">Bank account</string>
+    <string name="account_type_wallet">E-wallet balance</string>
+    <string name="account_type_credit_card">Credit card</string>
+    <string name="account_type_other">Other account</string>
+    <string name="error_invalid_account_name">Enter a name between 1 and 40 characters.</string>
+    <string name="error_invalid_opening_balance">Enter a non-negative amount with up to two decimal places.</string>
+    <string name="error_duplicate_account">An account with this name already exists.</string>
+    <string name="error_unsupported_account">This account type or currency is not available in the current release.</string>
+</resources>

@@ -1,0 +1,136 @@
+# 系统架构地图
+
+- 状态：部分实现；本地账本、通用显式文本证据、空模板通知边界与持久观察去重已实现，provider 适配待验证
+- 所有者：项目维护者
+- 最后核验：2026-07-26
+- 事实来源：当前 Gradle/Room 工程、项目负责人范围修正、`docs/design-docs/` 下的细化文档、[ADR-0005](docs/decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](docs/decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](docs/decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](docs/decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0009](docs/decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0010](docs/decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0011](docs/decisions/0011-local-resource-budget-first-capture.md)
+
+本文只描述稳定边界。实体字段、解析规则和 UI 细节分别由 [领域模型](docs/design-docs/domain-model.md)、[来源适配器](docs/design-docs/ingestion-and-source-adapters.md) 与 [产品规格](docs/product-specs/index.md) 维护。
+
+## 架构目标
+
+- 无网络时完成采集后的解析、记账、查询、对账和导出。
+- 将支付宝、微信支付和银行差异限制在来源适配器内部。
+- 保留原始证据，使解析器和规则升级后能够安全重放。
+- 用共享的关联引擎识别同一经济事件，避免渠道与资金账户重复记账。
+- 对敏感数据实施最小权限、最少复制和可验证删除。
+
+## 顶层数据流
+
+```mermaid
+flowchart LR
+    A["支付宝来源"] --> C["Capture adapters"]
+    W["微信支付来源"] --> C
+    B["银行来源"] --> C
+    M["手工录入"] --> MI["ManualIntent"]
+    C --> R["不可变 RawEvent"]
+    R --> P["Parse + Normalize"]
+    P --> D["Draft"]
+    MI --> D
+    D --> X["Reconcile + Relation engine"]
+    X --> T["Transaction + balanced Entries"]
+    T --> V["Review / Ledger / Reports"]
+    I["账单文件导入"] --> C
+```
+
+采集成功不代表入账成功。所有外部输入先成为可追溯证据，再由共享领域规则决定其经济含义。
+
+手工输入不是外部采集证据：当前实现把它直接建模为 ManualIntent/Draft，不创建假的 `RawEvent`。显式分享文本和用户选择的小型文本文件则走已实现的来源中立证据链：
+
+```text
+ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
+  -> leased staging reservation
+  -> bounded app-private evidence
+  -> immutable RawEvent
+  -> GenericShareTextParser or GenericSelectedTextFileParser / ParseAttempt
+  -> source draft proposal
+  -> user-completed external Draft
+  -> Transaction + balanced Entries
+```
+
+两个通用入口分别标记为 `GENERIC/SHARE_TEXT` 与 `GENERIC/STATEMENT_IMPORT`，不从任意文本猜测支付宝、微信、银行、金额或账户；后者不保存 URI/文件名，也不是结构化账单批量导入。外部 provider 通知和文件适配器仍未实现；支付宝、微信和银行在运行时都必须显示 `FALLBACK_REQUIRED`，直到各自具有真实脱敏样本和回放证据。
+
+## 当前实现断面
+
+账本断面限定为 CNY：创建现金、银行卡、电子钱包余额或信用卡账户，以平衡 `ADJUSTMENT` 表示期初余额；手工或来源 Draft 选择资金账户后再确认成平衡 Entries。Room schema v6 持久化账户、草稿、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
+
+账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
+
+来源断面先在 Room 登记 5 分钟暂存租约，再把证据写入 `noBackupFilesDir`；文本载荷限制为 64 KiB 并严格校验 UTF-8，用户显式分享的单张 PNG 收据限制为 4 MiB 并只校验有界 PNG 结构/CRC、不解码像素。两类载荷均校验长度和 SHA-256。RawEvent/生命周期事务原子消费租约；到期租约和旧版孤儿由 CAS 接管与有界扫描恢复。`RawEvent` ID 碰撞、解析/建议/证据链接/载荷生命周期跨表不一致以及损坏载荷均失败关闭。重复哈希只产生用户可见提示，不自动合并；忽略追加审计并保留证据。原始载荷使用两阶段清除、7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算和 keyset 分页；自动保留/容量清理不删除待复核载荷，清除后结构化事实链继续保留。
+
+以上是代码实现状态，不是发布支持结论。本轮组合 `test lint assembleDebug :data:local:assembleDebugAndroidTest` 的 549 个任务成功、Lint 通过；Room v5→v6 迁移和通知观察仓储 Android 测试已编译，尚未在真机执行。Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过。多币种、转账、还款、退款、投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
+
+## 建议模块边界
+
+| 层/模块 | 责任 | 允许依赖 |
+| --- | --- | --- |
+| `app` | Android 组装根、导航、分享 Intent 生命周期与手工依赖装配 | `feature:*`、`application`、`data:local`、`source:*` |
+| `feature:*` | 草稿箱、确认、账户、流水与总览 UI | `application`、`core:designsystem` |
+| `application` | 账本/分享用例编排、输入门、证据保留/容量策略与状态投影 | `core:domain` ports、`core:ledger`、来源端口 |
+| `core:model` | 金额、账户类型、交易类型与分录值对象 | Kotlin 标准库 |
+| `core:domain` | 首片领域实体、状态与仓储端口 | `core:model`、Kotlin Coroutines |
+| `core:ledger` | 平衡校验与过账构造 | `core:model`、`core:domain` |
+| `domain:reconcile`（规划） | 去重、资金来源、退款、转账、还款关联 | `core:model` |
+| `source:contract` | 证据、RawEvent、解析身份、候选与安全诊断契约 | Kotlin 标准库 |
+| `source:pipeline` | 解析器注册、证据读取、不可变提交与 ParseAttempt 编排 | `source:contract` |
+| `source:review-contract` | 来源建议、Draft 证据链接、载荷生命周期与审计端口 | `source:contract`、`core:domain` |
+| `source:generic-share-text` | 通用分享文本的最小、非推断解析器 | `source:contract` |
+| `source:alipay` | 支付宝通知/导入格式适配 | source:contract |
+| `source:wechat` | 微信支付通知/导入格式适配 | source:contract |
+| `source:bank:*` | 银行通知和文件配置/适配器 | source:contract |
+| `data:local` | Room v6、迁移、账本/来源/生命周期/暂存/通知观察仓储与应用私有证据文件 | `core:domain` 与来源端口 |
+| `platform:android` | 通知监听、SAF、WorkManager、Keystore | Android SDK、source:contract |
+| `security` | 加密、密钥、脱敏、导出封装 | 平台抽象 |
+
+禁止依赖：
+
+- 来源适配器直接依赖 Room 实体或写入正式账本。
+- UI 直接解析通知或账单文件。
+- 通用关联规则依赖支付宝、微信或某家银行的具体文案。
+- 领域核心依赖 Android 类、网络 SDK 或第三方分析 SDK。
+
+## 来源契约
+
+每个来源实现相同的四段契约：
+
+1. `Capture`：取得通知或用户选择的文件，并记录来源、时间、内容摘要与必要的证据定位。通知包名/渠道/类别只用于瞬时门禁，不进入 RawEvent、文件名或诊断。
+2. `Parse`：把来源结构转换成有证据定位的候选字段；不做账务结论。
+3. `Normalize`：输出统一金额、币种、方向、时间、对手方、付款方式提示和外部 ID。
+4. `Diagnose`：对未知版本、缺字段、权限关闭和重复输入给出可执行诊断。
+
+来源适配器的功能矩阵和验收门见 [数据源覆盖矩阵](docs/product-specs/source-coverage.md)。
+
+## 账务核心
+
+- `RawEvent`：不可变采集证据，可被多次解析。
+- `Draft`：某次解析和规则运行后的候选，可编辑、驳回或关联。
+- `Transaction`：经确认的经济事件，如支出、收入、转账、还款或申购。
+- `Entry`：交易对账户的借贷/增减影响；同币种交易必须平衡。
+- `TxRelation`：表达 `DUPLICATE_OF`、`FUNDED_BY`、`REFUNDS`、`TRANSFER_PAIR`、`REPLACES` 等关系。
+
+当前已实现首片所需的账户、Manual/外部来源 Draft、Transaction/Entry、Audit，以及 `RawEvent -> ParseAttempt -> source proposal -> draft_source_evidence` 的单证据链。`TxRelation`、多证据合并、provider 适配和完整对账仍是设计约束；“可能重复”只是复核信号，不等于已经建立 `DUPLICATE_OF`。
+
+渠道作为交易元数据；只有真实持有余额时，支付宝余额或微信零钱才是资产账户。绑卡支付时，银行/信用卡才是资金账户；钱包余额内收付没有银行资金腿，不能由银行卡流水或余额差推断。
+
+## 存储与安全边界
+
+- 结构化数据进入应用私有 Room/SQLite；当前分享文本和用户选择文本文件证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 另提供不含通知 key/正文的观察摘要与恢复租约。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
+- 密钥由 Android Keystore 保护；备份在离开应用私有目录前加密。
+- 导入使用 Storage Access Framework，不申请广泛文件访问。
+- 生产日志只记录事件 ID、规则版本和错误码；不记录金额、商户、账号、通知正文或文件内容。
+- MVP 不依赖读取其他 App 私有目录、抓包、Root、默认短信读取、24 小时截屏/录屏或轮询 OCR。通知 listener 仅按系统回调、元数据门禁和有界本地证据运行，不读历史或启用保活；当前生产模板目录为空。被动无障碍读取仅是待用户明确授权与发行合规审查的研究门，且绝不执行 UI 操作或读取当前版本的屏幕内容。
+
+完整威胁与权限模型见 [SECURITY.md](docs/SECURITY.md)。
+
+## 可机械执行的约束
+
+实现阶段至少加入：
+
+- Gradle 模块依赖测试，阻止越层依赖。
+- Room schema 导出和迁移测试。
+- 每个来源的脱敏黄金样本回放。
+- 分录平衡性质测试与去重幂等测试。
+- 敏感日志静态检查。
+- 文档结构、元数据和链接检查。
+
+当前从 CMD 运行文档检查的命令为 `cmd.exe /d /s /c powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-docs.ps1`。

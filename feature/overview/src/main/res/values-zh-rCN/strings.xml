@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="hero_kicker">01 / 本地账本</string>
+    <string name="local_only_status">本地账本 · 金额默认遮罩</string>
+    <string name="local_only_detail">当前账本保留在本机；离开应用后会再次隐藏金额。</string>
+    <string name="net_worth">净资产</string>
+    <string name="net_worth_currency">净资产 · %1$s</string>
+    <string name="show_amounts">显示金额</string>
+    <string name="hide_amounts">隐藏金额</string>
+    <string name="assets">资产</string>
+    <string name="liabilities">负债</string>
+    <plurals name="pending_drafts">
+        <item quantity="other">待处理草稿 %1$d 笔</item>
+    </plurals>
+    <plurals name="unknown_funding_accounts">
+        <item quantity="other">%1$d 笔资金账户未知</item>
+    </plurals>
+    <plurals name="possible_duplicates">
+        <item quantity="other">%1$d 组疑似重复</item>
+    </plurals>
+    <string name="review_now">去复核</string>
+    <string name="draft_action_label">行动 / 等你确认</string>
+    <string name="source_health">来源状态</string>
+    <string name="recent_transactions">最近交易</string>
+    <string name="source_alipay">支付宝</string>
+    <string name="source_wechat">微信支付</string>
+    <string name="source_bank">银行</string>
+    <string name="source_healthy">契约骨架已建立，格式仍待样本验证</string>
+    <string name="source_needs_attention">等待第一份脱敏样本</string>
+    <string name="source_fallback_required">请导入账单或手工补录</string>
+    <string name="status_ready">仅骨架</string>
+    <string name="status_attention">待验证</string>
+    <string name="status_fallback">需回退</string>
+    <string name="overview_empty_title">还没有账本数据</string>
+    <string name="overview_empty_body">先建立账户和期初余额，或手工记录第一笔交易。</string>
+    <string name="getting_started_title">先从账户开始</string>
+    <string name="getting_started_body">创建实际承载资金或负债的账户。手工录入会先成为草稿，确认账户后才会记账。</string>
+    <string name="create_first_account">创建第一个账户</string>
+    <string name="enter_first_transaction">手工录入一笔交易</string>
+    <string name="overview_error_title">总览暂时无法显示</string>
+    <string name="overview_error_body">数据仍保存在设备上。请稍后重试，或前往来源状态检查失败原因。</string>
+    <string name="retry">重试</string>
+    <string name="synthetic_lunch">示例午餐</string>
+    <string name="synthetic_lunch_detail">示例借记账户 · 支出</string>
+    <string name="synthetic_repayment">示例信用卡还款</string>
+    <string name="synthetic_repayment_detail">资金移动 · 不计普通支出</string>
+</resources>

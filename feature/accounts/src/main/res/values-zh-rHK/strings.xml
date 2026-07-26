@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accounts_title">帳戶</string>
+    <string name="accounts_heading">資金帳戶</string>
+    <string name="accounts_intro">帳戶承載資金或負債。支付渠道會保持分離，不會自動當成帳戶。</string>
+    <string name="add_account">新增帳戶</string>
+    <string name="accounts_empty_title">先建立一個帳戶</string>
+    <string name="accounts_empty_body">新增現金、銀行帳戶、電子錢包餘額或信用卡，之後才能確認手動草稿。</string>
+    <string name="amount_owed">目前欠款</string>
+    <string name="create_account_title">新增帳戶</string>
+    <string name="create_account_explanation">期初餘額會以平衡的調整分錄入帳。美元只可用於銀行帳戶和信用卡；本應用不做匯率換算。</string>
+    <string name="account_name">帳戶名稱</string>
+    <string name="account_type">帳戶類型</string>
+    <string name="account_currency">幣種</string>
+    <string name="account_currency_cny">人民幣（CNY）</string>
+    <string name="account_currency_usd">美元（USD）</string>
+    <string name="account_currency_other">其他幣種</string>
+    <string name="opening_balance">期初餘額</string>
+    <string name="opening_balance_hint">留空即為零，最多輸入兩位小數。</string>
+    <string name="create_account">建立帳戶</string>
+    <string name="creating_account">正在建立…</string>
+    <string name="cancel">取消</string>
+    <string name="account_type_cash">現金</string>
+    <string name="account_type_bank">銀行帳戶</string>
+    <string name="account_type_wallet">電子錢包餘額</string>
+    <string name="account_type_credit_card">信用卡</string>
+    <string name="account_type_other">其他帳戶</string>
+    <string name="error_invalid_account_name">請輸入 1 至 40 個字元的帳戶名稱。</string>
+    <string name="error_invalid_opening_balance">請輸入非負金額，最多保留兩位小數。</string>
+    <string name="error_duplicate_account">已經存在同名帳戶。</string>
+    <string name="error_unsupported_account">目前版本暫不支援此帳戶類型或幣種。</string>
+</resources>

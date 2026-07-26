@@ -1,0 +1,11 @@
+/tmp/
+/output/
+/.idea/
+/.gradle/
+/.kotlin/
+**/build/
+/local.properties
+/.android-sdk/
+/.tools/
+/.agents/
+*.local
