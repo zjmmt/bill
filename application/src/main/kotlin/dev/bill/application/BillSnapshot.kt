@@ -50,6 +50,8 @@ data class SourceReviewSummary(
     val suggestedCounterparty: String?,
     val diagnosticCode: String?,
     val isPossibleDuplicate: Boolean,
+    /** A locally bundled safe label for a notification route, never package/channel/body text. */
+    val notificationRouteLabel: String? = null,
 )
 
 data class BillSnapshot(

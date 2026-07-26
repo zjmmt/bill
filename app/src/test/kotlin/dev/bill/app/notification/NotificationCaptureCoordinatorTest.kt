@@ -1,6 +1,8 @@
 package dev.bill.app.notification
 
 import dev.bill.source.contract.NotificationCaptureCommandId
+import dev.bill.source.contract.CaptureMethod
+import dev.bill.source.contract.ConnectorId
 import dev.bill.source.contract.NotificationField
 import dev.bill.source.contract.NotificationObservationId
 import dev.bill.source.contract.NotificationObservationLeaseId
@@ -10,10 +12,17 @@ import dev.bill.source.contract.NotificationObservationReserveResult
 import dev.bill.source.contract.NotificationObservationReserveStatus
 import dev.bill.source.contract.NotificationObservationWriteResult
 import dev.bill.source.contract.NotificationObservationWriteStatus
+import dev.bill.source.contract.ParserId
+import dev.bill.source.contract.ProviderId
+import dev.bill.source.contract.SourceFamily
+import dev.bill.source.contract.SourceIdentity
+import dev.bill.source.contract.VersionId
 import dev.bill.source.genericnotification.NotificationContent
 import dev.bill.source.genericnotification.NotificationMetadata
+import dev.bill.source.genericnotification.NotificationRouteCatalog
 import dev.bill.source.genericnotification.NotificationTemplate
 import dev.bill.source.genericnotification.NotificationTemplateGate
+import dev.bill.source.genericnotification.VerifiedNotificationRoute
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -34,7 +43,9 @@ class NotificationCaptureCoordinatorTest {
 
     @Test
     fun `empty production catalog is never eligible for notification extras`() {
-        val coordinator = NotificationCaptureCoordinator(NotificationTemplateGate(emptyList()))
+        val coordinator = NotificationCaptureCoordinator(
+            NotificationTemplateGate(NotificationRouteCatalog.empty()),
+        )
 
         assertFalse(coordinator.acceptsMetadata(metadata))
     }
@@ -42,7 +53,7 @@ class NotificationCaptureCoordinatorTest {
     @Test
     fun `template remains inert until the durable runtime release gate opens`() {
         val coordinator = NotificationCaptureCoordinator(
-            gate = NotificationTemplateGate(listOf(fixtureTemplate())),
+            gate = enabledGate(fixtureRoute()),
         )
 
         assertFalse(coordinator.acceptsMetadata(metadata))
@@ -62,7 +73,10 @@ class NotificationCaptureCoordinatorTest {
         val secret = "private paid marker"
         val observations = FakeObservations()
         val coordinator = NotificationCaptureCoordinator(
-            gate = NotificationTemplateGate(listOf(fixtureTemplate(secret))),
+            gate = NotificationTemplateGate(
+                NotificationRouteCatalog(listOf(fixtureRoute(secret))),
+                isRouteEnabled = { true },
+            ),
             observationRepository = observations,
             clock = fixedClock(),
             commandIdFactory = { "synthetic-command" },
@@ -81,6 +95,7 @@ class NotificationCaptureCoordinatorTest {
         assertTrue(prepared != null)
         prepared ?: return@runBlocking
         assertEquals("synthetic-command", prepared.commandId)
+        assertEquals("fixture-payment", prepared.route.routeId)
         assertEquals("fixture-payment", prepared.envelope.templateId)
         assertEquals("v1", prepared.envelope.templateVersion)
         assertEquals(secret, prepared.envelope.content.field(NotificationField.TEXT))
@@ -92,12 +107,38 @@ class NotificationCaptureCoordinatorTest {
     }
 
     @Test
+    fun `route disabled after callback metadata gate cannot reserve or stage a queued capture`() = runBlocking {
+        var enabled = true
+        val observations = FakeObservations()
+        val coordinator = NotificationCaptureCoordinator(
+            gate = NotificationTemplateGate(
+                NotificationRouteCatalog(listOf(fixtureRoute())),
+                isRouteEnabled = { enabled },
+            ),
+            observationRepository = observations,
+            hasDurableUpdateDedupe = true,
+        )
+
+        assertTrue(coordinator.acceptsMetadata(metadata))
+        enabled = false
+        val prepared = coordinator.prepare(
+            observationId = observationId,
+            metadata = metadata,
+            postedAtEpochMillis = 1_700_000_000_000L,
+            content = content("private paid marker"),
+        )
+
+        assertNull(prepared)
+        assertEquals(0, observations.reserveCalls)
+    }
+
+    @Test
     fun `in progress or captured durable observation never creates a second handoff`() = runBlocking {
         val observations = FakeObservations(
             reserveStatus = NotificationObservationReserveStatus.IN_PROGRESS,
         )
         val coordinator = NotificationCaptureCoordinator(
-            gate = NotificationTemplateGate(listOf(fixtureTemplate())),
+            gate = enabledGate(fixtureRoute()),
             observationRepository = observations,
             clock = fixedClock(),
             commandIdFactory = { "dedupe-command" },
@@ -120,7 +161,7 @@ class NotificationCaptureCoordinatorTest {
     fun `invalid command identifier fails without reserving an observation`() = runBlocking {
         val observations = FakeObservations()
         val coordinator = NotificationCaptureCoordinator(
-            gate = NotificationTemplateGate(listOf(fixtureTemplate())),
+            gate = enabledGate(fixtureRoute()),
             observationRepository = observations,
             commandIdFactory = { "invalid command id" },
             hasDurableUpdateDedupe = true,
@@ -140,13 +181,32 @@ class NotificationCaptureCoordinatorTest {
     private fun content(text: String): NotificationContent =
         checkNotNull(NotificationContent.from(mapOf(NotificationField.TEXT to text)))
 
-    private fun fixtureTemplate(marker: String = "private paid marker") = NotificationTemplate(
+    private fun fixtureRoute(marker: String = "private paid marker") = VerifiedNotificationRoute(
+        routeId = "fixture-payment",
+        sourceIdentity = SourceIdentity(
+            parserId = ParserId("fixture-payment"),
+            providerId = ProviderId("fixture-provider"),
+            sourceFamily = SourceFamily.GENERIC,
+            connectorId = ConnectorId("fixture-payment"),
+            capabilities = emptySet(),
+            supportedCaptureMethods = setOf(CaptureMethod.NOTIFICATION),
+            parserVersion = VersionId("parser-1"),
+            ruleVersion = VersionId("rules-1"),
+        ),
+        template = NotificationTemplate(
         id = "fixture-payment",
         version = "v1",
         packageName = "fixture.payment",
         channelId = "transaction",
         category = "status",
         contentMatcher = { it.field(NotificationField.TEXT) == marker },
+        ),
+        safeLabel = "Fixture notification",
+    )
+
+    private fun enabledGate(route: VerifiedNotificationRoute) = NotificationTemplateGate(
+        catalog = NotificationRouteCatalog(listOf(route)),
+        isRouteEnabled = { true },
     )
 
     private fun fixedClock(): Clock = Clock.fixed(

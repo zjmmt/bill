@@ -19,6 +19,10 @@ data class SourceProposalRecord(
     val id: String,
     val rawEventId: String,
     val parseAttemptId: String,
+    /** Opaque parser provenance only; never Android package/channel/category or body text. */
+    val parserId: String = "generic-review",
+    val providerId: String = "generic-review",
+    val connectorId: String = "generic-review",
     val sourceFamily: SourceFamily,
     val captureMethod: CaptureMethod,
     val capturedAt: Instant,

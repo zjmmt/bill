@@ -33,7 +33,7 @@
     <string name="capture_tutorial_title">Automatic-capture permissions</string>
     <string name="capture_tutorial_intro">Each route is separate. This build does not ask you to enable a high-sensitivity permission before it has a verified use.</string>
     <string name="capture_tutorial_notification_title">01 / Notification access</string>
-    <string name="capture_tutorial_notification_body">Not available yet: this build has no verified provider template, so Bill’s listener catalog is empty and it does not read notification text. When a verified route opens, Android Settings &gt; Notification access is where you will enable only that route.</string>
+    <string name="capture_tutorial_notification_body">Not available yet: this build has no verified provider template, so Bill’s listener catalog is empty and it does not read notification text. A future verified route will require two separate choices: grant Bill notification access in Android Settings, then enable that route inside Bill. Do not enable notification access now.</string>
     <string name="capture_health_no_templates">Current status: no verified notification template. Bill is not reading notification text.</string>
     <string name="capture_health_ready">Current status: the local notification route is ready to create review-only drafts.</string>
     <string name="capture_health_backpressure">Current status: %1$d notification callback(s) were skipped in this app session because the local queue was full. No text was saved for them.</string>

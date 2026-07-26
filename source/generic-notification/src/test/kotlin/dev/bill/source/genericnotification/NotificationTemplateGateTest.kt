@@ -1,6 +1,13 @@
 package dev.bill.source.genericnotification
 
 import dev.bill.source.contract.NotificationField
+import dev.bill.source.contract.CaptureMethod
+import dev.bill.source.contract.ConnectorId
+import dev.bill.source.contract.ParserId
+import dev.bill.source.contract.ProviderId
+import dev.bill.source.contract.SourceFamily
+import dev.bill.source.contract.SourceIdentity
+import dev.bill.source.contract.VersionId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -16,7 +23,7 @@ class NotificationTemplateGateTest {
 
     @Test
     fun `empty catalog never invokes the notification body reader`() {
-        val decision = NotificationTemplateGate(emptyList()).evaluate(metadata) {
+        val decision = NotificationTemplateGate(NotificationRouteCatalog.empty()).evaluate(metadata) {
             error("Notification extras must not be read for an empty catalog")
         }
 
@@ -25,7 +32,7 @@ class NotificationTemplateGateTest {
 
     @Test
     fun `nonmatching metadata never invokes the notification body reader`() {
-        val gate = NotificationTemplateGate(listOf(fixtureTemplate()))
+        val gate = enabledGate(fixtureRoute())
 
         val decision = gate.evaluate(
             NotificationMetadata(
@@ -41,8 +48,41 @@ class NotificationTemplateGateTest {
     }
 
     @Test
+    fun `disabled route never invokes the notification body reader`() {
+        val route = fixtureRoute()
+        val gate = NotificationTemplateGate(
+            NotificationRouteCatalog(listOf(route)),
+            isRouteEnabled = { false },
+        )
+        var reads = 0
+
+        val decision = gate.evaluate(metadata) {
+            reads += 1
+            content("fixture paid")
+        }
+
+        assertEquals(NotificationGateDecision.IgnoredMetadata, decision)
+        assertEquals(0, reads)
+        assertFalse(gate.hasMetadataCandidate(metadata))
+    }
+
+    @Test
+    fun `catalog route stays closed until its owner supplies explicit enablement`() {
+        val gate = NotificationTemplateGate(NotificationRouteCatalog(listOf(fixtureRoute())))
+        var reads = 0
+
+        val decision = gate.evaluate(metadata) {
+            reads += 1
+            content("fixture paid")
+        }
+
+        assertEquals(NotificationGateDecision.IgnoredMetadata, decision)
+        assertEquals(0, reads)
+    }
+
+    @Test
     fun `candidate metadata reads content once and requires a content template match`() {
-        val gate = NotificationTemplateGate(listOf(fixtureTemplate()))
+        val gate = enabledGate(fixtureRoute())
         var reads = 0
 
         val rejected = gate.evaluate(metadata) {
@@ -58,8 +98,8 @@ class NotificationTemplateGateTest {
         }
         assertTrue(accepted is NotificationGateDecision.Accepted)
         accepted as NotificationGateDecision.Accepted
-        assertEquals("fixture-payment", accepted.template.id)
-        assertEquals("v1", accepted.template.version)
+        assertEquals("fixture-payment", accepted.route.routeId)
+        assertEquals("v1", accepted.route.template.version)
         assertEquals("fixture paid", accepted.content.field(NotificationField.TEXT))
         assertEquals(2, reads)
     }
@@ -68,7 +108,8 @@ class NotificationTemplateGateTest {
     fun `content and metadata do not appear in diagnostic to strings`() {
         val secret = "notifiable-secret-marker"
         val content = content(secret)
-        val decision = NotificationTemplateGate(listOf(fixtureTemplate())).evaluate(metadata) { content }
+        val decision = enabledGate(fixtureRoute())
+            .evaluate(metadata) { content }
 
         assertFalse(metadata.toString().contains("fixture.payment"))
         assertFalse(content.toString().contains(secret))
@@ -102,13 +143,66 @@ class NotificationTemplateGateTest {
         error("A package-only notification template must be rejected")
     }
 
-    private fun fixtureTemplate() = NotificationTemplate(
+    @Test
+    fun `null category matches only a null category and never becomes a wildcard`() {
+        val gate = enabledGate(
+            fixtureRoute(
+                template = fixtureTemplate(category = null),
+            ),
+        )
+        var reads = 0
+
+        val mismatched = gate.evaluate(metadata) {
+            reads += 1
+            content("fixture paid")
+        }
+        assertEquals(NotificationGateDecision.IgnoredMetadata, mismatched)
+        assertEquals(0, reads)
+
+        val matched = gate.evaluate(
+            NotificationMetadata(
+                packageName = "fixture.payment",
+                channelId = "transaction",
+                category = null,
+            ),
+        ) {
+            reads += 1
+            content("fixture paid")
+        }
+        assertTrue(matched is NotificationGateDecision.Accepted)
+        assertEquals(1, reads)
+    }
+
+    private fun fixtureRoute(
+        template: NotificationTemplate = fixtureTemplate(),
+    ) = VerifiedNotificationRoute(
+        routeId = "fixture-payment",
+        sourceIdentity = SourceIdentity(
+            parserId = ParserId("fixture-payment"),
+            providerId = ProviderId("fixture-provider"),
+            sourceFamily = SourceFamily.GENERIC,
+            connectorId = ConnectorId("fixture-payment"),
+            capabilities = emptySet(),
+            supportedCaptureMethods = setOf(CaptureMethod.NOTIFICATION),
+            parserVersion = VersionId("parser-1"),
+            ruleVersion = VersionId("rules-1"),
+        ),
+        template = template,
+        safeLabel = "Fixture notification",
+    )
+
+    private fun fixtureTemplate(category: String? = "status") = NotificationTemplate(
         id = "fixture-payment",
         version = "v1",
         packageName = "fixture.payment",
         channelId = "transaction",
-        category = "status",
+        category = category,
         contentMatcher = { candidate -> candidate.field(NotificationField.TEXT) == "fixture paid" },
+    )
+
+    private fun enabledGate(route: VerifiedNotificationRoute) = NotificationTemplateGate(
+        catalog = NotificationRouteCatalog(listOf(route)),
+        isRouteEnabled = { true },
     )
 
     private fun content(text: String): NotificationContent = checkNotNull(

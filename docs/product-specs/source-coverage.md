@@ -1,6 +1,6 @@
 # 数据源覆盖与支持状态
 
-- 状态：部分实现；手工、通用分享文本、用户选择文本文件、用户显式单次 PNG 收据、空模板通知边界和持久观察去重已有代码；Quick Settings/Photo Picker OCR 仅为未通过隐私发布门的开发原型，三类 provider 适配器未实现
+- 状态：部分实现；手工、通用分享文本、用户选择文本文件、用户显式单次 PNG 收据、受控通知 route catalog 边界和持久观察去重已有代码；Quick Settings/Photo Picker OCR 仅为未通过隐私发布门的开发原型，三类 provider 适配器未实现
 - 所有者：项目维护者
 - 最后核验：2026-07-26
 - 事实来源：当前 Android/Room/来源模块、项目负责人范围、Android/平台官方资料、财付通公开隐私政策、来源适配器设计、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
@@ -25,7 +25,7 @@
 | 支付宝通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于支付宝支持 |
 | 微信支付通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于微信支持 |
 | 银行通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 未选择可验证格式/首批银行，无脱敏样本和回放测试；只能手工补录。通用通知底座不等于银行支持 |
-| 通用空模板通知证据 | 已实现，不能独立使用 | 空目录；不改变 `FALLBACK_REQUIRED` | 只允许精确到包名 + Android 通知渠道 + 可选类别的未来验证模板；空目录/未知通知不读正文、不落库；未来候选使用容量 16 队列、Room v6 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，不能识别 provider 或金额 |
+| 通用受控通知 route 证据 | 已实现，不能独立使用 | 生产目录为空；不改变 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。空目录、关闭或未知 route 都不读正文、不落库；ingress 会再次检查开关，以防关闭发生在队列准备后。未来候选使用容量 16 队列、Room v6 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，复核 UI 只显示本地安全标签，不识别金额或直接过账 |
 | 通用手工录入/期初余额 | 已实现，发布门未完成 | CNY 路径经自动化与 MuMu API 32 验证；USD 回归待本轮完整验收 | 现金、电子钱包余额只允许 CNY；银行卡和信用卡允许 CNY/USD。收入/支出先 Draft，选择同币种资金账户后平衡确认；无跨币种汇率或总额 |
 | 用户显式分享 `text/plain` | 已实现，发布门未完成 | 生命周期单测、Room v5 staging 与 MuMu API 32 已验证；当前 schema 为 v6 | 始终为 `GENERIC/SHARE_TEXT`；64 KiB、严格 UTF-8、私有 no-backup 证据和哈希校验；不猜 provider/金额/类型/账户，用户补全；重复只提示；已有逐项两阶段清除、7/30/90/永久保留、已提交与暂存共用的 16 MiB/512 份预算、租约恢复、有界孤儿扫描和 keyset 分页；缺压力、真实系统强杀、自动化 Compose 和完整真机证据 |
 | 用户显式选择小型文本/CSV/TSV 文件 | 已实现，发布门未完成 | 单元测试与完整构建已覆盖；SAF 真机和 Room instrumentation 待本轮验收 | 始终为 `GENERIC/STATEMENT_IMPORT`；只读取用户当次选择的 `text/plain`、CSV 或 TSV，64 KiB 有界复制到私有证据链，不持久化 URI/文件名，不猜 provider/金额/类型/账户；不是任何钱包或银行账单格式支持声明 |

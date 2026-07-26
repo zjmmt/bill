@@ -2,17 +2,17 @@ package dev.bill.application
 
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.CaptureScopeId
-import dev.bill.source.contract.ConnectorId
 import dev.bill.source.contract.DiagnosticCode
 import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.RawEvent
 import dev.bill.source.contract.RawEventId
 import dev.bill.source.contract.RawEventRepository
-import dev.bill.source.contract.SourceFamily
 import dev.bill.source.genericnotification.NotificationEnvelope
 import dev.bill.source.genericnotification.NotificationEnvelopeCodec
 import dev.bill.source.genericnotification.NotificationEvidenceMediaTypes
+import dev.bill.source.genericnotification.NotificationRouteCatalog
+import dev.bill.source.genericnotification.VerifiedNotificationRoute
 import dev.bill.source.pipeline.IngestionFailure
 import dev.bill.source.pipeline.IngestionResult
 import dev.bill.source.pipeline.ParseCommitDisposition
@@ -27,6 +27,7 @@ import kotlinx.coroutines.sync.withLock
 
 enum class NotificationCaptureError {
     INVALID_COMMAND,
+    ROUTE_UNAVAILABLE,
     MALFORMED_ENVELOPE,
     CONTENT_TOO_LARGE,
     EVIDENCE_COLLISION,
@@ -41,6 +42,9 @@ enum class NotificationCaptureError {
 }
 
 sealed interface NotificationCaptureResult {
+    /** The route was deliberately disabled before any notification evidence was written. */
+    data object Ignored : NotificationCaptureResult
+
     data class ReadyForReview(
         val proposalId: String,
         val rawEventId: String,
@@ -56,6 +60,7 @@ sealed interface NotificationCaptureResult {
 interface NotificationEvidenceCapture {
     suspend fun ingest(
         commandId: String,
+        route: VerifiedNotificationRoute,
         envelope: NotificationEnvelope,
     ): NotificationCaptureResult
 }
@@ -71,6 +76,8 @@ class NotificationEvidenceIngestionService(
     private val rawEventRepository: RawEventRepository,
     private val evidenceStore: EvidenceStagingStore,
     private val sourceIngestionService: SourceIngestionService,
+    private val routeCatalog: NotificationRouteCatalog,
+    private val isRouteEnabled: (String) -> Boolean = { false },
     private val evidenceAdmission: EvidenceStorageAdmission = EvidenceStorageAdmission.AllowAll,
     private val clock: Clock = Clock.systemUTC(),
 ) : NotificationEvidenceCapture {
@@ -78,12 +85,30 @@ class NotificationEvidenceIngestionService(
 
     override suspend fun ingest(
         commandId: String,
+        route: VerifiedNotificationRoute,
         envelope: NotificationEnvelope,
     ): NotificationCaptureResult {
+        if (!routeCatalog.contains(route)) {
+            return failure(NotificationCaptureError.ROUTE_UNAVAILABLE)
+        }
+        val routeEnabled = try {
+            isRouteEnabled(route.routeId)
+        } catch (_: RuntimeException) {
+            return failure(NotificationCaptureError.ROUTE_UNAVAILABLE)
+        }
+        if (!routeEnabled) {
+            return NotificationCaptureResult.Ignored
+        }
+        if (
+            envelope.templateId != route.routeId ||
+                envelope.templateVersion != route.template.version
+        ) {
+            return failure(NotificationCaptureError.MALFORMED_ENVELOPE)
+        }
         val encoded = NotificationEnvelopeCodec.encode(envelope)
             ?: return failure(NotificationCaptureError.CONTENT_TOO_LARGE)
         return try {
-            ingestMutex.withLock { ingestLocked(commandId, encoded) }
+            ingestMutex.withLock { ingestLocked(commandId, route, encoded) }
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: RuntimeException) {
@@ -97,6 +122,7 @@ class NotificationEvidenceIngestionService(
 
     private suspend fun ingestLocked(
         commandId: String,
+        route: VerifiedNotificationRoute,
         encoded: ByteArray,
     ): NotificationCaptureResult {
         if (encoded.isEmpty()) return failure(NotificationCaptureError.MALFORMED_ENVELOPE)
@@ -118,8 +144,8 @@ class NotificationEvidenceIngestionService(
         if (
             existing != null &&
             (
-                existing.sourceFamily != SourceFamily.GENERIC ||
-                    existing.connectorId != CONNECTOR_ID ||
+                existing.sourceFamily != route.sourceIdentity.sourceFamily ||
+                    existing.connectorId != route.sourceIdentity.connectorId ||
                     existing.captureMethod != CaptureMethod.NOTIFICATION ||
                     existing.captureScope != LOCAL_CAPTURE_SCOPE ||
                     existing.contentHash != contentHash ||
@@ -182,8 +208,8 @@ class NotificationEvidenceIngestionService(
 
         val rawEvent = existing ?: RawEvent(
             id = rawEventId,
-            sourceFamily = SourceFamily.GENERIC,
-            connectorId = CONNECTOR_ID,
+            sourceFamily = route.sourceIdentity.sourceFamily,
+            connectorId = route.sourceIdentity.connectorId,
             captureMethod = CaptureMethod.NOTIFICATION,
             captureScope = LOCAL_CAPTURE_SCOPE,
             contentHash = contentHash,
@@ -254,7 +280,6 @@ class NotificationEvidenceIngestionService(
     companion object {
         const val MAX_NOTIFICATION_EVIDENCE_BYTES = NotificationEnvelopeCodec.MAX_ENCODED_BYTES.toLong()
 
-        private val CONNECTOR_ID = ConnectorId("android-notification")
         private val LOCAL_CAPTURE_SCOPE = CaptureScopeId("local-install")
     }
 }

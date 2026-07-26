@@ -33,7 +33,7 @@
     <string name="capture_tutorial_title">自动采集权限教程</string>
     <string name="capture_tutorial_intro">三条路径彼此独立。没有经过验证的用途时，本版本不会要求你开启高敏感权限。</string>
     <string name="capture_tutorial_notification_title">01 / 系统通知访问</string>
-    <string name="capture_tutorial_notification_body">暂未开放：本版本没有经过验证的来源模板，Bill 的监听目录为空，不读取任何通知正文。以后有经过验证的路线时，只会让你在 Android“设置 → 通知使用权”中开启那一条路线；现在不用开。</string>
+    <string name="capture_tutorial_notification_body">暂未开放：本版本没有经过验证的来源模板，Bill 的监听目录为空，不读取任何通知正文。以后有经过验证的路线时，需分两步：先在 Android“设置 → 通知使用权”授予 Bill 整体通知访问，再在 Bill 内开启该路线；现在不用开。</string>
     <string name="capture_health_no_templates">当前状态：没有经过验证的通知模板，Bill 不会读取通知正文。</string>
     <string name="capture_health_ready">当前状态：本地通知路线已准备好创建仅供复核的草稿。</string>
     <string name="capture_health_backpressure">当前状态：本次 App 进程中有 %1$d 条通知回调因本地队列已满而跳过；这些通知正文没有被保存。</string>

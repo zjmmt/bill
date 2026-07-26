@@ -767,6 +767,41 @@ class BillServiceTest {
     }
 
     @Test
+    fun `notification review resolves only a safe local route label`() = runBlocking {
+        val sourceRepository = FakeSourceReviewRepository(
+            initialProposals = listOf(
+                SourceProposalRecord(
+                    id = "proposal-notification",
+                    rawEventId = "raw-notification",
+                    parseAttemptId = "attempt-notification",
+                    parserId = "fixture-payment",
+                    providerId = "fixture-provider",
+                    connectorId = "fixture-payment",
+                    sourceFamily = SourceFamily.BANK,
+                    captureMethod = CaptureMethod.NOTIFICATION,
+                    capturedAt = now,
+                    diagnostic = null,
+                    candidate = null,
+                    isPossibleDuplicate = false,
+                ),
+            ),
+        )
+
+        val snapshot = BillService(
+            repository = FakeLedgerRepository(),
+            clock = clock,
+            sourceReviewRepository = sourceRepository,
+            notificationRouteLabelResolver = NotificationRouteLabelResolver { connectorId ->
+                "Fixture bank notification".takeIf { connectorId == "fixture-payment" }
+            },
+        ).observeSnapshot().first()
+
+        val review = snapshot.pendingSourceReviews.single()
+        assertEquals(SourceReviewKind.NOTIFICATION, review.kind)
+        assertEquals("Fixture bank notification", review.notificationRouteLabel)
+    }
+
+    @Test
     fun `snapshot presents photo OCR suggestions as editable income defaults`() = runBlocking {
         val sourceRepository = FakeSourceReviewRepository(
             initialProposals = listOf(

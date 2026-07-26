@@ -1,6 +1,6 @@
 # 采集、导入与来源适配器
 
-- 状态：部分实现；来源中立显式文本与单次 PNG 收据证据、空模板通知证据边界、持久观察去重与证据生命周期已实现；单次截图/Photo Picker OCR 仅有未通过隐私发布门的开发原型，provider 格式待样本
+- 状态：部分实现；来源中立显式文本与单次 PNG 收据证据、受控通知 route 边界、持久观察去重与证据生命周期已实现；单次截图/Photo Picker OCR 仅有未通过隐私发布门的开发原型，provider 格式待样本
 - 所有者：项目维护者
 - 最后核验：2026-07-26
 - 事实来源：多来源产品要求、Android 官方能力边界、当前来源/Room/Application 实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
@@ -70,11 +70,11 @@ Quick Settings tile / one-image Photo Picker
 
 `MainActivity` 因接收 Sharesheet 而 exported，任意 App 都可能直接发送 Intent；SAF URI、PNG 分享和 Photo Picker 的 `content://` URI 都只在一次读取边界内使用，既不持久化 URI/原文件名，也不取得持久 URI 权限。所有入口都必须作为不可信外部输入处理；包名、正文、MIME 或 Intent 本身都不是 provider 证明。PNG 临时字节在暂存完成或失败后擦除；Sharesheet 路径没有图像预览或 OCR，用户需以自己保留的原始截图填写复核事实。磁贴/Photo Picker 原型会生成待复核转录，但不是 provider 适配器。Room v6 已关闭未登记文件的核心崩溃窗口，并为通知实例恢复建立了持久租约，但当前仍缺大量/恶意输入压力、真实系统强杀切点矩阵、自动化 Compose、完整真机矩阵、结构化文件样本、OCR 发布审计和 OCR 目标设备资源证据，因此不能把此切片标为发布级 `Supported`。
 
-## 通知入口（空模板基础已实现，provider 未实现）
+## 通知入口（受控 route 基础已实现，provider 未实现）
 
 - `:source:generic-notification` 定义了不含 Android 对象、包名、通知 key、actions 或 URI 的 `NotificationEnvelope`。它只保留经模板选中的有限字段、opaque 模板 ID/版本和事件时间；严格 UTF-8、NUL、未配对 surrogate、字段数与总编码大小均有硬门。证据最多 8 KiB，并由既有私有暂存/保留/清除链管理。
-- `NotificationListenerService` 只先读取包名、具体 Android 通知渠道和类别。只有三者命中已验证候选模板，才复制 title/text/subText/bigText/summaryText 的有界字段；未命中时不碰 `extras`，不入库、不打日志、不创建草稿。模板不得只按包名匹配。候选工作进入容量 16 的非阻塞内存队列，由单个 IO consumer 串行处理；满队列时丢弃这次工作项，不启动额外协程或重试任务。
-- 当前生产模板目录为空；因此用户当前即使错误地授予通知访问，运行时也不会读取任何通知正文，也不会声称支付宝、微信或银行已接入。未来经过样本验证的模板只有在元数据门、持久观察租约和有界队列都存在时才能运行：观察 HMAC 摘要以 `StatusBarNotification.key` 与 post time 派生；两分钟过期租约复用原 command，成功 hand-off 后标记 `CAPTURED`。已捕获摘要与已失效超过 90 天的活动租约只在后续候选回调中有界清理，不设后台维护任务。合成模板经通用 parser 只形成来源待复核项，不能猜金额、方向、账户、provider 或直接过账。
+- `NotificationListenerService` 只先读取包名、具体 Android 通知渠道和类别。静态 `VerifiedNotificationRoute` 同时提供 metadata rule、route ID、SourceIdentity、parser 与安全显示标签；类别为 null 时也只匹配 null，不能当通配符。只有三者精确命中且 route 已在 app-private 本地设置中显式开启，才复制 title/text/subText/bigText/summaryText 的有界字段；未命中、关闭或 route 已移除时不碰 `extras`，不入库、不打日志、不创建草稿。模板不得只按包名匹配。候选工作进入容量 16 的非阻塞内存队列，由单个 IO consumer 串行处理；满队列时丢弃这次工作项，不启动额外协程或重试任务。
+- 当前生产 route catalog 为空；因此用户当前即使错误地授予通知访问，运行时也不会读取任何通知正文，也不会声称支付宝、微信或银行已接入。未来经过样本验证的 route 只有在元数据门、显式本地开关、持久观察租约和有界队列都存在时才能运行：Prepared capture 必须携带 catalog 的原 route 对象；ingress 拒绝调用者拼出的同值 lookalike，并在持久化前再次检查开关，因此关闭发生在排队/prepare 后也只释放观察租约而不落通知证据。开关变更串行并用 `SharedPreferences.commit()` 确认写盘，未来 UI 必须在后台执行并显示失败。ingress 从该 route 写入 `RawEvent.sourceFamily` 与 `connectorId`；catalog 同时拒绝与既有通用通知 parser 相同的来源 tuple。解析器复核 envelope template/version 后只形成待复核项；复核投影只由 opaque connector 解析安全标签，不显示包名、频道、类别或正文。当前 enablement 仅是 production-empty catalog 的安全基础；首个真实 route 合入前必须另外接通用户可见的安全标签选择器和“尚未开启”健康状态。观察 HMAC 摘要以 `StatusBarNotification.key` 与 post time 派生；两分钟过期租约复用原 command，成功 hand-off 后标记 `CAPTURED`。已捕获摘要与已失效超过 90 天的活动租约只在后续候选回调中有界清理，不设后台维护任务。通用 parser 不猜金额、方向、账户、provider 或直接过账。
 - 不读取历史通知、不修改外部通知、不开前台服务、不设周期任务或唤醒锁。通知无法反映没有通知的领取、发送或后台余额变动，也不能补历史；来源健康页必须把这些显示为覆盖缺口，而不是显示“自动同步正常”。
 - 首个真实模板前仍缺真实系统 callback 更新回放和真机资源数据；设置页当前已显示不含来源/正文的空目录、队列跳过与失败健康状态。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
 

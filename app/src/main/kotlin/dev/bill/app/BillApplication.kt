@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import dev.bill.application.BillService
 import dev.bill.application.NotificationEvidenceIngestionService
+import dev.bill.application.NotificationRouteLabelResolver
 import dev.bill.application.PhotoOcrTranscriptIngestionService
 import dev.bill.application.SelectedTextFileIngestionService
 import dev.bill.application.SharedReceiptImageIngestionService
@@ -22,10 +23,12 @@ import dev.bill.source.genericsharetext.GenericShareTextParser
 import dev.bill.source.genericphotoocr.GenericPhotoOcrParser
 import dev.bill.source.genericreceiptimage.GenericSharedReceiptImageParser
 import dev.bill.source.genericnotification.GenericNotificationParser
+import dev.bill.source.genericnotification.NotificationRouteCatalog
 import dev.bill.source.genericnotification.NotificationTemplateGate
 import dev.bill.app.notification.NotificationCaptureCoordinator
 import dev.bill.app.notification.AppPrivateNotificationObservationIdDeriver
 import dev.bill.app.notification.NotificationCaptureHealth
+import dev.bill.app.notification.SharedPreferencesNotificationRouteEnablement
 import dev.bill.source.contract.NotificationObservationRepository
 import dev.bill.source.contract.NotificationObservationReservation
 import dev.bill.source.contract.NotificationObservationReserveResult
@@ -72,6 +75,17 @@ class AppContainer(context: Context) {
         AppPrivateEvidenceStore(context.applicationContext)
     }
 
+    /**
+     * This remains empty until an individual provider/version has sanitized replay fixtures.
+     * The same catalog is used for metadata gating, parser registration and safe UI labels so
+     * a route cannot reach storage without a matching parser.
+     */
+    private val notificationRouteCatalog = NotificationRouteCatalog.empty()
+
+    private val notificationRouteEnablement by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        SharedPreferencesNotificationRouteEnablement(context, notificationRouteCatalog)
+    }
+
     val sourceEvidenceLifecycleService: SourceEvidenceLifecycleService by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
@@ -90,6 +104,7 @@ class AppContainer(context: Context) {
             parserRegistry = ParserRegistry(
                 listOf(
                     GenericNotificationParser(),
+                ) + notificationRouteCatalog.parsers() + listOf(
                     GenericPhotoOcrParser(),
                     GenericShareTextParser(),
                     GenericSelectedTextFileParser(),
@@ -106,6 +121,9 @@ class AppContainer(context: Context) {
         BillService(
             repository = RoomLedgerRepository(database),
             sourceReviewRepository = sourceRepository,
+            notificationRouteLabelResolver = NotificationRouteLabelResolver { connectorId ->
+                notificationRouteCatalog.safeLabelForConnector(connectorId)
+            },
         )
     }
 
@@ -149,6 +167,8 @@ class AppContainer(context: Context) {
             rawEventRepository = rawEventRepository,
             evidenceStore = evidenceStore,
             sourceIngestionService = sourceIngestionService,
+            routeCatalog = notificationRouteCatalog,
+            isRouteEnabled = notificationRouteEnablement::isEnabled,
             evidenceAdmission = sourceEvidenceLifecycleService,
         )
     }
@@ -164,7 +184,10 @@ class AppContainer(context: Context) {
         )
     }
 
-    private val notificationTemplateGate = NotificationTemplateGate(emptyList())
+    private val notificationTemplateGate = NotificationTemplateGate(
+        catalog = notificationRouteCatalog,
+        isRouteEnabled = notificationRouteEnablement::isEnabled,
+    )
 
     internal val notificationCaptureHealth = NotificationCaptureHealth(
         hasVerifiedTemplates = notificationTemplateGate.hasVerifiedTemplates(),

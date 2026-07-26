@@ -88,6 +88,7 @@ class BillNotificationListenerService : NotificationListenerService() {
             ) ?: return
             val result = container.notificationEvidenceIngestionService.ingest(
                 commandId = prepared.commandId,
+                route = prepared.route,
                 envelope = prepared.envelope,
             )
             val captured = result is dev.bill.application.NotificationCaptureResult.ReadyForReview
@@ -95,6 +96,15 @@ class BillNotificationListenerService : NotificationListenerService() {
                 prepared = prepared,
                 captured = captured,
             )
+            if (
+                result is dev.bill.application.NotificationCaptureResult.Ignored &&
+                    (
+                        completion == NotificationObservationWriteStatus.APPLIED ||
+                            completion == NotificationObservationWriteStatus.ALREADY_APPLIED
+                    )
+            ) {
+                return
+            }
             if (
                 captured &&
                 (

@@ -54,7 +54,7 @@ class NotificationTemplate(
     fun matchesMetadata(metadata: NotificationMetadata): Boolean =
         metadata.packageName == packageName &&
             metadata.channelId == channelId &&
-            (category == null || metadata.category == category)
+            metadata.category == category
 
     fun matchesContent(content: NotificationContent): Boolean = contentMatcher(content)
 
@@ -74,10 +74,10 @@ sealed interface NotificationGateDecision {
     data object AmbiguousContent : NotificationGateDecision
 
     class Accepted internal constructor(
-        val template: NotificationTemplate,
+        val route: VerifiedNotificationRoute,
         val content: NotificationContent,
     ) : NotificationGateDecision {
-        override fun toString(): String = "NotificationGateDecision.Accepted(${template.id})"
+        override fun toString(): String = "NotificationGateDecision.Accepted(${route.routeId})"
     }
 }
 
@@ -86,12 +86,11 @@ sealed interface NotificationGateDecision {
  * has no trustworthy package-only NotificationListener allowlist, so this gate is the mandatory
  * in-process boundary between an all-app callback and the sensitive notification extras.
  */
-class NotificationTemplateGate(templates: Iterable<NotificationTemplate>) {
-    private val templates = templates.toList().also { loaded ->
-        require(loaded.map { template -> template.id to template.version }.toSet().size == loaded.size) {
-            "Notification templates must have unique id/version pairs"
-        }
-    }
+class NotificationTemplateGate(
+    private val catalog: NotificationRouteCatalog,
+    /** A catalog route is inert unless its owning app supplies an explicit local opt-in. */
+    private val isRouteEnabled: (String) -> Boolean = { false },
+) {
 
     fun evaluate(
         metadata: NotificationMetadata,
@@ -101,8 +100,8 @@ class NotificationTemplateGate(templates: Iterable<NotificationTemplate>) {
         if (candidates.isEmpty()) return NotificationGateDecision.IgnoredMetadata
 
         val content = readContent() ?: return NotificationGateDecision.IgnoredContent
-        val matches = candidates.filter { template ->
-            runCatching { template.matchesContent(content) }.getOrDefault(false)
+        val matches = candidates.filter { route ->
+            runCatching { route.template.matchesContent(content) }.getOrDefault(false)
         }
         return when (matches.size) {
             0 -> NotificationGateDecision.IgnoredContent
@@ -120,8 +119,11 @@ class NotificationTemplateGate(templates: Iterable<NotificationTemplate>) {
         candidatesFor(metadata).isNotEmpty()
 
     /** Exposes catalog readiness without exposing package/channel rules to the UI layer. */
-    fun hasVerifiedTemplates(): Boolean = templates.isNotEmpty()
+    fun hasVerifiedTemplates(): Boolean = catalog.hasVerifiedRoutes()
 
-    private fun candidatesFor(metadata: NotificationMetadata): List<NotificationTemplate> =
-        templates.filter { template -> template.matchesMetadata(metadata) }
+    private fun candidatesFor(metadata: NotificationMetadata): List<VerifiedNotificationRoute> =
+        catalog.routes.filter { route ->
+            runCatching { isRouteEnabled(route.routeId) }.getOrDefault(false) &&
+                route.template.matchesMetadata(metadata)
+        }
 }

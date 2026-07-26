@@ -24,7 +24,7 @@ class GenericNotificationParser : SourceParser {
         parserId = ParserId("generic-notification"),
         providerId = ProviderId("android-notification"),
         sourceFamily = SourceFamily.GENERIC,
-        connectorId = ConnectorId("android-notification"),
+        connectorId = GENERIC_NOTIFICATION_CONNECTOR_ID,
         capabilities = emptySet(),
         supportedCaptureMethods = setOf(CaptureMethod.NOTIFICATION),
         parserVersion = VersionId("parser-1"),
@@ -58,3 +58,6 @@ class GenericNotificationParser : SourceParser {
         SafeDiagnostic(code = code, recoverable = false),
     )
 }
+
+/** Reserved for the transport-only parser bundled by this module. */
+internal val GENERIC_NOTIFICATION_CONNECTOR_ID = ConnectorId("android-notification")

@@ -1,6 +1,7 @@
 package dev.bill.application
 
 import dev.bill.source.contract.CaptureMethod
+import dev.bill.source.contract.ConnectorId
 import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.EvidenceInput
 import dev.bill.source.contract.EvidenceReadResult
@@ -11,10 +12,18 @@ import dev.bill.source.contract.RawEvent
 import dev.bill.source.contract.RawEventAppendResult
 import dev.bill.source.contract.RawEventId
 import dev.bill.source.contract.RawEventRepository
-import dev.bill.source.genericnotification.GenericNotificationParser
+import dev.bill.source.contract.ParserId
+import dev.bill.source.contract.ProviderId
+import dev.bill.source.contract.SourceFamily
+import dev.bill.source.contract.SourceIdentity
+import dev.bill.source.contract.VersionId
 import dev.bill.source.genericnotification.NotificationContent
 import dev.bill.source.genericnotification.NotificationEnvelope
 import dev.bill.source.genericnotification.NotificationEnvelopeCodec
+import dev.bill.source.genericnotification.NotificationRouteCatalog
+import dev.bill.source.genericnotification.NotificationRouteParser
+import dev.bill.source.genericnotification.NotificationTemplate
+import dev.bill.source.genericnotification.VerifiedNotificationRoute
 import dev.bill.source.pipeline.DraftProposal
 import dev.bill.source.pipeline.ParseAttempt
 import dev.bill.source.pipeline.ParseAttemptId
@@ -40,7 +49,11 @@ class NotificationEvidenceIngestionServiceTest {
     fun `notification envelope creates only review work with bounded private evidence`() = runBlocking {
         val fixture = Fixture()
 
-        val result = fixture.service().ingest("notification-one", envelope("private paid marker"))
+        val result = fixture.service().ingest(
+            "notification-one",
+            fixture.route,
+            envelope("private paid marker"),
+        )
 
         assertTrue(result is NotificationCaptureResult.ReadyForReview)
         result as NotificationCaptureResult.ReadyForReview
@@ -48,7 +61,8 @@ class NotificationEvidenceIngestionServiceTest {
         assertEquals("notification-notification-one", result.rawEventId)
         val rawEvent = fixture.rawEvents.findById(RawEventId(result.rawEventId))
         assertEquals(CaptureMethod.NOTIFICATION, rawEvent?.captureMethod)
-        assertEquals("android-notification", rawEvent?.connectorId?.value)
+        assertEquals(SourceFamily.BANK, rawEvent?.sourceFamily)
+        assertEquals("fixture-payment", rawEvent?.connectorId?.value)
         assertEquals(1, fixture.evidenceStore.payloads.size)
         assertEquals(1, fixture.commitStore.commits.size)
         assertTrue(fixture.commitStore.commits.values.single().proposal != null)
@@ -59,9 +73,13 @@ class NotificationEvidenceIngestionServiceTest {
         val fixture = Fixture()
         val service = fixture.service()
 
-        val first = service.ingest("stable-notification", envelope("first marker"))
-        val retry = service.ingest("stable-notification", envelope("first marker"))
-        val altered = service.ingest("stable-notification", envelope("different marker"))
+        val first = service.ingest("stable-notification", fixture.route, envelope("first marker"))
+        val retry = service.ingest("stable-notification", fixture.route, envelope("first marker"))
+        val altered = service.ingest(
+            "stable-notification",
+            fixture.route,
+            envelope("different marker"),
+        )
 
         assertTrue(first is NotificationCaptureResult.ReadyForReview)
         assertTrue(retry is NotificationCaptureResult.ReadyForReview)
@@ -90,6 +108,7 @@ class NotificationEvidenceIngestionServiceTest {
 
         val result = fixture.service().ingest(
             "large-notification",
+            fixture.route,
             NotificationEnvelope("fixture-payment", "v1", 1_700_000_000_000L, oversizedContent),
         )
 
@@ -97,6 +116,71 @@ class NotificationEvidenceIngestionServiceTest {
             NotificationCaptureError.CONTENT_TOO_LARGE,
             (result as NotificationCaptureResult.Failure).error,
         )
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.evidenceStore.payloads.isEmpty())
+        assertTrue(fixture.commitStore.commits.isEmpty())
+    }
+
+    @Test
+    fun `route and envelope mismatch is rejected before private evidence is staged`() = runBlocking {
+        val fixture = Fixture()
+
+        val result = fixture.service().ingest(
+            "wrong-route-version",
+            fixture.route,
+            NotificationEnvelope(
+                templateId = "fixture-payment",
+                templateVersion = "v2",
+                postedAtEpochMillis = 1_700_000_000_000L,
+                content = checkNotNull(
+                    NotificationContent.from(mapOf(NotificationField.TEXT to "private marker")),
+                ),
+            ),
+        )
+
+        assertEquals(
+            NotificationCaptureError.MALFORMED_ENVELOPE,
+            (result as NotificationCaptureResult.Failure).error,
+        )
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.evidenceStore.payloads.isEmpty())
+        assertTrue(fixture.commitStore.commits.isEmpty())
+    }
+
+    @Test
+    fun `caller-built route lookalike is rejected before private evidence is staged`() = runBlocking {
+        val fixture = Fixture()
+        val lookalike = fixtureRoute()
+
+        val result = fixture.service().ingest(
+            "unregistered-route",
+            lookalike,
+            envelope("private marker"),
+        )
+
+        assertEquals(
+            NotificationCaptureError.ROUTE_UNAVAILABLE,
+            (result as NotificationCaptureResult.Failure).error,
+        )
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.evidenceStore.payloads.isEmpty())
+        assertTrue(fixture.commitStore.commits.isEmpty())
+    }
+
+    @Test
+    fun `route disabled after prepare is ignored before private evidence is staged`() = runBlocking {
+        var enabled = true
+        val fixture = Fixture()
+        val service = fixture.service(isRouteEnabled = { enabled })
+
+        enabled = false
+        val result = service.ingest(
+            "disabled-before-ingress",
+            fixture.route,
+            envelope("private marker"),
+        )
+
+        assertEquals(NotificationCaptureResult.Ignored, result)
         assertTrue(fixture.rawEvents.events.isEmpty())
         assertTrue(fixture.evidenceStore.payloads.isEmpty())
         assertTrue(fixture.commitStore.commits.isEmpty())
@@ -119,15 +203,21 @@ class NotificationEvidenceIngestionServiceTest {
             sourceIngestionService = SourceIngestionService(
                 rawEventRepository = failingRepository,
                 evidenceReader = fixture.evidenceStore,
-                parserRegistry = ParserRegistry(listOf(GenericNotificationParser())),
+                parserRegistry = ParserRegistry(listOf(NotificationRouteParser(fixture.route))),
                 commitStore = fixture.commitStore,
                 clock = clock,
                 maxEvidenceBytes = NotificationEvidenceIngestionService.MAX_NOTIFICATION_EVIDENCE_BYTES,
             ),
+            routeCatalog = fixture.catalog,
+            isRouteEnabled = { true },
             clock = clock,
         )
 
-        val result = service.ingest("failing-notification", envelope("private failure marker"))
+        val result = service.ingest(
+            "failing-notification",
+            fixture.route,
+            envelope("private failure marker"),
+        )
 
         assertEquals(
             NotificationCaptureError.COMMIT_FAILED,
@@ -165,16 +255,22 @@ class NotificationEvidenceIngestionServiceTest {
             sourceIngestionService = SourceIngestionService(
                 rawEventRepository = failingRepository,
                 evidenceReader = fixture.evidenceStore,
-                parserRegistry = ParserRegistry(listOf(GenericNotificationParser())),
+                parserRegistry = ParserRegistry(listOf(NotificationRouteParser(fixture.route))),
                 commitStore = fixture.commitStore,
                 clock = clock,
                 maxEvidenceBytes = NotificationEvidenceIngestionService.MAX_NOTIFICATION_EVIDENCE_BYTES,
             ),
+            routeCatalog = fixture.catalog,
+            isRouteEnabled = { true },
             evidenceAdmission = admission,
             clock = clock,
         )
 
-        val result = service.ingest("stage-failure", envelope("private staged failure marker"))
+        val result = service.ingest(
+            "stage-failure",
+            fixture.route,
+            envelope("private staged failure marker"),
+        )
 
         assertEquals(
             NotificationCaptureError.COMMIT_FAILED,
@@ -190,12 +286,16 @@ class NotificationEvidenceIngestionServiceTest {
         content = checkNotNull(NotificationContent.from(mapOf(NotificationField.TEXT to text))),
     )
 
-    private class Fixture {
+    private inner class Fixture {
+        val route = fixtureRoute()
+        val catalog = NotificationRouteCatalog(listOf(route))
         val rawEvents = InMemoryRawEvents()
         val evidenceStore = InMemoryEvidenceStore()
         val commitStore = InMemoryCommitStore()
 
-        fun service(): NotificationEvidenceIngestionService {
+        fun service(
+            isRouteEnabled: (String) -> Boolean = { true },
+        ): NotificationEvidenceIngestionService {
             val clock = Clock.fixed(Instant.parse("2026-07-25T12:00:00Z"), ZoneOffset.UTC)
             return NotificationEvidenceIngestionService(
                 rawEventRepository = rawEvents,
@@ -203,15 +303,40 @@ class NotificationEvidenceIngestionServiceTest {
                 sourceIngestionService = SourceIngestionService(
                     rawEventRepository = rawEvents,
                     evidenceReader = evidenceStore,
-                    parserRegistry = ParserRegistry(listOf(GenericNotificationParser())),
+                    parserRegistry = ParserRegistry(listOf(NotificationRouteParser(route))),
                     commitStore = commitStore,
                     clock = clock,
                     maxEvidenceBytes = NotificationEvidenceIngestionService.MAX_NOTIFICATION_EVIDENCE_BYTES,
                 ),
+                routeCatalog = catalog,
+                isRouteEnabled = isRouteEnabled,
                 clock = clock,
             )
         }
     }
+
+    private fun fixtureRoute() = VerifiedNotificationRoute(
+        routeId = "fixture-payment",
+        sourceIdentity = SourceIdentity(
+            parserId = ParserId("fixture-payment"),
+            providerId = ProviderId("fixture-provider"),
+            sourceFamily = SourceFamily.BANK,
+            connectorId = ConnectorId("fixture-payment"),
+            capabilities = emptySet(),
+            supportedCaptureMethods = setOf(CaptureMethod.NOTIFICATION),
+            parserVersion = VersionId("parser-1"),
+            ruleVersion = VersionId("rules-1"),
+        ),
+        template = NotificationTemplate(
+            id = "fixture-payment",
+            version = "v1",
+            packageName = "fixture.payment",
+            channelId = "transaction",
+            category = "status",
+            contentMatcher = { true },
+        ),
+        safeLabel = "Fixture bank notification",
+    )
 
     private class InMemoryRawEvents : RawEventRepository {
         val events = linkedMapOf<RawEventId, RawEvent>()

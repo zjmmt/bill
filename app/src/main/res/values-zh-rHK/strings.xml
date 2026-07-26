@@ -33,7 +33,7 @@
     <string name="capture_tutorial_title">自動擷取權限教學</string>
     <string name="capture_tutorial_intro">三條路徑彼此獨立。沒有經驗證的用途時，本版本不會要求你開啟高敏感權限。</string>
     <string name="capture_tutorial_notification_title">01 / 系統通知存取</string>
-    <string name="capture_tutorial_notification_body">暫未開放：本版本沒有經驗證的來源模板，Bill 的監聽目錄為空，不會讀取任何通知正文。日後有經驗證的路徑時，只會讓你在 Android「設定 → 通知存取」中開啟那一條路徑；現在不用開。</string>
+    <string name="capture_tutorial_notification_body">暫未開放：本版本沒有經驗證的來源模板，Bill 的監聽目錄為空，不會讀取任何通知正文。日後有經驗證的路徑時，需分兩步：先在 Android「設定 → 通知存取」授予 Bill 整體通知存取權，再在 Bill 內開啟該路徑；現在不用開。</string>
     <string name="capture_health_no_templates">目前狀態：沒有經驗證的通知範本，Bill 不會讀取通知正文。</string>
     <string name="capture_health_ready">目前狀態：本機通知路線已準備好建立只供覆核的草稿。</string>
     <string name="capture_health_backpressure">目前狀態：本次 App 程序中有 %1$d 條通知回調因本機佇列已滿而略過；這些通知正文沒有被儲存。</string>

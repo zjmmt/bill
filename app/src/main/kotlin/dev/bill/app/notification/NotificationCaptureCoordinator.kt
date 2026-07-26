@@ -15,6 +15,7 @@ import dev.bill.source.genericnotification.NotificationEnvelope
 import dev.bill.source.genericnotification.NotificationGateDecision
 import dev.bill.source.genericnotification.NotificationMetadata
 import dev.bill.source.genericnotification.NotificationTemplateGate
+import dev.bill.source.genericnotification.VerifiedNotificationRoute
 import java.time.Clock
 import java.time.Duration
 import java.util.UUID
@@ -22,6 +23,7 @@ import java.util.UUID
 /** A transient Android-independent hand-off from the system callback to the IO evidence writer. */
 internal class PreparedNotificationCapture(
     val reservation: NotificationObservationReservation,
+    val route: VerifiedNotificationRoute,
     val envelope: NotificationEnvelope,
 ) {
     val commandId: String
@@ -97,9 +99,10 @@ internal class NotificationCaptureCoordinator(
 
         return PreparedNotificationCapture(
             reservation = acquired,
+            route = decision.route,
             envelope = NotificationEnvelope(
-                templateId = decision.template.id,
-                templateVersion = decision.template.version,
+                templateId = decision.route.routeId,
+                templateVersion = decision.route.template.version,
                 postedAtEpochMillis = postedAtEpochMillis,
                 content = decision.content,
             ),

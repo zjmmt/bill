@@ -52,7 +52,7 @@ ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
 
 ## 当前实现断面
 
-账本断面限定为 CNY：创建现金、银行卡、电子钱包余额或信用卡账户，以平衡 `ADJUSTMENT` 表示期初余额；手工或来源 Draft 选择资金账户后再确认成平衡 Entries。Room schema v6 持久化账户、草稿、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
+账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建账户后以平衡 `ADJUSTMENT` 表示期初余额；手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries。Room schema v6 持久化账户、草稿、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
 
 账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
 

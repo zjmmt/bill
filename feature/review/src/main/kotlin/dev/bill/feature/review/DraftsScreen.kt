@@ -167,7 +167,8 @@ private fun SourceReviewRow(
             SourceReviewKind.SHARED_RECEIPT_IMAGE ->
                 stringResource(R.string.shared_receipt_image_source)
             SourceReviewKind.PHOTO_OCR -> stringResource(R.string.photo_ocr_source)
-            SourceReviewKind.NOTIFICATION -> stringResource(R.string.notification_source)
+            SourceReviewKind.NOTIFICATION -> review.notificationRouteLabel
+                ?: stringResource(R.string.notification_source)
         }
         val needsConfirmationLabel = when (review.kind) {
             SourceReviewKind.SHARED_TEXT -> stringResource(R.string.shared_text_needs_confirmation)

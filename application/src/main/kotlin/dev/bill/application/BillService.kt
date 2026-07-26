@@ -67,6 +67,15 @@ sealed interface OperationResult {
     data class Failure(val error: OperationError) : OperationResult
 }
 
+/** Resolves only a locally bundled safe notification route label from opaque provenance. */
+fun interface NotificationRouteLabelResolver {
+    fun labelFor(connectorId: String): String?
+
+    data object Empty : NotificationRouteLabelResolver {
+        override fun labelFor(connectorId: String): String? = null
+    }
+}
+
 data class CreateAccountCommand(
     val commandId: CommandId,
     val name: String,
@@ -100,6 +109,8 @@ class BillService(
     private val repository: LedgerRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val sourceReviewRepository: SourceReviewRepository = SourceReviewRepository.Empty,
+    private val notificationRouteLabelResolver: NotificationRouteLabelResolver =
+        NotificationRouteLabelResolver.Empty,
 ) {
     fun newCommandId(): CommandId = CommandId(UUID.randomUUID().toString())
 
@@ -568,6 +579,15 @@ class BillService(
                     id = record.id,
                     kind = kind,
                     sourceFamily = record.sourceFamily,
+                    notificationRouteLabel = if (kind == SourceReviewKind.NOTIFICATION) {
+                        try {
+                            notificationRouteLabelResolver.labelFor(record.connectorId)
+                        } catch (_: RuntimeException) {
+                            null
+                        }
+                    } else {
+                        null
+                    },
                     capturedAt = record.capturedAt,
                     suggestedAmount = record.candidate?.amount?.value,
                     allowedDraftCurrencies = record.allowedExternalDraftCurrencies(),
