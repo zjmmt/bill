@@ -1,9 +1,9 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟；完整静态构建已复核，设备 instrumentation 与发布门待完成
+- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界/控制面、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟和 3 个 route 偏好 instrumentation；真实通知 callback、完整设备 instrumentation 与发布门待完成
 - 所有者：项目维护者
-- 最后核验：2026-07-30
-- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu 结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0003、ExecPlan 0006
+- 最后核验：2026-07-31
+- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
 
 ## 正确性不变量
 
@@ -29,7 +29,7 @@
 
 证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。当前 Room v7 延续 v5 引入的 5 分钟租约，在写入前登记预提交文件，由 RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
 
-空模板通知路径增加 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。测试证明生产空目录、未知 metadata，以及关闭 runtime 均不会调用正文读取器；合成通知的信封严格有界、重试幂等、改写证据安全冲突、容量超限和意外仓储错误拒绝。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；已捕获摘要和超过 90 天的失效活动租约只在后续候选回调中小批量清理，不新增后台维护。listener 用一个容量 16 的 IO 队列，而非每 callback 启动协程。它的 parser 只能产生来源待复核项，不会在没有 provider 样本时猜测交易字段或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
+空模板通知路径增加 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。测试证明生产空目录、未知 metadata，以及关闭 runtime 均不会调用正文读取器；合成通知的信封严格有界、重试幂等、改写证据安全冲突、容量超限和意外仓储错误拒绝。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；已捕获摘要和超过 90 天的失效活动租约只在后续候选回调中小批量清理，不新增后台维护。listener 用一个容量 16 的 IO 队列，而非每 callback 启动协程。route 控制面以安全标签展示静态 catalog，开启先持久化、关闭先收紧本进程门禁；失败会冻结其他变更并要求重试或在重启前撤销系统通知使用权。授权存在与 listener 实际连接分别建模，只有两者及启用 route 同时满足才显示就绪。它的 parser 只能产生来源待复核项，不会在没有 provider 样本时猜测交易字段或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
 
 结构化 CSV/TSV 路径把当次 SAF 输入限制在 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 KiB/记录；严格 UTF-8 与语法校验发生在持久化前。未知表头不自动猜列或 provider，用户必须显式映射日期、金额、方向、对方与可选参考号。预览在后台 dispatcher 上以 250 ms 去抖执行；确认按行建立独立证据、来源建议和安全结果码，停止后以文件摘要和映射摘要继续尚未完成的行。Room v7 只保存批次/行身份、计数、RawEvent ID 或封闭错误码，不保存 URI、文件名、表头或单元格。
 
@@ -61,6 +61,15 @@
 - 当前工作树的 `app-arm64-v8a-release-unsigned.apk` 为 90,540,713 bytes，SHA-256 为 `db3837758a3c700dfeb74b6f87a2d26f139e0adb2a105080b25e83dec123a9c5`；`app-x86_64-release-unsigned.apk` 为 128,362,402 bytes，SHA-256 为 `6d0488131fe1dd55b9348870584afc6f89f872a553297d5749414d04d4607583`。两包 Manifest 一致，只请求应用自身签名级动态接收器权限；没有网络、短信、媒体库或广泛存储权限，且均通过 `zipalign -c -P 16 4`。该检查证明 APK ZIP 内原生库对齐，不替代 ELF LOAD 段页兼容或真机加载验证。
 - `code-review` 未发现 P0/P1；资源生命周期、币种边界、对账事务和依赖方向复核通过。发现的导入 O(n²) P2 已修复并复审关闭；对账 ViewModel 确认路由增加单元回归。仍开放的 P2 发布门是实际中英日 OCR、Room v6→v7/导入/对账 instrumentation、峰值内存/耗时/电量和三台目标设备。
 
+2026-07-31 的通知控制面结果：
+
+- 完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest --console=plain` 成功（879 个 actionable tasks：8 executed、871 up-to-date）。全部 JVM、Lint、Debug/Release 和三组 AndroidTest APK 编译通过。arm64-v8a Release 为 90,581,257 bytes，SHA-256 为 `9e3c33d7a1a5f127a1f165f99102dc6981fa82d9a1d57767d48579dee2fa0b3e`；x86_64 Release 为 128,402,946 bytes，SHA-256 为 `d924e1be714920ae6bbfd5fa8d00d67cf9d26fed6b6fda1317aa69c60d5f3cfe`；两包通过 `zipalign -c -P 16 4`。
+- `:app:testDebugUnitTest` 在 route 控制面复审修复后成功，覆盖启停写盘顺序、失败重试冻结、同值无写盘、损坏/旧偏好失败关闭、安全健康状态和 listener 连接/断连。
+- 港版 `S24U-HK`（`SM-S9280`、Android 16/API 36、arm64-v8a）上的 `:app:connectedDebugAndroidTest` 运行 3 个 SharedPreferences route 用例并全部通过：跨实例启停、移除 route 的旧 ID 不放行、损坏偏好类型默认全关。测试使用 target app 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件并只清理该文件；此前尝试 test APK context 时 One UI 没有可写 data 目录，写入失败。
+- 这组设备结果没有授予通知使用权、没有运行真实 `NotificationListenerService` callback、没有读取支付宝/微信/银行或任何真实通知，也没有验证 OEM 后台存活、通知更新语义或 provider parser。它不把 `NLS-01` 标为通过。
+- 在 listener 授权刷新和测试夹具写盘断言修复后，对当前源码再次执行同一设备命令并 3/3 通过（237 个 actionable tasks：1 executed、236 up-to-date，15 秒）。这仍只证明 route 偏好源码边界，不扩大到通知 callback 或 provider。
+- 独立 `code-review` 未发现当前空 catalog 切片的 P0–P2。审查修复了测试误清生产偏好的风险、损坏偏好冷启动崩溃、撤权入口消失、设置入口静默失败、TalkBack 无标签开关、写盘失败覆盖重试、重复同值写盘，以及把“已授权”误报为 listener 已连接的问题。
+
 质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力，不证明 provider 覆盖。大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
 
 ## 来源漂移
@@ -78,7 +87,7 @@
 - 性质测试：分录平衡、金额守恒、导入幂等、关系对称/非对称约束。
 - 领域单元测试：转账、还款、退款、充值、投资申赎和用户修正优先级。
 - 适配器回放测试：三类来源的成功、格式漂移、缺字段、重复和乱码样本。
-- Room 测试：schema、v1→v2→v3→v4→v5→v6→v7 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。v1→v5 的真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；v5→v6→v7、导入批次/行与对账事务目前只有 Android 测试 APK 编译证据，大量数据基准与真实系统强杀矩阵仍待补。
+- Room 测试：schema、v1→v2→v3→v4→v5→v6→v7 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。v1→v5 的真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；S24U-HK 的 3 个 app route 偏好 instrumentation 不覆盖 Room。v5→v6→v7、导入批次/行与对账事务目前只有 Android 测试 APK 编译证据，大量数据基准与真实系统强杀矩阵仍待补。
 - Android 集成测试：权限撤销、进程重建、NotificationListener 系统回调/更新语义、SAF 文件访问失效。通知路径不使用 WorkManager 重试。
 - UI 测试：账户/期初余额、手工/来源草稿确认、进程重建、重复解释、忽略、撤销、无障碍和敏感信息遮罩。首片与分享文本已完成 MuMu 手工端到端验收，ViewModel 覆盖后台整页保护、错误后清除陈旧快照和按 command 消费分享结果；自动化 Compose/进程死亡仍待完成。
 - 端到端样例：同一绑卡消费同时出现支付渠道和银行证据，最终只产生一次支出。

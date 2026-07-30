@@ -2,12 +2,12 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：项目负责人 2026-07-25 的自动草稿与本地负担要求、ADR-0001、ADR-0009、ADR-0010、ADR-0011、当前 Android/Room 工程
 
 ## 目的与用户可见结果
 
-在不增加云端后端、Root、私有目录读取、全天截屏/录屏或周期性扫描的前提下，为通知、只读支付结果页和用户触发单次凭证建立独立采集路径。用户能看见每条路径的权限、覆盖范围、最后一次回调与资源边界；任何自动识别最多形成可编辑的待复核项，绝不直接正式入账。
+在不增加云端后端、Root、私有目录读取、全天截屏/录屏或周期性扫描的前提下，为通知、只读支付结果页和用户触发单次凭证建立独立采集路径。用户能看见每条路径的权限、覆盖范围、连接/回调健康与资源边界；任何自动识别最多形成可编辑的待复核项，绝不直接正式入账。持久“最后回调时间”尚未实现，不得从当前进程内健康状态推断。
 
 第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退：默认没有来源模板，因此不会读取任何支付 App 的正文，也不会声称支付宝、微信或银行已接入。它建立以后可由脱敏样本驱动的指定 App 模板安全接入。用户可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。后续磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎与未签名 Release 静态门已完成但实际推理/真机/签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
 
@@ -55,7 +55,7 @@
 - [x] 2026-07-26 - 在设置教程中增加不含来源/正文的进程内通知健康状态：空目录、队列满跳过次数与失败次数均可见；单测证明只暴露安全聚合计数。
 - [x] 2026-07-26 - 接通用户明确分享的一张 PNG 收据截图：`ACTION_SEND image/png` 只使用当次 `content://` 授权，有界读取最多 4 MiB，验证 PNG 签名/IHDR/尺寸/分块 CRC/IDAT/IEND 后进入现有私有证据、RawEvent、ParseAttempt 和手工复核链。临时字节在完成或失败后擦除；不保存 URI/文件名、不申请相册权限、不解码/预览像素、不运行 OCR 或推断财务字段。JVM parser、application 与 ViewModel 回归已覆盖，真实 Sharesheet/真机仍待验收。
 - [x] 2026-07-26 - 将空目录重构为静态 `VerifiedNotificationRoute` 目录、默认关闭的本地 route enablement，以及 `route -> source identity -> RawEvent -> parser -> source review` 的完整安全链；类别（包括 null）精确匹配，ingress 拒绝同值 lookalike route、在写入前再次检查开关，复核只显示安全标签。生产目录继续为空，不能以此宣称任何 provider 已支持。已由 `:source:generic-notification:test :application:test :app:testDebugUnitTest :data:local:assembleDebugAndroidTest :feature:review:compileDebugKotlin` 验证。
-- [ ] 首个非空 route catalog 前 - 在设置页接通只显示安全标签的 route 选择器与“目录存在但尚未开启”健康状态；不得把 app-private enablement 基础类误称为当前用户可启用的真实来源能力。
+- [x] 2026-07-31 - 在首个非空 route catalog 前接通只显示安全标签的 route 选择器、串行后台写盘、持久化失败重试，以及“无目录 / 全暂停 / 系统权限缺失 / listener 尚未连接 / 就绪 / 背压 / 失败”健康状态。开启写盘失败不放行；关闭失败立即收紧本进程门禁并冻结其他变更，直到重试成功。无目录且没有既有系统授权时不显示授权入口；若系统授权仍在，即使目录为空或路线全暂停也保留“管理或撤销”入口。生产目录继续为空。JVM 回归、Debug/AndroidTest APK 构建及港版 S24 Ultra Android 16 上 3 个隔离 SharedPreferences instrumentation 均通过，覆盖跨实例启停、旧 route 丢弃和损坏偏好类型失败关闭；这些测试没有授予通知使用权，也没有读取真实通知。
 - [ ] 2026-07-26 - 补真实系统 callback 更新回放、容量和敏感日志回归；没有这组设备验证时不得开放真实 provider 模板或把 listener 声称为完整账单覆盖。
 - [ ] 待项目负责人明确授权真实内容范围后 - 在 S24U-HK、国行 S24U、已建档小米执行通知资源基线；记录 OEM 回调存活与可选省电设置，不能用模拟器替代。
 - [ ] 待通知基线、商店政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 换成静态随包 PP-OCRv6 small，并通过代码/AAR/未签名 Release 的本地无网络静态检查；实际三语推理、签名发行、ELF 页兼容与目标真机资源门未完成前仍不得发布。
@@ -66,6 +66,9 @@
 - Notification Listener 没有可作为隐私边界的“只订阅这些包正文”模式；应用必须在自己的代码中先按包名、渠道、类别和模板门禁，且默认空目录最安全。
 - 同一个系统通知可更新并再次触发回调；不能按金额或正文哈希把不同通知合并，也不能把 `onNotificationRemoved` 解释为退款或删账。
 - 当前 `RoomRawEventRepository` 已要求 `NOTIFICATION` 有暂存租约；既有 `STATEMENT_IMPORT` 仓储测试 fixture 曾绕过该前提，现已改成非暂存 `SHARE_FILE` 观察测试；暂存行为由专门 staging 测试覆盖。
+- route 开关原实现先改内存再 `commit()`；启用写盘失败时会在本进程意外放行。修正后开启先持久化，关闭先收紧运行时门禁。另一个容易漏掉的竞态是：关闭写盘失败后若允许修改其他 route，会覆盖唯一的重试提示并可能在重启后恢复旧开启状态；控制面现在会冻结其他开关，直到原隐私写入重试完成。
+- S24U-HK 的 instrumentation test context 没有可用的 app data 目录，测试专用 SharedPreferences 写入会失败。Android 回归因此使用 target context 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件，并且只删除该测试文件；它不触碰生产偏好名。测试中断最多遗留无功能的 fixture ID，不会改变生产 route 状态。
+- Android 设置中的 enabled-listener 包集合只证明系统授权存在，不证明 `NotificationListenerService` 已连接。健康状态现在另行跟踪 `onListenerConnected` / `onListenerDisconnected`；One UI 或 HyperOS 断连时不能显示“已准备好”。
 
 ## 决策日志
 
@@ -81,6 +84,7 @@
 - 2026-07-26 - 单次收款凭证先采用系统 Sharesheet 的精确 PNG 入口，而不是相册权限、MediaProjection、读屏或 OCR。首版只验证有界文件结构并建立手工复核，不把图像内容解析成账务事实；这样补足无通知例外时不新增常态耗电。
 - 2026-07-26 - 将 route ID 固定为 parser identity 的不透明 token；它只用于本地启用状态和安全展示键，包名、通知渠道、类别和正文仍只留在瞬时元数据门。类别即使为 null 也必须精确匹配，不能把 null 当通配符。route 被关闭或从新版目录移除时停止新采集，不删除既有证据、解析尝试或草稿。
 - 2026-07-26 - route 默认关闭同时应用在 metadata gate 与 evidence ingress；关闭发生在队列/prepare 之后也不会落证据。开关写入是隐私撤销，成功返回前必须使用同步 `SharedPreferences.commit()` 完成磁盘写入；未来设置 UI 必须在后台调用并显示失败重试。目录还必须拒绝与既有通用通知 parser 相同的 `(sourceFamily, connectorId)`，避免真实 route 因 parser 歧义静默失败。
+- 2026-07-31 - 通知 route 控制面只接收 catalog 导出的 opaque route ID 与安全标签；磁盘写入在串行后台边界完成。开启必须先 `commit()` 成功再放行运行时门禁；关闭先立即收紧本进程门禁，再尝试持久化，失败时保持关闭、冻结其他开关并显式要求重试。该关闭保证严格限定于当前进程：若持久介质不可写，用户必须在退出或重启前重试，仍失败则到 Android 设置撤销 Bill 的应用级通知使用权。健康状态还要求 listener 实际连接后才能显示就绪。系统设置入口只在存在已开启 route、或已有系统授权需要管理/撤销时显示；无路线且无既有授权时不诱导授权。
 
 ## 代码审查记录（2026-07-25）
 
@@ -112,7 +116,14 @@
 - 范围：静态 `VerifiedNotificationRoute` catalog、默认关闭的 app-private enablement、gate/ingress 双重开关、route provenance、parser 注册、复核安全标签及对应文案。
 - 已修复：gate 与 ingress 的默认回调原先可能在调用方遗漏时放行，现默认关闭；关闭发生在 prepare 后仍会被 ingress 忽略并释放观察租约；SharedPreferences 由异步 `apply()` 改成串行、可确认的 `commit()`；目录拒绝与 `GenericNotificationParser` 的来源 tuple 冲突；fatal `Throwable` 不再被安全标签解析器吞掉；Android 通知使用权文案不再误称能开启单条 route。
 - 结论：生产 catalog 仍为空，未知/关闭 route 不读取正文或落证据；已验证 route 身份才能进入 RawEvent，parser 仍只创建待复核工作。`:source:generic-notification:test :application:test :app:testDebugUnitTest :data:local:assembleDebugAndroidTest :feature:review:compileDebugKotlin --console=plain` 成功；Android test APK 只完成编译打包，未连接设备。
-- 保留风险：首个非空 catalog 前仍须补只显示安全标签的 Bill 内 route 选择器、“有目录但未开启”健康状态，以及 SharedPreferences 跨实例/旧 route ID 的 Android 回归。真实 callback/OEM 行为和资源基线仍需本轮明确真机授权。
+- 保留风险：当时首个非空 catalog 前仍须补只显示安全标签的 Bill 内 route 选择器、“有目录但未开启”健康状态，以及 SharedPreferences 跨实例/旧 route ID 的 Android 回归；这些控制面缺口已由 2026-07-31 第六轮关闭。真实 callback/OEM 行为和资源基线仍需另行明确真机授权。
+
+## 第六轮代码审查记录（2026-07-31）
+
+- 范围：route 设置控制器、SharedPreferences 持久边界、最小权限 CTA、listener 连接健康、TalkBack 语义、Android instrumentation 隔离和生产 fixture 隔离。
+- 已修复：开启/关闭写入采用不同的失败关闭顺序；失败态冻结无关 route 并保留精确重试；同值请求不重复写盘；损坏/旧偏好默认全关；设置页只接收安全标签，整行合并为有标签的 TalkBack 开关；系统设置入口失败会提示手工路径；已有系统授权时保留管理/撤销入口；授权存在但 listener 未连接时不再显示就绪。AndroidTest 改用独立测试偏好文件，Release 静态检查未发现 fixture route、包名或测试类。
+- 真机证据：`SM-S9280` 港版 S24 Ultra、Android 16/API 36、arm64-v8a 上 3 个 route 偏好 instrumentation 通过；另完成 Bill 设置深链冷启动冒烟。没有授予或读取系统通知使用权，没有读取支付宝、微信、银行或真实通知内容，因此不构成 `NLS-01`、真实 callback、OEM 后台存活或 provider 支持证据。
+- 结论：复审未发现当前空 catalog 切片的 P0–P2；完整 879-task JVM/Lint/Debug/Release/三组 AndroidTest APK 构建通过，两个 Release 分包通过 16 KiB ZIP 对齐。剩余发布阻断仍是脱敏 provider 样本、真实系统 callback 更新/重启回放、目标 OEM 资源基线和完整权限撤销矩阵。
 
 ## 实施步骤
 
@@ -124,6 +135,7 @@
 6. 将只读结果页与截图 OCR 作为后续独立计划步骤：前者限制来源包和事件；现有截图回退只接收用户用系统 Sharesheet 明确交付的一张 PNG，不订阅窗口事件、读取节点、解码像素或运行 OCR。任一新增服务或 OCR 都需重新过隐私、资源和真机门。
 7. 有用户授权后执行设备对照；若 OEM 仅在关闭电池优化后回调，记录为可选设备配置而非默认要求。任何真实内容只产出脱敏测试结论，不写入 Git、日志或对话摘要。
 8. 当前迭代：新增静态 route catalog 与 app-private enablement；gate 在读取 extras 前同时要求目录命中、route 已启用、包名/频道/类别精确匹配。Prepared capture 把 route identity 交给 ingress，后者以 route 的 `SourceFamily` 和 connector 建立 RawEvent；同一 route 的 parser 验证 template/version 后仅生成待复核项。复核 UI 只由 opaque connector 映射本地安全标签，绝不显示包名、频道或正文。测试使用虚构 `fixture.*` route，生产目录保持空。
+9. 当前控制面切片：以 catalog presentation 建立只读设置快照，通过单飞串行后台命令启停 route；开关不可越过 catalog，开启不得在持久化失败时放行，关闭失败则只保证本进程立即收紧并要求在重启前重试或撤销系统授权。设置页仅在 route 已开启时提供授权入口；若应用级系统授权已存在，则无论 route 是否暂停或 catalog 是否为空都保留管理/撤销入口。健康状态还要求 listener 实际连接后才能显示就绪。fixture catalog、损坏偏好和跨实例 Android 回归覆盖控制面；生产 catalog 仍为空。
 
 ## 具体命令
 
@@ -158,4 +170,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付空模板通知证据基础、Room v7 中保留的 v6 持久观察去重、有界回调队列、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退；没有真实 provider 模板、读屏或真机资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录真实模板、设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付空模板通知证据基础、Room v7 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。S24U-HK 只验证了 3 个隔离偏好 instrumentation 和 Bill 冷启动，不包含通知授权、系统 callback、真实 provider 或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录真实模板、设备回放、测得资源结果、未开放能力和对来源支持标签的影响。

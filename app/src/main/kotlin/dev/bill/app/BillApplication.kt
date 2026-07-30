@@ -30,7 +30,9 @@ import dev.bill.source.genericnotification.NotificationRouteCatalog
 import dev.bill.source.genericnotification.NotificationTemplateGate
 import dev.bill.app.notification.NotificationCaptureCoordinator
 import dev.bill.app.notification.AppPrivateNotificationObservationIdDeriver
+import dev.bill.app.notification.AndroidNotificationListenerAccess
 import dev.bill.app.notification.NotificationCaptureHealth
+import dev.bill.app.notification.NotificationRouteSettings
 import dev.bill.app.notification.SharedPreferencesNotificationRouteEnablement
 import dev.bill.source.contract.NotificationObservationRepository
 import dev.bill.source.contract.NotificationObservationReservation
@@ -88,6 +90,8 @@ class AppContainer(context: Context) {
     private val notificationRouteEnablement by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         SharedPreferencesNotificationRouteEnablement(context, notificationRouteCatalog)
     }
+
+    private val notificationListenerAccess = AndroidNotificationListenerAccess(context)
 
     val sourceEvidenceLifecycleService: SourceEvidenceLifecycleService by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
@@ -207,7 +211,29 @@ class AppContainer(context: Context) {
 
     internal val notificationCaptureHealth = NotificationCaptureHealth(
         hasVerifiedTemplates = notificationTemplateGate.hasVerifiedTemplates(),
+        hasEnabledRoutes = notificationRouteEnablement.enabledRouteIds().isNotEmpty(),
+        hasSystemAccess = notificationListenerAccess.isGranted(),
     )
+
+    internal val notificationRouteSettings = NotificationRouteSettings(
+        catalog = notificationRouteCatalog,
+        enablement = notificationRouteEnablement,
+        onEnabledRoutesChanged = { enabledRouteIds ->
+            notificationCaptureHealth.onConfigurationChanged(
+                hasEnabledRoutes = enabledRouteIds.isNotEmpty(),
+                hasSystemAccess = notificationListenerAccess.isGranted(),
+            )
+        },
+    )
+
+    internal fun refreshNotificationCaptureConfiguration(): Boolean {
+        val hasSystemAccess = notificationListenerAccess.isGranted()
+        notificationCaptureHealth.onConfigurationChanged(
+            hasEnabledRoutes = notificationRouteEnablement.enabledRouteIds().isNotEmpty(),
+            hasSystemAccess = hasSystemAccess,
+        )
+        return hasSystemAccess
+    }
 
     private val notificationObservationRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         RoomNotificationObservationRepository(database)

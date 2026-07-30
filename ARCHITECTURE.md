@@ -1,8 +1,8 @@
 # 系统架构地图
 
-- 状态：部分实现；本地账本、通用显式文本/CSV/TSV 证据、用户确认对账、空模板通知边界、持久观察去重与实验性随包 OCR 已实现，provider 适配和 OCR 真机发布门待验证
+- 状态：部分实现；本地账本、通用显式文本/CSV/TSV 证据、用户确认对账、空模板通知边界、route 控制面、持久观察去重与实验性随包 OCR 已实现，provider 适配和 OCR 真机发布门待验证
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：当前 Gradle/Room 工程、项目负责人范围修正、`docs/design-docs/` 下的细化文档、[ADR-0005](docs/decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](docs/decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](docs/decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](docs/decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0009](docs/decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0010](docs/decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0011](docs/decisions/0011-local-resource-budget-first-capture.md)
 
 本文只描述稳定边界。实体字段、解析规则和 UI 细节分别由 [领域模型](docs/design-docs/domain-model.md)、[来源适配器](docs/design-docs/ingestion-and-source-adapters.md) 与 [产品规格](docs/product-specs/index.md) 维护。
@@ -67,7 +67,9 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 
 来源断面先在 Room 登记 5 分钟暂存租约，再把证据写入 `noBackupFilesDir`；文本载荷限制为 64 KiB 并严格校验 UTF-8，用户显式分享的单张 PNG 收据限制为 4 MiB 并只校验有界 PNG 结构/CRC、不解码像素。两类载荷均校验长度和 SHA-256。独立的 Quick Settings/Photo Picker OCR 只在用户动作后处理一帧或每批前 1–5 张图片，持久化有界转录而非原始像素；Photo Picker 单飞串行并只汇总一次。截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入之前，以 CAS 将 `ACTIVE` 原子转为 `COMMITTING`。CAS 前取消会终止 Job 且不进入任何有副作用的准入路径；cancellation handle 注册中的中间态不会被误判为已取消。CAS 后先释放像素，再在 15 秒协作式截止内运行有界、无网络的本地 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常都返回 `COMMIT_STATUS_UNKNOWN`，交由幂等与暂存恢复确认。提交中或结果已形成但回调缺失时另有一次 15 秒收尾宽限，随后以“结果未确认”释放单飞门；opaque request identity 隔离迟到回调。磁贴/无障碍设置入口深链到 Bill 教程，启动本地声明使用 safe drawing insets 与可滚动布局；这些交互加固不改变 OCR 的 Experimental 状态。RawEvent/生命周期事务原子消费租约；到期租约和旧版孤儿由 CAS 接管与有界扫描恢复。`RawEvent` ID 碰撞、解析/建议/证据链接/载荷生命周期跨表不一致以及损坏载荷均失败关闭。重复哈希只产生用户可见提示，不自动合并；忽略追加审计并保留证据。原始载荷使用两阶段清除、7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算和 keyset 分页；自动保留/容量清理不删除待复核载荷，清除后结构化事实链继续保留。
 
-以上是代码实现状态，不是发布支持结论。2026-07-30 最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest` 成功（850 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和两组 AndroidTest APK 编译，已包含设置深链、90 秒截图租约/迟到回调隔离、handle 注册竞态、15 秒本地提交截止/提交后未知态、Photo Picker 单飞批次汇总和启动声明布局加固；arm64-v8a/x86_64 分包的权限、组件、模型、目标 ABI、体积与 16 KiB ZIP 对齐也已静态核验。AndroidTest APK 编译不是设备执行；Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。实际三语 OCR、签名发行、ELF 页兼容、投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
+通知 route 控制面只接收静态 catalog 导出的 opaque ID 与安全标签。开启先同步持久化再放行运行时门禁；关闭先通过 volatile 不可变快照收紧本进程门禁，再持久化并在失败时冻结其他开关。失败关闭的跨进程边界会明确披露：若重试仍失败，用户须在退出或重启前撤销 Android 的应用级通知使用权。授权 CTA 只在已启用 route 需要授权，或系统授权仍在需要管理/撤销时出现；健康状态把系统授权与 listener 实际连接分开。当前生产 catalog 为空，S24U-HK/API 36 的 3 个 instrumentation 仅验证隔离偏好持久化与损坏输入失败关闭，不是系统 callback 或 provider 证据。
+
+以上是代码实现状态，不是发布支持结论。2026-07-31 完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（879 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和三组 AndroidTest APK 编译；arm64-v8a/x86_64 分包也重新通过 16 KiB ZIP 对齐。另有同日在 S24U-HK/API 36 对当前源码执行的 3 个隔离 route 偏好 instrumentation 并 3/3 通过，但它们没有授予通知使用权或运行系统 callback。Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。实际三语 OCR、签名发行、ELF 页兼容、投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
 
 ## 建议模块边界
 
@@ -126,7 +128,7 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 ## 存储与安全边界
 
 - 结构化数据进入应用私有 Room/SQLite；分享文本、不透明文件和 CSV/TSV 行证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 增加不含通知 key/正文的观察摘要与恢复租约，v7 增加不含单元格的导入批次/行状态和对账关系。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
-- 密钥由 Android Keystore 保护；备份在离开应用私有目录前加密。
+- 目标状态是由 Android Keystore 保护备份密钥，并在数据离开应用私有目录前完成认证加密；当前加密备份、密钥恢复和轮换尚未实现，不得按现有能力宣传。
 - 导入使用 Storage Access Framework，不申请广泛文件访问。
 - 生产日志只记录事件 ID、规则版本和错误码；不记录金额、商户、账号、通知正文或文件内容。
 - MVP 不依赖读取其他 App 私有目录、抓包、Root、默认短信读取、24 小时截屏/录屏或轮询 OCR。通知 listener 仅按系统回调、元数据门禁和有界本地证据运行，不读历史或启用保活；当前生产模板目录为空。被动无障碍读取仅是待用户明确授权与发行合规审查的研究门，且绝不执行 UI 操作或读取当前版本的屏幕内容。

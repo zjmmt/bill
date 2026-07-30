@@ -34,6 +34,16 @@ class BillNotificationListenerService : NotificationListenerService() {
         }
     }
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        updateListenerConnection(connected = true)
+    }
+
+    override fun onListenerDisconnected() {
+        updateListenerConnection(connected = false)
+        super.onListenerDisconnected()
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val application = application as? BillApplication ?: return
         val notification = sbn.notification ?: return
@@ -70,10 +80,19 @@ class BillNotificationListenerService : NotificationListenerService() {
     }
 
     override fun onDestroy() {
+        updateListenerConnection(connected = false)
         captureQueue.close()
         queueWorker?.cancel()
         ioScope.cancel()
         super.onDestroy()
+    }
+
+    private fun updateListenerConnection(connected: Boolean) {
+        val application = application as? BillApplication ?: return
+        val hasSystemAccess = application.container.refreshNotificationCaptureConfiguration()
+        application.container.notificationCaptureHealth.onListenerConnectionChanged(
+            connected && hasSystemAccess,
+        )
     }
 
     private suspend fun ingestQueued(work: QueuedNotificationCapture) {

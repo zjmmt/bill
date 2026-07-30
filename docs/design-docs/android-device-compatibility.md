@@ -1,11 +1,11 @@
 # Android 设备兼容与真机验收
 
-- 状态：已确认测试范围；`S24U-HK` 已有受限的应用级合成冒烟证据，完整真机与来源结论待验证
+- 状态：已确认测试范围；`S24U-HK` 已有受限的应用级合成冒烟和 3 个 route 偏好 instrumentation，完整真机、通知 callback 与来源结论待验证
 - 所有者：项目维护者
-- 最后核验：2026-07-27
-- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求，以及 2026-07-25 的脱敏 `S24U-HK` 应用级冒烟记录
+- 最后核验：2026-07-31
+- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求、2026-07-25 的脱敏 `S24U-HK` 应用级冒烟，以及 2026-07-31 的隔离 route 偏好 instrumentation
 
-本文是地区版本、OEM 行为和真机验收的唯一事实来源。它定义要验证什么，不声明任何设备已经通过。页面视觉规则见 [UI 设计系统](ui-design-system.md)，通知与导入边界见 [来源适配器设计](ingestion-and-source-adapters.md)，通用测试原则见 [RELIABILITY.md](../RELIABILITY.md)。
+本文是地区版本、OEM 行为和真机验收的唯一事实来源。它定义要验证什么；除逐项明确记录的受限证据外，不声明任何设备已通过完整真机用例、来源适配或发布门。页面视觉规则见 [UI 设计系统](ui-design-system.md)，通知与导入边界见 [来源适配器设计](ingestion-and-source-adapters.md)，通用测试原则见 [RELIABILITY.md](../RELIABILITY.md)。
 
 ## 验收原则
 
@@ -23,7 +23,7 @@
 
 | 设备代号 | 已知信息 | 执行前必须补齐 | 当前角色 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；仅应用级合成冒烟，未完成任一完整真机用例 |
+| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟和 3 个 route 偏好 instrumentation，未完成任一完整真机用例 |
 | `S24U-CN` | 国行 Samsung Galaxy S24 Ultra | 型号代码、CSC/地区、Android 与 One UI 完整构建、安全补丁、RAM/存储档、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | 无 GMS 核心路径主验证、One UI 后台与竖屏主视觉验证 | 待建档、未实测 |
 | `XIAOMI-CN` | 国行小米，具体型号未知 | **具体型号**、SoC/RAM/存储档、Android 与 HyperOS 完整构建、安全补丁、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | HyperOS 权限、后台、文件入口和竖屏主视觉压力验证 | **研究门未满足，不得声称代表任何小米机型或性能档** |
 | `MUMU-API32` | MuMu 模拟器；当前 ADB 建档为 API 32、`x86_64`，上报型号 `SM-S9280` | MuMu 版本、镜像版本、分辨率/密度、sw/window dp、旋转与窗口设置 | 快速安装、竖屏布局和合成流程冒烟 | 仅模拟器；不是 Samsung 硬件、国行固件、One UI 或真 S24 Ultra 证据 |
@@ -95,6 +95,20 @@ MuMu 上报 `SM-S9280` 只是设备属性仿真；API 32、`x86_64` 镜像既不
 | 支付 App 边界 | 本会话只观察到支付宝与微信支付已安装（版本码分别为 `212090`、`3141`）；没有读取其私有数据、通知或导出内容，也没有发起支付。因此两者仍为 `FALLBACK_REQUIRED`，不记录为已接入。 |
 
 本节不把任何可执行用例标为“通过”：`INSTALL-01` 尚未覆盖手工录入/SAF/GMS，`ORIENT-01` 尚未覆盖旋转和窗口模式，`INSETS-01` 尚未覆盖可选分辨率与输入法，`SHARE-01` 尚未从实际系统分享面板或文件管理器运行。其余通知、后台、省电、隐私、无障碍与更新用例均未执行。
+
+## 2026-07-31 `S24U-HK` 通知 route 控制面回归
+
+这组记录只验证 Bill 自身 route 偏好的 Android 持久化边界。没有授予或读取系统通知使用权，没有制造 `NotificationListenerService` callback，没有打开或读取支付宝、微信、银行及任何真实通知内容。
+
+| 字段 | 记录 |
+| --- | --- |
+| 设备 | `SM-S9280`，Android 16/API 36，`arm64-v8a`；ADB 状态为可用设备。设备序列号不入库。 |
+| 仪器测试 | `:app:connectedDebugAndroidTest` 共运行 3 个用例，3/3 通过：启停状态跨新实例保留且只保存 opaque route ID；旧/已移除 route ID 不会打开运行时门；损坏为错误类型的偏好默认全关而不崩溃。 |
+| 测试数据隔离 | One UI 上 test APK context 没有可写 app data 目录，因此改用 target app context 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件；Before/After 只删除该测试文件，不触碰生产 `bill.notification-route-enablement`。测试中断最多遗留无功能 fixture ID。 |
+| 启动冒烟 | 测试包安装后从 Bill 的设置深链冷启动进入 `MainActivity`，Activity 正常启动且进程保持；没有打开系统通知设置或真实来源 App。 |
+| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。生产 catalog 仍为空。 |
+
+因此本轮只把“route 偏好控制面在这台 One UI 设备可持久化并失败关闭”记为局部证据；通知、后台、省电和真实来源用例仍是未执行。
 
 ## 完成门
 

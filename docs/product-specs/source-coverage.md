@@ -1,8 +1,8 @@
 # 数据源覆盖与支持状态
 
-- 状态：部分实现；手工、通用分享文本、不透明文本证据、本地 CSV/TSV 显式映射、用户显式单次 PNG 收据、受控通知 route catalog 边界、用户确认对账和持久观察去重已有代码；Quick Settings/Photo Picker 本地 OCR 已有未签名 Release 静态审计，但真机发布门未完成，三类 provider 适配器未实现
+- 状态：部分实现；手工、通用分享文本、不透明文本证据、本地 CSV/TSV 显式映射、用户显式单次 PNG 收据、受控通知 route catalog/控制面、用户确认对账和持久观察去重已有代码；Quick Settings/Photo Picker 本地 OCR 已有未签名 Release 静态审计，但真机发布门未完成，三类 provider 适配器未实现
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：当前 Android/Room/来源模块、项目负责人范围、Android/平台官方资料、财付通公开隐私政策、来源适配器设计、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
 
 本文件定义目标能力和“什么才算支持”，同时记录生成矩阵上线前的人工核验快照。当前已有受限 CNY/USD 手工账本闭环，以及 provider-unverified 的显式分享文本、不透明文本文件、用户逐列映射 CSV/TSV 和单次 PNG 收据截图证据/复核闭环；另有 Quick Settings 单次截图与 Photo Picker 最多 5 张串行 OCR。CSV/TSV 只提供来源中立映射，不识别银行或支付平台。PP-OCRv6 small + ONNX Runtime/OpenCV 已静态随包，并通过源码/AAR 与当前未签名 Release 分包的权限、组件、ABI、模型、体积和 16 KiB ZIP 对齐审计；实际中英/日英推理、ELF LOAD 段页兼容、目标真机资源和签名发行证据仍未完成。支付宝、微信支付和具体银行的真实通知、专属文件格式与解析适配器均未实现。现金、支付宝余额和微信零钱只能是 CNY；只有银行卡和信用卡可为 USD，且没有汇率换算。电子钱包余额与银行卡是独立资金账户：银行卡流水不能补齐钱包余额内的红包、个人转账、余额消费或余额退款。未来生成器建立后，逐格式实际矩阵必须由代码和测试写入 `docs/generated/`，不得手工伪造。
@@ -25,7 +25,7 @@
 | 支付宝通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于支付宝支持 |
 | 微信支付通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于微信支持 |
 | 银行通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 未选择可验证格式/首批银行，无脱敏样本和回放测试；只能手工补录。通用通知底座不等于银行支持 |
-| 通用受控通知 route 证据 | 已实现，不能独立使用 | 生产目录为空；不改变 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。空目录、关闭或未知 route 都不读正文、不落库；ingress 会再次检查开关，以防关闭发生在队列准备后。未来候选使用容量 16 队列、Room v7 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，复核 UI 只显示本地安全标签，不识别金额或直接过账 |
+| 通用受控通知 route 证据 | 已实现，不能独立使用 | 生产目录为空；不改变 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。设置页只显示 catalog 安全标签；开启先持久化，关闭先收紧本进程门禁，失败会冻结其他 route 并要求重试或在重启前撤销系统通知使用权。授权入口只在 route 已启用或既有系统授权需要管理/撤销时出现，系统授权与 listener 实际连接分别诊断。空目录、关闭或未知 route 都不读正文、不落库；ingress 会再次检查开关，以防关闭发生在队列准备后。未来候选使用容量 16 队列、Room v7 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，复核 UI 只显示本地安全标签，不识别金额或直接过账。S24U-HK/API 36 的 3 个 instrumentation 只验证偏好持久化、旧 ID 丢弃和损坏类型失败关闭，不是系统 callback 或 provider 证据 |
 | 通用手工录入/期初余额 | 已实现，发布门未完成 | CNY 路径经自动化与 MuMu API 32 验证；USD 自动回归通过，相关 Android instrumentation 只编译、未在设备执行 | 现金、电子钱包余额只允许 CNY；银行卡和信用卡允许 CNY/USD。收入/支出先 Draft，选择同币种资金账户后平衡确认；无跨币种汇率或总额 |
 | 用户显式分享 `text/plain` | 已实现，发布门未完成 | 生命周期单测、Room v5 staging 与 MuMu API 32 已验证；当前 schema 为 v7 | 始终为 `GENERIC/SHARE_TEXT`；64 KiB、严格 UTF-8、私有 no-backup 证据和哈希校验；不猜 provider/金额/类型/账户，用户补全；重复只提示；已有逐项两阶段清除、7/30/90/永久保留、已提交与暂存共用的 16 MiB/512 份预算、租约恢复、有界孤儿扫描和 keyset 分页；缺压力、真实系统强杀、自动化 Compose 和完整真机证据 |
 | 用户显式选择不透明文本文件 | 已实现，发布门未完成 | 既有 JVM/ViewModel 回归通过；SAF 真机待验收 | `GENERIC/STATEMENT_IMPORT` 的证据回退；当次读取 `text/plain`、CSV 或 TSV，64 KiB 有界复制为一条证据，不持久化 URI/文件名，不解析行或猜 provider/金额/账户 |

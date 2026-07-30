@@ -1,8 +1,8 @@
 # 采集、导入与来源适配器
 
-- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界、持久观察去重与证据生命周期已实现；单次截图/Photo Picker 本地 OCR 的未签名 Release 静态门完成，实际推理/真机/签名发布门未完成，provider 格式待样本
+- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界/控制面、持久观察去重与证据生命周期已实现；单次截图/Photo Picker 本地 OCR 的未签名 Release 静态门完成，实际推理/真机/签名发布门未完成，provider 格式待样本
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：多来源产品要求、Android 官方能力边界、当前来源/Room/Application 实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
 
 ## 目的
@@ -82,9 +82,9 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 
 - `:source:generic-notification` 定义了不含 Android 对象、包名、通知 key、actions 或 URI 的 `NotificationEnvelope`。它只保留经模板选中的有限字段、opaque 模板 ID/版本和事件时间；严格 UTF-8、NUL、未配对 surrogate、字段数与总编码大小均有硬门。证据最多 8 KiB，并由既有私有暂存/保留/清除链管理。
 - `NotificationListenerService` 只先读取包名、具体 Android 通知渠道和类别。静态 `VerifiedNotificationRoute` 同时提供 metadata rule、route ID、SourceIdentity、parser 与安全显示标签；类别为 null 时也只匹配 null，不能当通配符。只有三者精确命中且 route 已在 app-private 本地设置中显式开启，才复制 title/text/subText/bigText/summaryText 的有界字段；未命中、关闭或 route 已移除时不碰 `extras`，不入库、不打日志、不创建草稿。模板不得只按包名匹配。候选工作进入容量 16 的非阻塞内存队列，由单个 IO consumer 串行处理；满队列时丢弃这次工作项，不启动额外协程或重试任务。
-- 当前生产 route catalog 为空；因此用户当前即使错误地授予通知访问，运行时也不会读取任何通知正文，也不会声称支付宝、微信或银行已接入。未来经过样本验证的 route 只有在元数据门、显式本地开关、持久观察租约和有界队列都存在时才能运行：Prepared capture 必须携带 catalog 的原 route 对象；ingress 拒绝调用者拼出的同值 lookalike，并在持久化前再次检查开关，因此关闭发生在排队/prepare 后也只释放观察租约而不落通知证据。开关变更串行并用 `SharedPreferences.commit()` 确认写盘，未来 UI 必须在后台执行并显示失败。ingress 从该 route 写入 `RawEvent.sourceFamily` 与 `connectorId`；catalog 同时拒绝与既有通用通知 parser 相同的来源 tuple。解析器复核 envelope template/version 后只形成待复核项；复核投影只由 opaque connector 解析安全标签，不显示包名、频道、类别或正文。当前 enablement 仅是 production-empty catalog 的安全基础；首个真实 route 合入前必须另外接通用户可见的安全标签选择器和“尚未开启”健康状态。观察 HMAC 摘要以 `StatusBarNotification.key` 与 post time 派生；两分钟过期租约复用原 command，成功 hand-off 后标记 `CAPTURED`。已捕获摘要与已失效超过 90 天的活动租约只在后续候选回调中有界清理，不设后台维护任务。通用 parser 不猜金额、方向、账户、provider 或直接过账。
+- 当前生产 route catalog 为空；因此用户当前即使错误地授予通知访问，运行时也不会读取任何通知正文，也不会声称支付宝、微信或银行已接入。未来经过样本验证的 route 只有在元数据门、显式本地开关、持久观察租约和有界队列都存在时才能运行：Prepared capture 必须携带 catalog 的原 route 对象；ingress 拒绝调用者拼出的同值 lookalike，并在持久化前再次检查开关，因此关闭发生在排队/prepare 后也只释放观察租约而不落通知证据。设置控制面已接通：catalog 只向 UI 导出 opaque route ID 与安全标签；开关命令在单飞后台边界串行，开启先用 `SharedPreferences.commit()` 成功写盘再放行，关闭先收紧本进程门禁再写盘，失败时冻结其他 route 并保留精确重试。该关闭无法在同一持久介质不可写时伪造跨进程保证，故文案要求立即重试；仍失败则在退出/重启前到 Android 设置撤销 Bill 的应用级通知使用权。系统设置入口只在 route 已启用需要授权、或既有授权需要管理/撤销时出现；系统授权与 listener 的 `onListenerConnected` 状态分别诊断。ingress 从 route 写入 `RawEvent.sourceFamily` 与 `connectorId`；catalog 同时拒绝与既有通用通知 parser 相同的来源 tuple。解析器复核 envelope template/version 后只形成待复核项；复核投影只由 opaque connector 解析安全标签，不显示包名、频道、类别或正文。观察 HMAC 摘要以 `StatusBarNotification.key` 与 post time 派生；两分钟过期租约复用原 command，成功 hand-off 后标记 `CAPTURED`。已捕获摘要与已失效超过 90 天的活动租约只在后续候选回调中有界清理，不设后台维护任务。通用 parser 不猜金额、方向、账户、provider 或直接过账。
 - 不读取历史通知、不修改外部通知、不开前台服务、不设周期任务或唤醒锁。通知无法反映没有通知的领取、发送或后台余额变动，也不能补历史；来源健康页必须把这些显示为覆盖缺口，而不是显示“自动同步正常”。
-- 首个真实模板前仍缺真实系统 callback 更新回放和真机资源数据；设置页当前已显示不含来源/正文的空目录、队列跳过与失败健康状态。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
+- 首个真实模板前仍缺真实系统 callback 更新回放和真机资源数据；设置页当前已显示不含来源/正文的空目录、全暂停、系统权限缺失、listener 未连接、队列跳过与失败健康状态。S24U-HK/API 36 上 3 个 instrumentation 只验证独立测试偏好的跨实例启停、旧 ID 丢弃和损坏类型失败关闭；没有授予通知使用权或运行系统 callback。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
 
 ## 被动无障碍读取（研究门）
 

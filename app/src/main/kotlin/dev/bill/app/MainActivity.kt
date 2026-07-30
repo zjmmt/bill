@@ -15,6 +15,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +57,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,6 +67,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -74,6 +77,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +90,9 @@ import dev.bill.application.SourceEvidenceOperationError
 import dev.bill.app.notification.NotificationCaptureHealth
 import dev.bill.app.notification.NotificationCaptureHealthSnapshot
 import dev.bill.app.notification.NotificationCaptureHealthState
+import dev.bill.app.notification.NotificationRouteSettings
+import dev.bill.app.notification.NotificationRouteSettingsSnapshot
+import dev.bill.app.notification.openNotificationListenerSettings
 import dev.bill.app.quickcapture.BillQuickCaptureRuntime
 import dev.bill.app.quickcapture.BillQuickCaptureTileService
 import dev.bill.app.quickcapture.ContentResolverSelectedPhotoOcrImporter
@@ -115,6 +123,7 @@ import dev.bill.source.review.SourceEvidenceItem
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 
 private const val MAX_SELECTED_OCR_IMAGES = 5
 
@@ -158,6 +167,9 @@ class MainActivity : ComponentActivity() {
                     notificationCaptureHealth = (application as BillApplication)
                         .container
                         .notificationCaptureHealth,
+                    notificationRouteSettings = (application as BillApplication)
+                        .container
+                        .notificationRouteSettings,
                     requestedDestination = requestedDestination,
                     onRequestedDestinationHandled = { handled ->
                         if (requestedDestination == handled) {
@@ -190,6 +202,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        (application as BillApplication).container.refreshNotificationCaptureConfiguration()
         billViewModel.revealForForeground()
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
@@ -294,11 +307,14 @@ private fun BillApp(
     viewModel: BillViewModel,
     onSourceCaptureHandled: (String) -> Boolean,
     notificationCaptureHealth: NotificationCaptureHealth,
+    notificationRouteSettings: NotificationRouteSettings,
     requestedDestination: AppDestination?,
     onRequestedDestinationHandled: (AppDestination) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val notificationHealth by notificationCaptureHealth.state.collectAsStateWithLifecycle()
+    val routeSettings by notificationRouteSettings.state.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
     val application = context.applicationContext as? BillApplication
     val resources = LocalResources.current
@@ -758,6 +774,7 @@ private fun BillApp(
                     state = state.evidence,
                     photoOcrBatch = state.photoOcrBatch,
                     notificationHealth = notificationHealth,
+                    notificationRouteSettings = routeSettings,
                     contentPadding = innerPadding,
                     onRetentionSelected = viewModel::updateEvidenceRetention,
                     onClearEvidence = viewModel::clearEvidence,
@@ -769,6 +786,27 @@ private fun BillApp(
                                 ActivityResultContracts.PickVisualMedia.ImageOnly,
                             ),
                         )
+                    },
+                    onNotificationRouteEnabledChange = { routeId, enabled ->
+                        coroutineScope.launch {
+                            notificationRouteSettings.setEnabled(routeId, enabled)
+                        }
+                    },
+                    onRetryNotificationRouteUpdate = {
+                        coroutineScope.launch {
+                            notificationRouteSettings.retryLastUpdate()
+                        }
+                    },
+                    onOpenNotificationAccessSettings = {
+                        if (!openNotificationListenerSettings(context)) {
+                            coroutineScope.launch {
+                                snackbarHostState.showSnackbar(
+                                    resources.getString(
+                                        R.string.notification_access_open_failed,
+                                    ),
+                                )
+                            }
+                        }
                     },
                 )
             }
@@ -1101,12 +1139,16 @@ private fun EvidenceSettingsScreen(
     state: EvidenceSettingsUiState,
     photoOcrBatch: PhotoOcrBatchUiState?,
     notificationHealth: NotificationCaptureHealthSnapshot,
+    notificationRouteSettings: NotificationRouteSettingsSnapshot,
     contentPadding: PaddingValues,
     onRetentionSelected: (Int?) -> Unit,
     onClearEvidence: (String) -> Unit,
     onLoadMore: () -> Unit,
     onRetry: () -> Unit,
     onSelectPhotos: () -> Unit,
+    onNotificationRouteEnabledChange: (String, Boolean) -> Unit,
+    onRetryNotificationRouteUpdate: () -> Unit,
+    onOpenNotificationAccessSettings: () -> Unit,
 ) {
     var pendingClearId by rememberSaveable { mutableStateOf<String?>(null) }
     LazyColumn(
@@ -1147,8 +1189,12 @@ private fun EvidenceSettingsScreen(
         item {
             CapturePermissionTutorialPanel(
                 notificationHealth = notificationHealth,
+                notificationRouteSettings = notificationRouteSettings,
                 photoOcrBatch = photoOcrBatch,
                 onSelectPhotos = onSelectPhotos,
+                onNotificationRouteEnabledChange = onNotificationRouteEnabledChange,
+                onRetryNotificationRouteUpdate = onRetryNotificationRouteUpdate,
+                onOpenNotificationAccessSettings = onOpenNotificationAccessSettings,
             )
         }
 
@@ -1273,8 +1319,12 @@ private fun EvidenceSettingsScreen(
 @Composable
 private fun CapturePermissionTutorialPanel(
     notificationHealth: NotificationCaptureHealthSnapshot,
+    notificationRouteSettings: NotificationRouteSettingsSnapshot,
     photoOcrBatch: PhotoOcrBatchUiState?,
     onSelectPhotos: () -> Unit,
+    onNotificationRouteEnabledChange: (String, Boolean) -> Unit,
+    onRetryNotificationRouteUpdate: () -> Unit,
+    onOpenNotificationAccessSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val quickCaptureConnection by BillQuickCaptureRuntime
@@ -1309,16 +1359,104 @@ private fun CapturePermissionTutorialPanel(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = stringResource(R.string.capture_tutorial_notification_body),
+                text = stringResource(
+                    if (notificationRouteSettings.hasVerifiedRoutes) {
+                        R.string.capture_tutorial_notification_body_available
+                    } else {
+                        R.string.capture_tutorial_notification_body
+                    },
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            notificationRouteSettings.routes.forEach { route ->
+                val routeToggleEnabled =
+                    notificationRouteSettings.updatingRouteId == null &&
+                        !notificationRouteSettings.lastUpdateFailed
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .semantics(mergeDescendants = true) {}
+                            .toggleable(
+                                value = route.enabled,
+                                enabled = routeToggleEnabled,
+                                role = Role.Switch,
+                                onValueChange = { enabled ->
+                                    onNotificationRouteEnabledChange(route.routeId, enabled)
+                                },
+                            )
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            text = route.safeLabel,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Switch(
+                            checked = route.enabled,
+                            onCheckedChange = null,
+                            modifier = Modifier.clearAndSetSemantics {},
+                            enabled = routeToggleEnabled,
+                        )
+                    }
+                }
+            }
+            if (notificationRouteSettings.lastUpdateFailed) {
+                Text(
+                    text = stringResource(R.string.notification_route_update_failed),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(
+                    onClick = onRetryNotificationRouteUpdate,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = notificationRouteSettings.updatingRouteId == null,
+                ) {
+                    Text(stringResource(R.string.notification_route_retry))
+                }
+            }
+            if (
+                notificationRouteSettings.hasEnabledRoutes ||
+                notificationHealth.hasSystemAccess
+            ) {
+                Text(
+                    text = stringResource(R.string.notification_access_scope_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = onOpenNotificationAccessSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = notificationRouteSettings.updatingRouteId == null,
+                ) {
+                    Text(
+                        stringResource(
+                            if (notificationHealth.hasSystemAccess) {
+                                R.string.notification_access_manage_settings
+                            } else {
+                                R.string.notification_access_grant_settings
+                            },
+                        ),
+                    )
+                }
+            }
             Text(
                 text = notificationHealth.message(),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
                 color = when (notificationHealth.state) {
                     NotificationCaptureHealthState.NO_VERIFIED_TEMPLATES,
+                    NotificationCaptureHealthState.NO_ENABLED_ROUTES,
+                    NotificationCaptureHealthState.SYSTEM_ACCESS_REQUIRED,
+                    NotificationCaptureHealthState.LISTENER_CONNECTION_PENDING,
                     NotificationCaptureHealthState.READY,
                     -> MaterialTheme.colorScheme.primary
 
@@ -1628,6 +1766,15 @@ private fun SourceCaptureError.messageRes(): Int = when (this) {
 private fun NotificationCaptureHealthSnapshot.message(): String = when (state) {
     NotificationCaptureHealthState.NO_VERIFIED_TEMPLATES ->
         stringResource(R.string.capture_health_no_templates)
+
+    NotificationCaptureHealthState.NO_ENABLED_ROUTES ->
+        stringResource(R.string.capture_health_no_enabled_routes)
+
+    NotificationCaptureHealthState.SYSTEM_ACCESS_REQUIRED ->
+        stringResource(R.string.capture_health_system_access_required)
+
+    NotificationCaptureHealthState.LISTENER_CONNECTION_PENDING ->
+        stringResource(R.string.capture_health_listener_connection_pending)
 
     NotificationCaptureHealthState.READY ->
         stringResource(R.string.capture_health_ready)
