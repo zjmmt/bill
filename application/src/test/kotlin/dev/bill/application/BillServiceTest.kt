@@ -11,6 +11,9 @@ import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
+import dev.bill.core.domain.ReconciliationDraftRole
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
 import dev.bill.core.domain.ReviewDraft
@@ -26,13 +29,17 @@ import dev.bill.core.model.TransactionType
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.EvidenceLocator
 import dev.bill.source.contract.FieldCandidate
+import dev.bill.source.contract.GenericDelimitedStatementIdentity
 import dev.bill.source.contract.NormalizedCandidate
 import dev.bill.source.contract.ObservedMoneyDirection
+import dev.bill.source.contract.ObservedTime
 import dev.bill.source.contract.SourceFamily
 import dev.bill.source.review.SourceProposalRecord
 import dev.bill.source.review.SourceReviewRepository
 import java.time.Clock
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -767,6 +774,39 @@ class BillServiceTest {
     }
 
     @Test
+    fun `snapshot distinguishes mapped statement rows from opaque text files`() = runBlocking {
+        val sourceRepository = FakeSourceReviewRepository(
+            initialProposals = listOf(
+                SourceProposalRecord(
+                    id = "proposal-mapped-row",
+                    rawEventId = "raw-mapped-row",
+                    parseAttemptId = "attempt-mapped-row",
+                    parserId = GenericDelimitedStatementIdentity.PARSER_ID,
+                    providerId = GenericDelimitedStatementIdentity.PROVIDER_ID,
+                    connectorId = GenericDelimitedStatementIdentity.CONNECTOR_ID,
+                    sourceFamily = SourceFamily.GENERIC,
+                    captureMethod = CaptureMethod.STATEMENT_IMPORT,
+                    capturedAt = now,
+                    diagnostic = null,
+                    candidate = null,
+                    isPossibleDuplicate = false,
+                ),
+            ),
+        )
+
+        val snapshot = BillService(
+            repository = FakeLedgerRepository(),
+            clock = clock,
+            sourceReviewRepository = sourceRepository,
+        ).observeSnapshot().first()
+
+        assertEquals(
+            SourceReviewKind.DELIMITED_STATEMENT_ROW,
+            snapshot.pendingSourceReviews.single().kind,
+        )
+    }
+
+    @Test
     fun `notification review resolves only a safe local route label`() = runBlocking {
         val sourceRepository = FakeSourceReviewRepository(
             initialProposals = listOf(
@@ -824,6 +864,11 @@ class BillServiceTest {
                             confidence = 0.82,
                             evidenceLocator = EvidenceLocator.WholePayload,
                         ),
+                        occurredAt = FieldCandidate(
+                            value = ObservedTime.DateOnly(LocalDate.of(2026, 7, 18)),
+                            confidence = 0.9,
+                            evidenceLocator = EvidenceLocator.WholePayload,
+                        ),
                         counterparty = FieldCandidate(
                             value = "测试付款方",
                             confidence = 0.78,
@@ -839,12 +884,14 @@ class BillServiceTest {
             repository = FakeLedgerRepository(),
             clock = clock,
             sourceReviewRepository = sourceRepository,
+            localZoneId = ZoneId.of("Asia/Shanghai"),
         ).observeSnapshot().first()
         val review = snapshot.pendingSourceReviews.single()
 
         assertEquals(SourceReviewKind.PHOTO_OCR, review.kind)
         assertEquals(DraftSummaryKind.INCOME, review.suggestedKind)
         assertEquals(6_600L, review.suggestedAmount?.minorUnits)
+        assertEquals(Instant.parse("2026-07-17T16:00:00Z"), review.suggestedOccurredAt)
         assertEquals("测试付款方", review.suggestedCounterparty)
     }
 
@@ -1004,6 +1051,156 @@ class BillServiceTest {
     }
 
     @Test
+    fun `snapshot proposes only hard-gated transfers and repayments without auto posting`() =
+        runBlocking {
+            val bank = account("bank", AccountType.ASSET_BANK)
+            val wallet = account("wallet", AccountType.ASSET_EWALLET_BALANCE)
+            val card = account("card", AccountType.LIABILITY_CC)
+            val outbound = draft(
+                id = "transfer-out",
+                type = TransactionType.EXPENSE,
+                fundingAccountId = bank.id,
+            )
+            val inbound = draft(
+                id = "transfer-in",
+                type = TransactionType.INCOME,
+                fundingAccountId = wallet.id,
+            )
+            val sameAccountInbound = draft(
+                id = "same-account-in",
+                type = TransactionType.INCOME,
+                fundingAccountId = bank.id,
+            )
+            val repository = FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(
+                        AccountBalance(bank, Money.cny(20_000L)),
+                        AccountBalance(wallet, Money.cny(0L)),
+                        AccountBalance(card, Money.cny(-8_000L)),
+                    ),
+                    drafts = listOf(outbound, inbound, sameAccountInbound),
+                ),
+            )
+
+            val snapshot = BillService(repository, clock).observeSnapshot().first()
+
+            assertTrue(snapshot.reconciliationCases.any {
+                it.kind == ReconciliationCaseKind.TRANSFER &&
+                    it.draftIds == listOf("transfer-out", "transfer-in")
+            })
+            assertFalse(snapshot.reconciliationCases.any {
+                it.kind == ReconciliationCaseKind.TRANSFER &&
+                    "same-account-in" in it.draftIds
+            })
+            assertTrue(snapshot.reconciliationCases.any {
+                it.kind == ReconciliationCaseKind.LIABILITY_REPAYMENT &&
+                    it.draftIds == listOf("transfer-out") &&
+                    it.destinationAccountId == "card"
+            })
+            assertNull(repository.resolveReconciliationCall)
+        }
+
+    @Test
+    fun `confirmed transfer sends one balanced replacement posting with both draft links`() =
+        runBlocking {
+            val bank = account("bank", AccountType.ASSET_BANK)
+            val wallet = account("wallet", AccountType.ASSET_EWALLET_BALANCE)
+            val repository = FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(
+                        AccountBalance(bank, Money.cny(20_000L)),
+                        AccountBalance(wallet, Money.cny(0L)),
+                    ),
+                    drafts = listOf(
+                        draft(
+                            id = "transfer-out",
+                            type = TransactionType.EXPENSE,
+                            fundingAccountId = bank.id,
+                        ),
+                        draft(
+                            id = "transfer-in",
+                            type = TransactionType.INCOME,
+                            fundingAccountId = wallet.id,
+                        ),
+                    ),
+                ),
+            )
+            val service = BillService(repository, clock)
+            val case = service.observeSnapshot().first().reconciliationCases.single()
+
+            val result = service.resolveReconciliation(
+                ResolveReconciliationCommand(CommandId("reconcile-transfer"), case.id),
+            )
+
+            assertTrue(result is OperationResult.Success)
+            val call = requireNotNull(repository.resolveReconciliationCall)
+            assertEquals(ReconciliationKind.TRANSFER_PAIR, call.resolution.kind)
+            assertEquals(TransactionType.TRANSFER, call.resolution.transaction.type)
+            assertEquals(0L, call.resolution.transaction.entries.sumOf { it.amount.minorUnits })
+            assertEquals(
+                setOf(
+                    ReconciliationDraftRole.TRANSFER_OUTBOUND,
+                    ReconciliationDraftRole.TRANSFER_INBOUND,
+                ),
+                call.resolution.draftLinks.map { it.role }.toSet(),
+            )
+            assertTrue(call.resolution.relations.isEmpty())
+            assertEquals(AuditAction.RECONCILIATION_CONFIRMED, call.auditRecord.action)
+        }
+
+    @Test
+    fun `refund suggestion respects prior refunds and confirmation links the original expense`() =
+        runBlocking {
+            val bank = account("fixture-funding", AccountType.ASSET_BANK)
+            val original = transaction(
+                id = "original-expense",
+                type = TransactionType.EXPENSE,
+                status = dev.bill.core.domain.TransactionStatus.ACTIVE,
+                amountMinor = 5_000L,
+                confirmedAt = now.minusSeconds(3_000),
+                draftId = DraftId("original-draft"),
+            )
+            val inbound = draft(
+                id = "refund-in",
+                type = TransactionType.INCOME,
+                fundingAccountId = bank.id,
+                amountMinor = 2_500L,
+                occurredAt = now.minusSeconds(60),
+            )
+            val repository = FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(AccountBalance(bank, Money.cny(20_000L))),
+                    drafts = listOf(inbound),
+                    transactions = listOf(original),
+                    activeRefundTotals = mapOf(original.id to Money.cny(1_000L)),
+                ),
+            )
+            val service = BillService(repository, clock)
+            val case = service.observeSnapshot().first().reconciliationCases.single()
+
+            assertEquals(ReconciliationCaseKind.REFUND, case.kind)
+            assertEquals(original.id.value, case.relatedTransactionId)
+            val result = service.resolveReconciliation(
+                ResolveReconciliationCommand(CommandId("reconcile-refund"), case.id),
+            )
+
+            assertTrue(result is OperationResult.Success)
+            val resolution = requireNotNull(repository.resolveReconciliationCall).resolution
+            assertEquals(ReconciliationKind.REFUND, resolution.kind)
+            assertEquals(TransactionType.REFUND, resolution.transaction.type)
+            assertEquals(original.id, resolution.relations.single().toTransactionId)
+            assertEquals(
+                ReconciliationDraftRole.REFUND_INBOUND,
+                resolution.draftLinks.single().role,
+            )
+
+            repository.state.value = repository.state.value.copy(
+                activeRefundTotals = mapOf(original.id to Money.cny(3_000L)),
+            )
+            assertTrue(service.observeSnapshot().first().reconciliationCases.isEmpty())
+        }
+
+    @Test
     fun `void transaction forwards exact identity and audit without sensitive payload`() = runBlocking {
         val repository = FakeLedgerRepository()
         val result = BillService(repository, clock).voidTransaction(
@@ -1094,12 +1291,14 @@ class BillServiceTest {
         updatedAt: Instant = now,
         sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
         currency: CurrencyCode = CurrencyCode.CNY,
+        amountMinor: Long = 2_500L,
+        occurredAt: Instant = now.minusSeconds(60),
     ) = ManualDraft(
         id = DraftId(id),
         state = state,
         type = type,
-        amount = Money(2_500L, currency),
-        occurredAt = now.minusSeconds(60),
+        amount = Money(amountMinor, currency),
+        occurredAt = occurredAt,
         counterparty = "TEST COUNTERPARTY",
         note = "local fixture",
         fundingAccountId = fundingAccountId,
@@ -1149,10 +1348,12 @@ class BillServiceTest {
         balances: List<AccountBalance> = emptyList(),
         drafts: List<ManualDraft> = emptyList(),
         transactions: List<PostedTransaction> = emptyList(),
+        activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
     ) = LedgerState(
         accountBalances = balances,
         pendingDrafts = drafts,
         recentTransactions = transactions,
+        activeRefundTotals = activeRefundTotals,
     )
 }
 
@@ -1204,6 +1405,7 @@ private class FakeLedgerRepository(
     var selectFundingResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var confirmDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var dismissDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
+    var resolveReconciliationResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var voidTransactionResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
 
     var createAccountCall: CreateAccountCall? = null
@@ -1211,6 +1413,7 @@ private class FakeLedgerRepository(
     var selectFundingCall: SelectFundingCall? = null
     var confirmDraftCall: ConfirmDraftCall? = null
     var dismissDraftCall: DismissDraftCall? = null
+    var resolveReconciliationCall: ResolveReconciliationCall? = null
     var voidTransactionCall: VoidTransactionCall? = null
 
     override fun observeState(): Flow<LedgerState> = state
@@ -1320,6 +1523,22 @@ private class FakeLedgerRepository(
         return dismissDraftResult.withDefaultEntityId(draftId.value)
     }
 
+    override suspend fun activeRefundTotal(originalTransactionId: TransactionId): Money? {
+        val original = state.value.recentTransactions.firstOrNull {
+            it.id == originalTransactionId
+        } ?: return null
+        val currency = original.entries.firstOrNull()?.amount?.currency ?: return null
+        return state.value.activeRefundTotals[originalTransactionId] ?: Money(0L, currency)
+    }
+
+    override suspend fun resolveReconciliation(
+        resolution: ReconciliationResolution,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult {
+        resolveReconciliationCall = ResolveReconciliationCall(resolution, auditRecord)
+        return resolveReconciliationResult.withDefaultEntityId(resolution.transaction.id.value)
+    }
+
     override suspend fun voidTransaction(
         transactionId: TransactionId,
         auditRecord: AuditRecord,
@@ -1353,6 +1572,11 @@ private class FakeLedgerRepository(
 
     data class DismissDraftCall(
         val draftId: DraftId,
+        val auditRecord: AuditRecord,
+    )
+
+    data class ResolveReconciliationCall(
+        val resolution: ReconciliationResolution,
         val auditRecord: AuditRecord,
     )
 

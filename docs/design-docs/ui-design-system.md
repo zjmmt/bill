@@ -2,7 +2,7 @@
 
 - 状态：已确认，待真机与可用性验证
 - 所有者：项目维护者
-- 最后核验：2026-07-19
+- 最后核验：2026-07-30
 - 事实来源：产品规格、三类测试设备约束、`ui-ux-pro-max` 检索结果、馆藏视觉研究与人工筛选
 
 本文是 Bill 的页面结构、视觉语义和首个 Compose 纵向切片的唯一事实来源。通用体验原则见 [DESIGN.md](../DESIGN.md)，Compose 状态与实现边界见 [FRONTEND.md](../FRONTEND.md)，颜色与间距令牌见 [`design-system/bill/MASTER.md`](../../design-system/bill/MASTER.md)，地区/OEM 行为和完整真机门见 [Android 设备兼容与真机验收](android-device-compatibility.md)。
@@ -146,7 +146,7 @@ Material 3 在这里负责组件状态、焦点、系统栏、Sheet 和无障碍
 
 UI 在三台首批设备上至少验证以下子集：
 
-- 简体中文、繁体中文、英文以及 CNY/HKD 合成金额不会混淆币种或截断主信息。
+- 简体中文、繁体中文、英文以及 CNY/USD 合成金额不会混淆币种或截断主信息。
 - 系统亮/暗主题、目标最大字体与显示缩放、TalkBack 焦点和金额遮罩语义。
 - 手势与三键导航、状态/导航栏 inset、可选显示分辨率、输入法，以及手机全屏竖屏主路径。
 - 强制横向、分屏和 `sw>=600dp` 环境只验证单列兜底的内容可达、状态保存与不崩溃；本阶段不切换 Navigation Rail 或双栏。

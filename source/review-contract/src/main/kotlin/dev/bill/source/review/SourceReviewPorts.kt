@@ -7,6 +7,7 @@ import dev.bill.core.domain.ReviewDraft
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.isSupportedLedgerCurrency
 import dev.bill.source.contract.CaptureMethod
+import dev.bill.source.contract.GenericDelimitedStatementIdentity
 import dev.bill.source.contract.NormalizedCandidate
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.SafeDiagnostic
@@ -39,9 +40,21 @@ data class SourceProposalRecord(
 fun SourceProposalRecord.allowedExternalDraftCurrencies(): Set<CurrencyCode> = when (sourceFamily) {
     SourceFamily.ALIPAY,
     SourceFamily.WECHAT,
-    SourceFamily.GENERIC,
     SourceFamily.MANUAL,
     -> setOf(CurrencyCode.CNY)
+
+    SourceFamily.GENERIC -> if (
+        parserId == GenericDelimitedStatementIdentity.PARSER_ID &&
+        connectorId == GenericDelimitedStatementIdentity.CONNECTOR_ID &&
+        captureMethod == CaptureMethod.STATEMENT_IMPORT
+    ) {
+        candidate?.amount?.value?.currency
+            ?.takeIf(CurrencyCode::isSupportedLedgerCurrency)
+            ?.let(::setOf)
+            .orEmpty()
+    } else {
+        setOf(CurrencyCode.CNY)
+    }
 
     SourceFamily.BANK -> candidate?.amount?.value?.currency
         ?.takeIf(CurrencyCode::isSupportedLedgerCurrency)

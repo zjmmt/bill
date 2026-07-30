@@ -34,6 +34,7 @@ enum class DraftState {
     WAITING_USER,
     EDITED,
     CONFIRMED,
+    LINKED,
     DISMISSED,
 }
 
@@ -58,6 +59,7 @@ enum class AuditAction {
     SOURCE_EVIDENCE_CLEARED,
     FUNDING_ACCOUNT_SELECTED,
     DRAFT_CONFIRMED,
+    RECONCILIATION_CONFIRMED,
     DRAFT_DISMISSED,
     TRANSACTION_VOIDED,
 }
@@ -156,6 +158,7 @@ data class LedgerState(
     val accountBalances: List<AccountBalance>,
     val pendingDrafts: List<ReviewDraft>,
     val recentTransactions: List<PostedTransaction>,
+    val activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
 )
 
 object SystemAccountIds {

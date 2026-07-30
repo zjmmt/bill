@@ -25,7 +25,7 @@
     <string name="local_only_headline">YOUR FINANCES STAY ON THIS DEVICE.</string>
     <string name="local_only_body">Bill declares no Internet permission. It does not upload notification text, screenshots, accounts, balances, or ledger data to a Bill server.</string>
     <string name="local_only_boundary_title">Three separate local tools, never one black-box permission</string>
-    <string name="local_only_boundary_body">Notifications, read-only payment-result pages, and one-shot screenshots are separate opt-ins. The tile captures the current screen only after your tap. Its OCR is a development experiment that has not passed the privacy release audit, never proves a payment provider, and never posts without your confirmation.</string>
+    <string name="local_only_boundary_body">Notifications, read-only payment-result pages, and one-shot screenshots are separate opt-ins. The tile captures only after your tap; its bundled Chinese, English, and Japanese OCR runs on this phone with no server. Final APK and device validation is still in progress, it never proves a payment provider, and it never posts without your confirmation.</string>
     <string name="local_only_open_tutorial">View permission tutorial</string>
     <string name="local_only_continue">Continue on this device</string>
     <string name="settings_title">Local-first status</string>
@@ -41,14 +41,14 @@
     <string name="capture_tutorial_accessibility_title">02 / Read-only payment-result pages</string>
     <string name="capture_tutorial_accessibility_body">Not available yet: the separate observer has no active target app and no screen-text access. A verified source rule, energy test, and a separate opt-in are required before it can observe a result page. When available, Android Settings &gt; Accessibility is the only place to enable it. It never clicks, scrolls, or screenshots.</string>
     <string name="capture_tutorial_screenshot_title">03 / Quick tile screenshot + local OCR</string>
-    <string name="capture_tutorial_screenshot_body">Experimental on Android 11+: enable the dedicated accessibility service below, then add “Capture receipt” to Quick Settings. Each tap captures the current screen once and creates an on-device review item. It reads no nodes, performs no clicks, and never watches in the background. Its current OCR runtime has not passed the privacy release audit, so it is not a supported payment source. Android blocks secure windows; normal PNG sharing remains the fallback. The system picker needs no whole-library permission.</string>
+    <string name="capture_tutorial_screenshot_body">Experimental on Android 11+: enable the dedicated accessibility service below, then add “Capture receipt” to Quick Settings. Each tap captures the current screen once and runs the bundled model locally; the picker can process up to five images one by one without whole-library permission. It reads no nodes, performs no clicks, and never watches in the background. Final APK and target-device validation is still in progress, so this is not a supported payment source. Android blocks secure windows; normal PNG sharing remains the fallback.</string>
     <string name="quick_capture_accessibility_status_ready">Current status: the one-shot screenshot service is connected.</string>
     <string name="quick_capture_accessibility_status_off">Current status: the one-shot screenshot service is not connected. Other entry methods still work.</string>
     <string name="quick_capture_open_accessibility">Open Accessibility settings</string>
     <string name="quick_capture_add_tile">Add “Capture receipt” tile</string>
     <string name="quick_capture_select_images">Choose from system picker (up to 5, no library permission)</string>
     <string name="quick_capture_accessibility_label">Bill one-shot receipt capture</string>
-    <string name="quick_capture_accessibility_description">Captures the current screen once only after you tap Bill’s Quick Settings tile, then runs experimental OCR. It reads no page nodes, clicks or scrolls nothing, and does not continuously capture. The current OCR runtime is still under privacy release audit and is not a supported payment source.</string>
+    <string name="quick_capture_accessibility_description">Captures the current screen once only after you tap Bill’s Quick Settings tile, then runs the bundled OCR model on this phone. It reads no page nodes, clicks or scrolls nothing, and does not continuously capture. Final APK and target-device validation is still in progress, so this is not a supported payment source.</string>
     <string name="quick_capture_tile_label">Capture receipt</string>
     <string name="quick_capture_tile_ready">Ready</string>
     <string name="quick_capture_tile_setup">Setup required</string>
@@ -112,4 +112,145 @@
     <string name="capture_method_share_file">Receipt screenshot</string>
     <string name="capture_method_photo">Photo OCR</string>
     <string name="capture_method_manual">Manual</string>
+
+    <string name="import_statement_title">Import a local statement</string>
+    <string name="import_statement_step_choose">STEP 1 OF 3 · CHOOSE FORMAT</string>
+    <string name="import_statement_intro">Choose a structured CSV/TSV import when each row is one transaction. Plain text remains available as evidence-only fallback.</string>
+    <string name="import_csv_title">CSV · comma separated</string>
+    <string name="import_csv_body">Map columns, preview valid rows, then create review drafts in one batch.</string>
+    <string name="import_tsv_title">TSV · tab separated</string>
+    <string name="import_tsv_body">Use for tab-delimited exports from banks or spreadsheets.</string>
+    <string name="import_plain_text_title">Plain text evidence</string>
+    <string name="import_plain_text_body">Store one bounded text file for manual review without splitting it into rows.</string>
+    <string name="import_file_local_only">The selected file is processed locally. Bill does not retain its URI or filename and does not upload it.</string>
+    <string name="statement_import_cancel">Cancel</string>
+
+    <string name="statement_import_reading_title">Reading the statement</string>
+    <string name="statement_import_step_reading">STEP 1 OF 3 · LOCAL READ</string>
+    <string name="statement_import_reading_body">Validating a bounded %1$s file. Nothing is sent over the network.</string>
+    <string name="statement_import_mapping_title">Map statement columns</string>
+    <string name="statement_import_step_mapping">STEP 2 OF 3 · MAP AND PREVIEW</string>
+    <plurals name="statement_import_detected">
+        <item quantity="one">%1$s · %2$d data row detected</item>
+        <item quantity="other">%1$s · %2$d data rows detected</item>
+    </plurals>
+    <string name="statement_import_section_fields">Required fields</string>
+    <string name="statement_import_date_column">Date and time column</string>
+    <string name="statement_import_date_format">Date format</string>
+    <string name="statement_import_amount_column">Amount column</string>
+    <string name="statement_import_amount_format">Number format</string>
+    <string name="statement_import_counterparty_column">Counterparty column</string>
+    <string name="statement_import_reference_column">Reference column (optional)</string>
+    <string name="statement_import_section_direction">Money direction</string>
+    <string name="statement_import_positive_means">A positive amount means</string>
+    <string name="statement_import_direction_column">Direction column</string>
+    <string name="statement_import_inbound_tokens">Values meaning money in</string>
+    <string name="statement_import_outbound_tokens">Values meaning money out</string>
+    <string name="statement_import_tokens_hint">Separate values with commas, Chinese commas, semicolons, or new lines.</string>
+    <string name="statement_import_currency">Statement currency</string>
+    <string name="statement_import_no_fx">CNY and USD are recorded as separate currencies. No exchange-rate conversion is performed.</string>
+    <string name="statement_import_sample_title">Selected-field sample</string>
+    <string name="statement_import_sample_body">Only three bounded rows are shown vertically to verify the mapping. The full file is never logged.</string>
+    <string name="statement_import_sample_row">FILE ROW %1$d</string>
+    <string name="statement_import_not_selected">Not selected</string>
+    <string name="statement_import_preview_title">Import preview</string>
+    <plurals name="statement_import_valid_rows">
+        <item quantity="one">%1$d row ready for review</item>
+        <item quantity="other">%1$d rows ready for review</item>
+    </plurals>
+    <plurals name="statement_import_invalid_rows">
+        <item quantity="one">%1$d row will be rejected</item>
+        <item quantity="other">%1$d rows will be rejected</item>
+    </plurals>
+    <string name="statement_import_invalid_rows_body">Rejected rows keep only a safe error code; their cell values are not copied into diagnostics.</string>
+    <string name="statement_import_row_error">Row %1$d · %2$s</string>
+    <string name="statement_import_previewing">Checking mapping…</string>
+    <string name="statement_import_previewing_rows">Checking every row locally…</string>
+    <string name="statement_import_confirm">Confirm local import</string>
+
+    <string name="statement_import_importing_title">Creating review drafts</string>
+    <string name="statement_import_step_importing">STEP 3 OF 3 · LOCAL IMPORT</string>
+    <plurals name="statement_import_importing_count">
+        <item quantity="one">%1$d of %2$d row processed</item>
+        <item quantity="other">%1$d of %2$d rows processed</item>
+    </plurals>
+    <string name="statement_import_importing_body">Each valid row becomes a draft. Nothing is auto-confirmed as a posted transaction.</string>
+    <string name="statement_import_stop_title">Stop this import?</string>
+    <string name="statement_import_stop_body">Rows already completed stay in pending review. Reselect the same file and mapping later to resume the missing rows.</string>
+    <string name="statement_import_stop">Stop and continue later</string>
+    <string name="statement_import_keep_running">Keep importing</string>
+    <string name="statement_import_completed_title">Import completed</string>
+    <string name="statement_import_step_completed">COMPLETE · REVIEW STILL REQUIRED</string>
+    <plurals name="statement_import_completed_body">
+        <item quantity="one">%1$d draft is ready for review; rejected rows: %2$d.</item>
+        <item quantity="other">%1$d drafts are ready for review; rejected rows: %2$d.</item>
+    </plurals>
+    <plurals name="statement_import_resumed_rows">
+        <item quantity="one">%1$d row outcome was safely resumed from an earlier run.</item>
+        <item quantity="other">%1$d row outcomes were safely resumed from an earlier run.</item>
+    </plurals>
+    <string name="statement_import_completed_next">Choose the funding account and confirm each draft before it reaches the ledger.</string>
+    <string name="statement_import_done">View pending drafts</string>
+    <string name="statement_import_failed_title">Statement not imported</string>
+    <string name="statement_import_step_failed">LOCAL IMPORT STOPPED</string>
+    <string name="statement_import_failed_body">Rows completed before the stop remain in pending review; no row was automatically posted. Check the file or mapping before selecting it again.</string>
+    <string name="statement_import_discard_title">Discard this mapping?</string>
+    <string name="statement_import_discard_body">The selected file and current mapping will be released from memory. No draft will be created.</string>
+    <string name="statement_import_discard">Discard mapping</string>
+    <string name="statement_import_keep_editing">Keep editing</string>
+
+    <string name="statement_import_csv">CSV</string>
+    <string name="statement_import_tsv">TSV</string>
+    <string name="statement_import_none">Do not import this field</string>
+    <string name="statement_import_column_option">Column %1$d · %2$s</string>
+    <string name="statement_import_direction_signed">Use amount sign</string>
+    <string name="statement_import_direction_signed_body">Positive and negative amounts determine money in or out.</string>
+    <string name="statement_import_direction_separate">Use a direction column</string>
+    <string name="statement_import_direction_separate_body">Amounts stay positive; another column contains labels such as income or expense.</string>
+    <string name="statement_import_inbound">Money in</string>
+    <string name="statement_import_outbound">Money out</string>
+
+    <string name="statement_date_dash">2026-07-27</string>
+    <string name="statement_date_slash">2026/07/27</string>
+    <string name="statement_datetime_minute_dash">2026-07-27 14:30</string>
+    <string name="statement_datetime_minute_slash">2026/07/27 14:30</string>
+    <string name="statement_datetime_second_dash">2026-07-27 14:30:15</string>
+    <string name="statement_datetime_second_slash">2026/07/27 14:30:15</string>
+    <string name="statement_datetime_iso_minute">2026-07-27T14:30</string>
+    <string name="statement_datetime_iso_second">2026-07-27T14:30:15</string>
+    <string name="statement_amount_dot_decimal">1234.56</string>
+    <string name="statement_amount_comma_group">1,234.56</string>
+    <string name="statement_amount_comma_decimal">1234,56</string>
+    <string name="statement_amount_dot_group">1.234,56</string>
+
+    <string name="statement_mapping_incomplete">Select a date, amount, and counterparty column.</string>
+    <string name="statement_mapping_duplicate">One column cannot represent two different fields.</string>
+    <string name="statement_mapping_empty_tokens">Enter at least one value for both money-in and money-out directions.</string>
+    <string name="statement_mapping_too_many_tokens">Use no more than 16 values for either direction.</string>
+    <string name="statement_mapping_invalid_token">A direction value is too long or contains an unsupported control character.</string>
+    <string name="statement_mapping_overlapping_tokens">Money-in and money-out values must be different.</string>
+    <string name="statement_mapping_invalid">This mapping is not valid for the selected file.</string>
+
+    <string name="statement_error_unavailable">Structured statement import is unavailable in this build.</string>
+    <string name="statement_error_invalid_document">The selected document could not be opened as a local statement.</string>
+    <string name="statement_error_unsupported_type">Choose a CSV, TSV, or plain-text document.</string>
+    <string name="statement_error_too_large">The file exceeds the 2 MiB local import limit.</string>
+    <string name="statement_error_read_failed">The file could not be read. Check access and select it again.</string>
+    <string name="statement_error_delimiter">The selected format does not match the file’s media type.</string>
+    <string name="statement_error_no_rows">The file has a header but no data rows.</string>
+    <string name="statement_error_encoding">The file must use valid UTF-8 text.</string>
+    <string name="statement_error_malformed">The CSV/TSV quoting or row structure is malformed.</string>
+    <string name="statement_error_too_many_rows">The file exceeds the 5,000-row import limit.</string>
+    <string name="statement_error_too_many_columns">A row has too many columns.</string>
+    <string name="statement_error_cell_too_long">A cell exceeds the local safety limit.</string>
+    <string name="statement_error_row_too_long">A row exceeds the local safety limit.</string>
+    <string name="statement_error_session_closed">This in-memory import session has expired. Select the file again.</string>
+    <string name="statement_error_interrupted">Import stopped before all rows completed. Confirm again to safely resume.</string>
+    <string name="statement_error_identity_collision">The stored batch identity conflicts with this file. Nothing was imported from the conflicting row.</string>
+    <string name="statement_row_error_mapping">mapped column is missing</string>
+    <string name="statement_row_error_date">date or time is invalid</string>
+    <string name="statement_row_error_amount">amount is invalid or out of range</string>
+    <string name="statement_row_error_direction">money direction is missing or unknown</string>
+    <string name="statement_row_error_counterparty">counterparty is missing or too long</string>
+    <string name="statement_row_error_reference">reference is too long</string>
 </resources>

@@ -1,9 +1,9 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、空模板通知边界、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟；完整真机与发布门待完成
+- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟；完整静态构建已复核，设备 instrumentation 与发布门待完成
 - 所有者：项目维护者
-- 最后核验：2026-07-26
-- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu 结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011
+- 最后核验：2026-07-30
+- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu 结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0003、ExecPlan 0006
 
 ## 正确性不变量
 
@@ -18,16 +18,22 @@
 - RawEvent、ParseAttempt、来源建议、Draft evidence 和 Draft 的 ID/语义链必须一致；损坏链失败关闭，不能发布部分快照。
 - RawEvent 与载荷生命周期必须一一对应；新分享文件写入前必须有活动 staging 租约，RawEvent 事务原子消费租约。载荷只有在文件删除成功后才能从 `CLEAR_PENDING` 进入 `CLEARED`，且清除不得删除已完成的结构化账本来源链。
 - 相同证据哈希只能产生重复提示，未经过完整关联与用户判断不得自动合并或静默丢弃。
+- 结构化文件导入必须由用户显式映射必填列；文件摘要与映射摘要共同确定批次身份，单行失败不能回滚或重复已完成行。
+- 转账、信用卡还款和退款只生成候选；用户确认前不得合并 Draft，确认事务必须同时写入平衡交易、Draft 链接、关系、审计和幂等回执。
 
 ## 当前可靠性断面
 
 当前受限 CNY/USD 手工账本切片已有以下防线代码：现金和电子钱包余额只接受 CNY，银行卡和信用卡才可接受 USD；领域过账前执行金额、币种、账户角色与逐币种平衡校验；Room 仓储以事务提交账户/期初分录、Draft 状态、正式交易、审计和 command receipt；数据库 Flow 驱动总览、账户、草稿和流水，且总览绝不跨币种合计，避免 UI 维护另一份合成余额。
 
-通用分享文本切片又加入 64 KiB/严格 UTF-8 输入门、应用私有证据与哈希校验、不可变 RawEvent、安全 ParseAttempt、待补全来源建议、重复提示、忽略审计和 Intent command 生命周期。Room schema v5 的跨表查询验证 accepted/rejected 解析结果、建议数量/状态、证据链接、载荷生命周期和 Draft 语义；写路径检查目标链，观察状态对全局损坏失败关闭。
+通用分享文本切片又加入 64 KiB/严格 UTF-8 输入门、应用私有证据与哈希校验、不可变 RawEvent、安全 ParseAttempt、待补全来源建议、重复提示、忽略审计和 Intent command 生命周期。当前 Room schema v7 的跨表查询验证 accepted/rejected 解析结果、建议数量/状态、证据链接、载荷生命周期和 Draft 语义；写路径检查目标链，观察状态对全局损坏失败关闭。
 
-证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。Room v5 以 5 分钟租约登记预提交文件，RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
+证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。当前 Room v7 延续 v5 引入的 5 分钟租约，在写入前登记预提交文件，由 RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
 
-空模板通知路径增加 `:source:generic-notification`、通知专用 evidence ingress、Room v6 持久观察租约和最薄 Android listener。测试证明生产空目录、未知 metadata，以及关闭 runtime 均不会调用正文读取器；合成通知的信封严格有界、重试幂等、改写证据安全冲突、容量超限和意外仓储错误拒绝。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；已捕获摘要和超过 90 天的失效活动租约只在后续候选回调中小批量清理，不新增后台维护。listener 用一个容量 16 的 IO 队列，而非每 callback 启动协程。它的 parser 只能产生来源待复核项，不会在没有 provider 样本时猜测交易字段或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
+空模板通知路径增加 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。测试证明生产空目录、未知 metadata，以及关闭 runtime 均不会调用正文读取器；合成通知的信封严格有界、重试幂等、改写证据安全冲突、容量超限和意外仓储错误拒绝。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；已捕获摘要和超过 90 天的失效活动租约只在后续候选回调中小批量清理，不新增后台维护。listener 用一个容量 16 的 IO 队列，而非每 callback 启动协程。它的 parser 只能产生来源待复核项，不会在没有 provider 样本时猜测交易字段或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
+
+结构化 CSV/TSV 路径把当次 SAF 输入限制在 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 KiB/记录；严格 UTF-8 与语法校验发生在持久化前。未知表头不自动猜列或 provider，用户必须显式映射日期、金额、方向、对方与可选参考号。预览在后台 dispatcher 上以 250 ms 去抖执行；确认按行建立独立证据、来源建议和安全结果码，停止后以文件摘要和映射摘要继续尚未完成的行。Room v7 只保存批次/行身份、计数、RawEvent ID 或封闭错误码，不保存 URI、文件名、表头或单元格。
+
+用户确认对账只在最多 500 条候选 Draft 与 50 笔近期退款来源交易的有界窗口中查找，并把每条 Draft 的建议限制为 3 条、全局限制为 50 条。金额、币种、方向、账户角色、时间窗和退款累计上限是硬门；相同金额本身不会触发合并。确认与撤销均由 Room v7 事务提交，失败不留下半笔交易或孤立链接。当前只有合成领域/仓储样本，没有真实 provider Draft，因此不能把它宣传为跨来源自动去重。
 
 2026-07-25 的可重复结果：
 
@@ -43,7 +49,18 @@
 - 港版 `S24U-HK` 真机只完成了脱敏应用级冒烟：Debug 安装、两次冷启动、竖屏静态窗口以及一条明确标记为合成的 `ACTION_SEND text/plain`→覆核→忽略链路；无 `FATAL EXCEPTION`、Room 或 SQLite 错误。它不是 `INSTALL-01`/`ORIENT-01`/`SHARE-01` 的完整通过，也不包含支付 App 内容、通知或 provider 解析。唯一事实来源见 [Android 设备兼容与真机验收](design-docs/android-device-compatibility.md)。
 - 受限 CNY/USD 账本的 `:core:ledger:test :application:test :data:local:test :feature:review:compileDebugKotlin :app:testDebugUnitTest :data:local:assembleDebugAndroidTest` 成功（202 个 actionable Gradle tasks）。覆盖 USD 银行/信用卡、USD 钱包拒绝、逐币种总览、混币分录三层拒绝，以及钱包来源 USD 的 application/仓储拒绝；Android instrumentation 只完成 APK 编译，尚未接触设备。
 
-质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
+2026-07-27 的阶段性可重复结果：
+
+- `:source:contract:test :source:generic-delimited-statement:test :source:review-contract:test :application:test :feature:review:compileDebugKotlin :app:testDebugUnitTest --console=plain` 成功（163 个任务）。它覆盖严格 CSV/TSV 解析、显式映射、批次继续、来源时间/方向预填、ViewModel 取消/恢复和用户确认对账的应用投影；这只是针对性 JVM/编译证据。
+- Room v6→v7 迁移、结构化导入批次/行仓储与对账事务的 Android 测试源码和 APK 已可编译，但尚未连接设备执行。针对性审查把导入行写入从每行完整性全扫与重新计数改为事务内 O(1) 增量汇总；全局完整性检查只在批次打开、恢复读取和最终刷新执行，避免 5000 行输入退化为 O(n²)。
+
+2026-07-30 的可重复结果：
+
+- 完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest --console=plain` 成功（850 个 actionable tasks：8 executed、842 up-to-date）。全部 JVM 测试、Lint、Debug、两个 ABI 的未签名 Release 分包，以及 Room/OCR AndroidTest APK 均完成构建；AndroidTest APK 没有连接设备执行。
+- 当前工作树的 `app-arm64-v8a-release-unsigned.apk` 为 90,520,893 bytes，SHA-256 为 `a4f6664a7ff64a38c85fa465de58b0aa3c8b278895f12efd19ba27210e007f69`；`app-x86_64-release-unsigned.apk` 为 128,342,582 bytes，SHA-256 为 `10a669917f1c9d02883750bb2f9c39cb4b60ef668326c606b6110f35b667a114`。两包 Manifest 一致，只请求应用自身签名级动态接收器权限；没有网络、短信、媒体库或广泛存储权限，且均通过 `zipalign -c -P 16 -v 4`。该检查证明 APK ZIP 内原生库对齐，不替代 ELF LOAD 段页兼容或真机加载验证。
+- `code-review` 未发现 P0/P1；资源生命周期、币种边界、对账事务和依赖方向复核通过。发现的导入 O(n²) P2 已修复并复审关闭；对账 ViewModel 确认路由增加单元回归。仍开放的 P2 发布门是实际中英日 OCR、Room v6→v7/导入/对账 instrumentation、峰值内存/耗时/电量和三台目标设备。
+
+质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力，不证明 provider 覆盖。大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
 
 ## 来源漂移
 
@@ -60,7 +77,7 @@
 - 性质测试：分录平衡、金额守恒、导入幂等、关系对称/非对称约束。
 - 领域单元测试：转账、还款、退款、充值、投资申赎和用户修正优先级。
 - 适配器回放测试：三类来源的成功、格式漂移、缺字段、重复和乱码样本。
-- Room 测试：schema、v1→v2→v3→v4→v5 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。当前迁移、真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；大量数据基准与真实系统强杀矩阵仍待补。
+- Room 测试：schema、v1→v2→v3→v4→v5→v6→v7 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。v1→v5 的真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；v5→v6→v7、导入批次/行与对账事务目前只有 Android 测试 APK 编译证据，大量数据基准与真实系统强杀矩阵仍待补。
 - Android 集成测试：权限撤销、进程重建、NotificationListener 系统回调/更新语义、SAF 文件访问失效。通知路径不使用 WorkManager 重试。
 - UI 测试：账户/期初余额、手工/来源草稿确认、进程重建、重复解释、忽略、撤销、无障碍和敏感信息遮罩。首片与分享文本已完成 MuMu 手工端到端验收，ViewModel 覆盖后台整页保护、错误后清除陈旧快照和按 command 消费分享结果；自动化 Compose/进程死亡仍待完成。
 - 端到端样例：同一绑卡消费同时出现支付渠道和银行证据，最终只产生一次支出。
@@ -94,8 +111,8 @@
 - 单条通知只在系统回调后工作；未命中元数据时正文读取数、落盘数和解析数必须均为 0。禁止历史扫描、周期 Job/Alarm、前台服务、partial wakelock 与自动 OCR。命中候选最多进入容量 16 的内存队列，满队列必须丢弃而不是无界排队。
 - 命中通知的信封上限为 8 KiB，通知入口由单个 IO consumer 串行提交；每条未来真实模板都要验证更新/重启不重复建待复核项，并记录队列丢弃/失败健康状态。当前空目录不产生任何正文证据。
 - 结果页读取若以后实现，每个候选窗口必须有去抖、有限节点数/文本量和最大树读取次数；目标 App 不在前台时节点读取数必须为 0。
-- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。未来图像解码/OCR 仍只能由用户动作触发、一次只处理一帧，并须测量 Bitmap/HardwareBuffer 峰值后才可开放。
-- 导入 10 万行时不一次载入全部文件，不阻塞 UI，并能取消/恢复。
+- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发，一次处理一帧或最多 5 张串行图片；运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量；峰值内存、耗时、电量、ELF 页兼容与三语真机回归未通过前保持发布禁止。
+- 结构化 CSV/TSV 当前硬拒绝超过 2 MiB、5000 数据行、64 列、1024 字符/单元格或 16 KiB/记录的输入；预览不阻塞主线程，导入可停止并按同一文件+映射继续。更大文件不进入当前版本，而不是无界加载。
 - 账本分页、按月汇总和草稿箱查询需有索引与基准测试。
 
 具体毫秒、电量、内存和热门槛在关闭/仅通知/读屏/单次截图的 Android 基线工程和代表设备建立后写入。国行小米具体型号未知，当前不能把它当作中端性能基线，也不伪造性能承诺。

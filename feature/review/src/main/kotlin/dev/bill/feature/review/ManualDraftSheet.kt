@@ -45,6 +45,8 @@ import dev.bill.application.SourceReviewKind
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.model.isSupportedLedgerCurrency
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,6 +86,8 @@ fun SourceDraftSheet(
     val title = when (sourceReview.kind) {
         SourceReviewKind.SHARED_TEXT -> R.string.source_draft_title
         SourceReviewKind.SELECTED_TEXT_FILE -> R.string.selected_text_file_draft_title
+        SourceReviewKind.DELIMITED_STATEMENT_ROW ->
+            R.string.delimited_statement_draft_title
         SourceReviewKind.SHARED_RECEIPT_IMAGE -> R.string.shared_receipt_image_draft_title
         SourceReviewKind.PHOTO_OCR -> R.string.photo_ocr_draft_title
         SourceReviewKind.NOTIFICATION -> R.string.notification_draft_title
@@ -91,6 +95,8 @@ fun SourceDraftSheet(
     val explanation = when (sourceReview.kind) {
         SourceReviewKind.SHARED_TEXT -> R.string.source_draft_explanation
         SourceReviewKind.SELECTED_TEXT_FILE -> R.string.selected_text_file_draft_explanation
+        SourceReviewKind.DELIMITED_STATEMENT_ROW ->
+            R.string.delimited_statement_draft_explanation
         SourceReviewKind.SHARED_RECEIPT_IMAGE -> R.string.shared_receipt_image_draft_explanation
         SourceReviewKind.PHOTO_OCR -> R.string.photo_ocr_draft_explanation
         SourceReviewKind.NOTIFICATION -> R.string.notification_draft_explanation
@@ -99,6 +105,8 @@ fun SourceDraftSheet(
         SourceReviewKind.SHARED_TEXT -> R.string.source_draft_duplicate_explanation
         SourceReviewKind.SELECTED_TEXT_FILE ->
             R.string.selected_text_file_draft_duplicate_explanation
+        SourceReviewKind.DELIMITED_STATEMENT_ROW ->
+            R.string.delimited_statement_draft_duplicate_explanation
         SourceReviewKind.SHARED_RECEIPT_IMAGE ->
             R.string.shared_receipt_image_draft_duplicate_explanation
         SourceReviewKind.PHOTO_OCR ->
@@ -116,6 +124,12 @@ fun SourceDraftSheet(
     val hasDisallowedSuggestedCurrency = suggestedCurrency != null &&
         suggestedCurrency !in allowedCurrencies
     val hasNoAllowedCurrency = allowedCurrencies.isEmpty()
+    val occurredAtNotice = sourceReview.suggestedOccurredAt?.let { occurredAt ->
+        stringResource(
+            R.string.source_occurred_at,
+            occurredAt.atZone(ZoneId.systemDefault()).format(sourceTimeFormatter),
+        )
+    }
     DraftInputSheet(
         formKey = "source-${sourceReview.id}",
         title = stringResource(title),
@@ -146,6 +160,7 @@ fun SourceDraftSheet(
             hasDisallowedSuggestedCurrency -> stringResource(R.string.source_currency_restricted)
             else -> null
         },
+        sourceTimeNotice = occurredAtNotice,
         canSubmit = !hasNoAllowedCurrency,
     )
 }
@@ -169,6 +184,7 @@ private fun DraftInputSheet(
     onSubmit: (ManualDraftInput) -> Unit,
     onIgnore: (() -> Unit)? = null,
     notice: String? = null,
+    sourceTimeNotice: String? = null,
     canSubmit: Boolean = true,
 ) {
     var selectedKindName by rememberSaveable(formKey) {
@@ -211,6 +227,14 @@ private fun DraftInputSheet(
                     text = it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
+                )
+            }
+            sourceTimeNotice?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
 
@@ -449,3 +473,5 @@ private fun CurrencyCode.inputPrefix(): String = when (this) {
     CurrencyCode.USD -> "$"
     else -> value
 }
+
+private val sourceTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

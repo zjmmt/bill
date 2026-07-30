@@ -30,6 +30,14 @@ sealed interface PostingBuildResult {
 
     data object InvalidAmount : PostingBuildResult
 
+    data object InvalidDraftPair : PostingBuildResult
+
+    data object SameAccount : PostingBuildResult
+
+    data object InvalidRelatedTransaction : PostingBuildResult
+
+    data object AmountExceedsRemaining : PostingBuildResult
+
     data class ValidationFailed(val validation: LedgerValidation) : PostingBuildResult
 }
 
@@ -118,6 +126,181 @@ object PostingFactory {
         )
     }
 
+    fun transferPair(
+        outboundDraft: ManualDraft,
+        inboundDraft: ManualDraft,
+        sourceAccount: LedgerAccount,
+        destinationAccount: LedgerAccount,
+        transactionId: TransactionId,
+        confirmedAt: Instant,
+    ): PostingBuildResult {
+        if (
+            outboundDraft.type != TransactionType.EXPENSE ||
+            inboundDraft.type != TransactionType.INCOME ||
+            outboundDraft.amount != inboundDraft.amount ||
+            outboundDraft.fundingAccountId != sourceAccount.id ||
+            inboundDraft.fundingAccountId != destinationAccount.id
+        ) {
+            return PostingBuildResult.InvalidDraftPair
+        }
+        validateMovementAccounts(
+            first = sourceAccount,
+            second = destinationAccount,
+            currency = outboundDraft.amount.currency,
+            allowedFirstTypes = ASSET_MOVEMENT_ACCOUNT_TYPES,
+            allowedSecondTypes = ASSET_MOVEMENT_ACCOUNT_TYPES,
+        )?.let { return it }
+
+        val amount = outboundDraft.amount
+        return validate(
+            LedgerPostingCandidate(
+                id = transactionId,
+                type = TransactionType.TRANSFER,
+                occurredAt = minOf(outboundDraft.occurredAt, inboundDraft.occurredAt)
+                    .coerceAtMost(confirmedAt),
+                entries = listOf(
+                    LedgerEntry(
+                        accountId = sourceAccount.id,
+                        amount = amount.copy(minorUnits = -amount.minorUnits),
+                        role = EntryRole.FUNDING,
+                    ),
+                    LedgerEntry(
+                        accountId = destinationAccount.id,
+                        amount = amount,
+                        role = EntryRole.ASSET,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fun liabilityRepayment(
+        outboundDraft: ManualDraft,
+        sourceAccount: LedgerAccount,
+        liabilityAccount: LedgerAccount,
+        transactionId: TransactionId,
+        confirmedAt: Instant,
+    ): PostingBuildResult {
+        if (
+            outboundDraft.type != TransactionType.EXPENSE ||
+            outboundDraft.fundingAccountId != sourceAccount.id
+        ) {
+            return PostingBuildResult.InvalidDraftPair
+        }
+        validateMovementAccounts(
+            first = sourceAccount,
+            second = liabilityAccount,
+            currency = outboundDraft.amount.currency,
+            allowedFirstTypes = setOf(AccountType.ASSET_BANK),
+            allowedSecondTypes = setOf(AccountType.LIABILITY_CC),
+        )?.let { return it }
+
+        val amount = outboundDraft.amount
+        return validate(
+            LedgerPostingCandidate(
+                id = transactionId,
+                type = TransactionType.LIABILITY_REPAY,
+                occurredAt = outboundDraft.occurredAt.coerceAtMost(confirmedAt),
+                entries = listOf(
+                    LedgerEntry(
+                        accountId = sourceAccount.id,
+                        amount = amount.copy(minorUnits = -amount.minorUnits),
+                        role = EntryRole.FUNDING,
+                    ),
+                    LedgerEntry(
+                        accountId = liabilityAccount.id,
+                        amount = amount,
+                        role = EntryRole.LIABILITY,
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fun refund(
+        inboundDraft: ManualDraft,
+        destinationAccount: LedgerAccount,
+        originalExpense: dev.bill.core.domain.PostedTransaction,
+        alreadyRefundedMinorUnits: Long,
+        transactionId: TransactionId,
+        confirmedAt: Instant,
+    ): PostingBuildResult {
+        if (
+            inboundDraft.type != TransactionType.INCOME ||
+            alreadyRefundedMinorUnits < 0L ||
+            (
+                inboundDraft.fundingAccountId != null &&
+                    inboundDraft.fundingAccountId != destinationAccount.id
+                )
+        ) {
+            return PostingBuildResult.InvalidDraftPair
+        }
+        if (
+            originalExpense.status != dev.bill.core.domain.TransactionStatus.ACTIVE ||
+            originalExpense.type != TransactionType.EXPENSE ||
+            originalExpense.occurredAt.isAfter(inboundDraft.occurredAt)
+        ) {
+            return PostingBuildResult.InvalidRelatedTransaction
+        }
+        if (
+            destinationAccount.isSystem ||
+            destinationAccount.isArchived ||
+            destinationAccount.currency != inboundDraft.amount.currency ||
+            destinationAccount.type !in REFUND_DESTINATION_ACCOUNT_TYPES
+        ) {
+            return PostingBuildResult.InvalidAccountType(destinationAccount.type)
+        }
+
+        val expenseEntries = originalExpense.entries.filter {
+            it.role == EntryRole.EXPENSE && it.amount.minorUnits > 0L
+        }
+        val expenseEntry = expenseEntries.singleOrNull()
+            ?: return PostingBuildResult.InvalidRelatedTransaction
+        if (expenseEntry.amount.currency != inboundDraft.amount.currency) {
+            return PostingBuildResult.CurrencyMismatch(
+                expenseEntry.amount.currency,
+                inboundDraft.amount.currency,
+            )
+        }
+        val originalCounterpart = originalExpense.entries.singleOrNull {
+            it.accountId == destinationAccount.id &&
+                it.amount.currency == inboundDraft.amount.currency &&
+                it.amount.minorUnits < 0L &&
+                it.role in setOf(EntryRole.FUNDING, EntryRole.LIABILITY)
+        } ?: return PostingBuildResult.InvalidRelatedTransaction
+
+        val remaining = try {
+            Math.subtractExact(expenseEntry.amount.minorUnits, alreadyRefundedMinorUnits)
+        } catch (_: ArithmeticException) {
+            return PostingBuildResult.AmountExceedsRemaining
+        }
+        if (inboundDraft.amount.minorUnits > remaining) {
+            return PostingBuildResult.AmountExceedsRemaining
+        }
+
+        return validate(
+            LedgerPostingCandidate(
+                id = transactionId,
+                type = TransactionType.REFUND,
+                occurredAt = inboundDraft.occurredAt.coerceAtMost(confirmedAt),
+                entries = listOf(
+                    LedgerEntry(
+                        accountId = destinationAccount.id,
+                        amount = inboundDraft.amount,
+                        role = originalCounterpart.role,
+                    ),
+                    LedgerEntry(
+                        accountId = expenseEntry.accountId,
+                        amount = inboundDraft.amount.copy(
+                            minorUnits = -inboundDraft.amount.minorUnits,
+                        ),
+                        role = EntryRole.EXPENSE,
+                    ),
+                ),
+            ),
+        )
+    }
+
     private fun expenseEntries(
         draft: ManualDraft,
         fundingAccount: LedgerAccount,
@@ -175,4 +358,38 @@ object PostingFactory {
             is LedgerValidation.Valid -> PostingBuildResult.Valid(validation.transaction)
             else -> PostingBuildResult.ValidationFailed(validation)
         }
+
+    private fun validateMovementAccounts(
+        first: LedgerAccount,
+        second: LedgerAccount,
+        currency: CurrencyCode,
+        allowedFirstTypes: Set<AccountType>,
+        allowedSecondTypes: Set<AccountType>,
+    ): PostingBuildResult? {
+        if (first.id == second.id) return PostingBuildResult.SameAccount
+        if (first.isSystem || first.isArchived || first.type !in allowedFirstTypes) {
+            return PostingBuildResult.InvalidAccountType(first.type)
+        }
+        if (second.isSystem || second.isArchived || second.type !in allowedSecondTypes) {
+            return PostingBuildResult.InvalidAccountType(second.type)
+        }
+        if (first.currency != currency) {
+            return PostingBuildResult.CurrencyMismatch(currency, first.currency)
+        }
+        if (second.currency != currency) {
+            return PostingBuildResult.CurrencyMismatch(currency, second.currency)
+        }
+        if (!currency.isSupportedLedgerCurrency()) {
+            return PostingBuildResult.UnsupportedCurrency(currency)
+        }
+        return null
+    }
+
+    private val ASSET_MOVEMENT_ACCOUNT_TYPES = setOf(
+        AccountType.ASSET_CASH,
+        AccountType.ASSET_BANK,
+        AccountType.ASSET_EWALLET_BALANCE,
+    )
+    private val REFUND_DESTINATION_ACCOUNT_TYPES =
+        ASSET_MOVEMENT_ACCOUNT_TYPES + AccountType.LIABILITY_CC
 }

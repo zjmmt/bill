@@ -30,10 +30,14 @@ interface SharedReceiptImageCapture {
         override suspend fun ingest(
             commandId: String,
             evidence: SharedReceiptImageEvidence,
-        ): SourceCaptureResult = SourceCaptureResult.Failure(
-            error = SourceCaptureError.PARSER_UNAVAILABLE,
-            diagnosticCode = null,
-        )
+        ): SourceCaptureResult = try {
+            SourceCaptureResult.Failure(
+                error = SourceCaptureError.PARSER_UNAVAILABLE,
+                diagnosticCode = null,
+            )
+        } finally {
+            evidence.bytes.fill(0)
+        }
     }
 }
 
@@ -71,9 +75,9 @@ class SharedReceiptImageIngestionService(
     override suspend fun ingest(
         commandId: String,
         evidence: SharedReceiptImageEvidence,
-    ): SourceCaptureResult = withContext(Dispatchers.Default) {
-        intakeMutex.withLock {
-            try {
+    ): SourceCaptureResult = try {
+        withContext(Dispatchers.Default) {
+            intakeMutex.withLock {
                 val mediaType = ImageEvidenceMediaTypes.canonicalize(evidence.mediaType)
                 if (mediaType !in ImageEvidenceMediaTypes.SHARED_RECEIPT_IMAGE) {
                     return@withLock failure(
@@ -92,10 +96,10 @@ class SharedReceiptImageIngestionService(
                     )
                 }
                 evidenceIngestion.ingest(commandId, mediaType, evidence.bytes)
-            } finally {
-                evidence.bytes.fill(0)
             }
         }
+    } finally {
+        evidence.bytes.fill(0)
     }
 
     private fun failure(

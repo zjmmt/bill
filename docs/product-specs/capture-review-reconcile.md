@@ -1,8 +1,8 @@
 # 采集、确认与对账规格
 
-- 状态：已确认；通用显式文本证据与复核已实现，provider 流程待样本验证
+- 状态：部分实现；通用显式证据复核与用户确认的基础对账已实现，provider 流程待样本验证
 - 所有者：项目维护者
-- 最后核验：2026-07-25
+- 最后核验：2026-07-30
 - 事实来源：MVP 规格、[统一领域模型](../design-docs/domain-model.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0009](../decisions/0009-wallet-balance-not-inferred-from-bank.md)
 
 ## 原则
@@ -54,6 +54,7 @@ stateDiagram-v2
     WAITING_USER --> DISMISSED
     EDITED --> CONFIRMED
     EDITED --> LINKED
+    LINKED --> WAITING_USER: 撤销对账
     NEW --> ERROR: 解析失败
     ERROR --> NEW: 新解析版本重放
     AUTO_CONFIRMED --> CONFIRMED: 过账完成
@@ -61,6 +62,17 @@ stateDiagram-v2
 ```
 
 状态转换必须幂等。`LINKED` 表示证据已并入另一经济事件，不等同于删除。
+
+## 当前基础对账切片
+
+- 待复核 Draft 可在本机得到三类建议：两个本人资产账户之间的相反方向转账、银行卡支出改作信用卡还款、收入 Draft 关联既有支出作为退款。
+- 金额、币种、方向、账户角色和关系特定时间窗是硬门，不是关系已成立的证明；每条建议都要求用户显式确认。
+- 确认前展示账务影响：转账不计普通收支，还款不产生第二笔支出，退款冲减原支出且累计不能超额。
+- 确认事务同时保存平衡 Entries、Draft 链接、退款关系、审计与幂等回执；中途失败不保留半笔结果。
+- 撤销只作废替代交易并恢复 Draft，不删除 RawEvent、来源证据、关系或审计历史。
+- 候选计算有 500 条近期 Draft、每条 3 个和全局 50 个的本机资源上限；上限外内容仍保留正常人工复核路径。
+
+该切片不是 provider 双计消除、pending/posted 合并、钱包绑卡推断或自动对账。上述能力仍须真实脱敏样本、独立关系硬门和回放测试。
 
 ## 证据文件生命周期
 

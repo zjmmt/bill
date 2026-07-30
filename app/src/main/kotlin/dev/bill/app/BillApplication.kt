@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import dev.bill.application.BillService
 import dev.bill.application.NotificationEvidenceIngestionService
+import dev.bill.application.LocalDelimitedStatementImportService
 import dev.bill.application.NotificationRouteLabelResolver
 import dev.bill.application.PhotoOcrTranscriptIngestionService
 import dev.bill.application.SelectedTextFileIngestionService
@@ -14,12 +15,14 @@ import dev.bill.data.local.AppPrivateEvidenceStore
 import dev.bill.data.local.BillDatabaseFactory
 import dev.bill.data.local.RoomLedgerRepository
 import dev.bill.data.local.RoomNotificationObservationRepository
+import dev.bill.data.local.RoomStatementImportBatchRepository
 import dev.bill.data.local.RoomRawEventRepository
 import dev.bill.data.local.RoomSourceRepository
 import dev.bill.data.local.RoomSourceEvidenceLifecycleRepository
 import dev.bill.data.local.RoomSourceEvidenceStagingRepository
 import dev.bill.source.genericsharetext.GenericSelectedTextFileParser
 import dev.bill.source.genericsharetext.GenericShareTextParser
+import dev.bill.source.genericdelimited.GenericDelimitedStatementParser
 import dev.bill.source.genericphotoocr.GenericPhotoOcrParser
 import dev.bill.source.genericreceiptimage.GenericSharedReceiptImageParser
 import dev.bill.source.genericnotification.GenericNotificationParser
@@ -106,6 +109,7 @@ class AppContainer(context: Context) {
                     GenericNotificationParser(),
                 ) + notificationRouteCatalog.parsers() + listOf(
                     GenericPhotoOcrParser(),
+                    GenericDelimitedStatementParser(),
                     GenericShareTextParser(),
                     GenericSelectedTextFileParser(),
                     GenericSharedReceiptImageParser(),
@@ -142,6 +146,18 @@ class AppContainer(context: Context) {
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         SelectedTextFileIngestionService(
+            rawEventRepository = rawEventRepository,
+            evidenceStore = evidenceStore,
+            sourceIngestionService = sourceIngestionService,
+            evidenceAdmission = sourceEvidenceLifecycleService,
+        )
+    }
+
+    val localDelimitedStatementImportService: LocalDelimitedStatementImportService by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        LocalDelimitedStatementImportService(
+            batchRepository = RoomStatementImportBatchRepository(database),
             rawEventRepository = rawEventRepository,
             evidenceStore = evidenceStore,
             sourceIngestionService = sourceIngestionService,

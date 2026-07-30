@@ -5,11 +5,15 @@ import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.SystemAccountIds
+import dev.bill.core.domain.TransactionSourceMode
+import dev.bill.core.domain.TransactionStatus
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.EntryRole
+import dev.bill.core.model.LedgerEntry
 import dev.bill.core.model.Money
 import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
@@ -142,11 +146,149 @@ class PostingFactoryTest {
         assertTrue(result is PostingBuildResult.UnsupportedCurrency)
     }
 
+    @Test
+    fun `transfer pair moves money between distinct own assets without income or expense`() {
+        val source = account(AccountType.ASSET_BANK, id = "bank-source")
+        val destination = account(AccountType.ASSET_EWALLET_BALANCE, id = "wallet-destination")
+        val result = PostingFactory.transferPair(
+            outboundDraft = draft(
+                TransactionType.EXPENSE,
+                id = "outbound",
+                fundingAccountId = source.id,
+            ),
+            inboundDraft = draft(
+                TransactionType.INCOME,
+                id = "inbound",
+                fundingAccountId = destination.id,
+            ),
+            sourceAccount = source,
+            destinationAccount = destination,
+            transactionId = TransactionId("tx-transfer"),
+            confirmedAt = now,
+        )
+
+        val transaction = (result as PostingBuildResult.Valid).transaction
+        assertEquals(TransactionType.TRANSFER, transaction.type)
+        assertEquals(-2_500L, transaction.entries[0].amount.minorUnits)
+        assertEquals(2_500L, transaction.entries[1].amount.minorUnits)
+        assertEquals(
+            setOf(EntryRole.FUNDING, EntryRole.ASSET),
+            transaction.entries.mapTo(mutableSetOf(), LedgerEntry::role),
+        )
+    }
+
+    @Test
+    fun `transfer pair rejects the same account and mismatched amounts`() {
+        val account = account(AccountType.ASSET_BANK, id = "same")
+        assertEquals(
+            PostingBuildResult.SameAccount,
+            PostingFactory.transferPair(
+                outboundDraft = draft(
+                    TransactionType.EXPENSE,
+                    id = "out",
+                    fundingAccountId = account.id,
+                ),
+                inboundDraft = draft(
+                    TransactionType.INCOME,
+                    id = "in",
+                    fundingAccountId = account.id,
+                ),
+                sourceAccount = account,
+                destinationAccount = account,
+                transactionId = TransactionId("tx-same"),
+                confirmedAt = now,
+            ),
+        )
+
+        val destination = account(AccountType.ASSET_BANK, id = "destination")
+        val mismatch = PostingFactory.transferPair(
+            outboundDraft = draft(
+                TransactionType.EXPENSE,
+                id = "out",
+                fundingAccountId = account.id,
+            ),
+            inboundDraft = draft(
+                TransactionType.INCOME,
+                id = "in",
+                fundingAccountId = destination.id,
+                amount = Money.cny(2_400),
+            ),
+            sourceAccount = account,
+            destinationAccount = destination,
+            transactionId = TransactionId("tx-mismatch"),
+            confirmedAt = now,
+        )
+        assertEquals(PostingBuildResult.InvalidDraftPair, mismatch)
+    }
+
+    @Test
+    fun `liability repayment reduces bank asset and credit card debt`() {
+        val bank = account(AccountType.ASSET_BANK, id = "bank")
+        val card = account(AccountType.LIABILITY_CC, id = "card")
+        val result = PostingFactory.liabilityRepayment(
+            outboundDraft = draft(
+                TransactionType.EXPENSE,
+                id = "repay-draft",
+                fundingAccountId = bank.id,
+            ),
+            sourceAccount = bank,
+            liabilityAccount = card,
+            transactionId = TransactionId("tx-repayment"),
+            confirmedAt = now,
+        )
+
+        val transaction = (result as PostingBuildResult.Valid).transaction
+        assertEquals(TransactionType.LIABILITY_REPAY, transaction.type)
+        assertEquals(-2_500L, transaction.entries[0].amount.minorUnits)
+        assertEquals(EntryRole.FUNDING, transaction.entries[0].role)
+        assertEquals(2_500L, transaction.entries[1].amount.minorUnits)
+        assertEquals(EntryRole.LIABILITY, transaction.entries[1].role)
+    }
+
+    @Test
+    fun `partial refund reverses expense and cannot exceed remaining amount`() {
+        val bank = account(AccountType.ASSET_BANK, id = "bank")
+        val original = expenseTransaction(bank, amount = 5_000)
+        val inbound = draft(
+            TransactionType.INCOME,
+            id = "refund-draft",
+            fundingAccountId = bank.id,
+            amount = Money.cny(2_000),
+        )
+
+        val result = PostingFactory.refund(
+            inboundDraft = inbound,
+            destinationAccount = bank,
+            originalExpense = original,
+            alreadyRefundedMinorUnits = 1_000,
+            transactionId = TransactionId("tx-refund"),
+            confirmedAt = now,
+        )
+        val transaction = (result as PostingBuildResult.Valid).transaction
+        assertEquals(TransactionType.REFUND, transaction.type)
+        assertEquals(2_000L, transaction.entries[0].amount.minorUnits)
+        assertEquals(-2_000L, transaction.entries[1].amount.minorUnits)
+        assertEquals(EntryRole.EXPENSE, transaction.entries[1].role)
+
+        assertEquals(
+            PostingBuildResult.AmountExceedsRemaining,
+            PostingFactory.refund(
+                inboundDraft = inbound.copy(amount = Money.cny(4_001)),
+                destinationAccount = bank,
+                originalExpense = original,
+                alreadyRefundedMinorUnits = 1_000,
+                transactionId = TransactionId("tx-refund-too-large"),
+                confirmedAt = now,
+            ),
+        )
+    }
+
     private fun account(
         type: AccountType,
         currency: CurrencyCode = CurrencyCode.CNY,
+        id: String = "account-1",
     ) = LedgerAccount(
-        id = AccountId("account-1"),
+        id = AccountId(id),
         name = "测试账户",
         normalizedName = "测试账户",
         type = type,
@@ -157,17 +299,52 @@ class PostingFactoryTest {
         creationCommandId = CommandId("command-account"),
     )
 
-    private fun draft(type: TransactionType) = ManualDraft(
-        id = DraftId("draft-1"),
+    private fun draft(
+        type: TransactionType,
+        id: String = "draft-1",
+        fundingAccountId: AccountId? = null,
+        amount: Money = Money.cny(2_500L),
+    ) = ManualDraft(
+        id = DraftId(id),
         state = DraftState.WAITING_USER,
         type = type,
-        amount = Money.cny(2_500L),
+        amount = amount,
         occurredAt = now,
         counterparty = "测试商户",
         note = null,
-        fundingAccountId = null,
+        fundingAccountId = fundingAccountId,
         createdAt = now,
         updatedAt = now,
         creationCommandId = CommandId("command-draft"),
+    )
+
+    private fun expenseTransaction(
+        fundingAccount: LedgerAccount,
+        amount: Long,
+    ) = PostedTransaction(
+        id = TransactionId("original-expense"),
+        draftId = DraftId("original-draft"),
+        type = TransactionType.EXPENSE,
+        status = TransactionStatus.ACTIVE,
+        sourceMode = TransactionSourceMode.EXTERNAL,
+        occurredAt = now.minusSeconds(3_600),
+        confirmedAt = now.minusSeconds(3_000),
+        title = "原消费",
+        note = null,
+        commandId = CommandId("original-command"),
+        entries = listOf(
+            LedgerEntry(
+                accountId = SystemAccountIds.uncategorizedExpense(
+                    fundingAccount.currency,
+                ),
+                amount = Money(amount, fundingAccount.currency),
+                role = EntryRole.EXPENSE,
+            ),
+            LedgerEntry(
+                accountId = fundingAccount.id,
+                amount = Money(-amount, fundingAccount.currency),
+                role = EntryRole.FUNDING,
+            ),
+        ),
     )
 }

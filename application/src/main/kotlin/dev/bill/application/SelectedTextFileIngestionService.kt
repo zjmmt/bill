@@ -24,10 +24,14 @@ interface SelectedTextFileCapture {
         override suspend fun ingest(
             commandId: String,
             evidence: SelectedTextFileEvidence,
-        ): SourceCaptureResult = SourceCaptureResult.Failure(
-            error = SharedTextCaptureError.PARSER_UNAVAILABLE,
-            diagnosticCode = null,
-        )
+        ): SourceCaptureResult = try {
+            SourceCaptureResult.Failure(
+                error = SharedTextCaptureError.PARSER_UNAVAILABLE,
+                diagnosticCode = null,
+            )
+        } finally {
+            evidence.bytes.fill(0)
+        }
     }
 }
 

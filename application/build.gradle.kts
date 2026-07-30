@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":core:ledger"))
     implementation(project(":source:contract"))
     implementation(project(":source:generic-photo-ocr"))
+    implementation(project(":source:generic-delimited-statement"))
     implementation(project(":source:generic-receipt-image"))
     implementation(project(":source:generic-notification"))
     implementation(project(":source:pipeline"))

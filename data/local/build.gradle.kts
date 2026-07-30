@@ -34,6 +34,7 @@ room {
 
 dependencies {
     implementation(project(":core:domain"))
+    implementation(project(":core:ledger"))
     implementation(project(":core:model"))
     implementation(project(":source:contract"))
     implementation(project(":source:pipeline"))

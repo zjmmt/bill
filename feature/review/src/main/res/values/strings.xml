@@ -8,7 +8,8 @@
     <string name="drafts_heading">Draft inbox</string>
     <string name="drafts_intro">Manual entries and user-provided evidence stay in review until their economic meaning and actual funding account are confirmed.</string>
     <string name="add_manual_draft">Enter income or expense</string>
-    <string name="import_text_file">Import text file</string>
+    <string name="import_text_file">Import local statement</string>
+    <string name="source_occurred_at">Source time: %1$s (current device time zone)</string>
     <string name="drafts_empty_title">Nothing is waiting for review</string>
     <string name="drafts_empty_body">Enter an item manually, or explicitly share plain text or a PNG receipt screenshot to Bill. Provider-specific imports remain unavailable until redacted samples pass replay tests.</string>
     <string name="source_reviews_heading">Evidence to complete</string>
@@ -19,6 +20,8 @@
     <string name="shared_text_needs_confirmation">Amount, type, and description require confirmation</string>
     <string name="selected_text_file_source">Selected text file</string>
     <string name="selected_text_file_needs_confirmation">The file is unverified; confirm amount, type, and description</string>
+    <string name="delimited_statement_source">Mapped statement row</string>
+    <string name="delimited_statement_needs_confirmation">Imported fields are suggestions; confirm the transaction and funding account</string>
     <string name="shared_receipt_image_source">Shared receipt screenshot</string>
     <string name="shared_receipt_image_needs_confirmation">Bill did not OCR this image; confirm amount, type, and description</string>
     <string name="photo_ocr_source">One-shot screenshot · local OCR</string>
@@ -30,6 +33,33 @@
     <string name="funding_account_missing">Funding account required</string>
     <string name="funding_account_selected">Funding account selected</string>
     <string name="review_draft">Review draft</string>
+    <string name="reconciliation_candidates_heading">Reconciliation suggestions</string>
+    <string name="reconciliation_candidates_intro">Suggestions appear only when amount, currency, direction, account roles, and time window pass hard checks. Bill never confirms them automatically.</string>
+    <string name="reconciliation_candidate_not_automatic">Suggestion only · explicit confirmation required</string>
+    <string name="reconciliation_review">Check suggestion</string>
+    <string name="reconciliation_kind_transfer">Transfer between my accounts</string>
+    <string name="reconciliation_kind_refund">Refund</string>
+    <string name="reconciliation_kind_repayment">Credit-card repayment</string>
+    <string name="reconciliation_marker">06 / RECONCILE</string>
+    <string name="reconciliation_title">Confirm reconciliation</string>
+    <string name="reconciliation_reason_heading">Why this suggestion appeared</string>
+    <string name="reconciliation_reason_body">The local ledger found compatible amount, currency, direction, account roles, and timing. These checks are not proof, so only you can confirm the relationship.</string>
+    <string name="reconciliation_impact_heading">Ledger impact</string>
+    <string name="reconciliation_transfer_impact">Moves money between two of your asset accounts. It is not counted as income or expense.</string>
+    <string name="reconciliation_refund_impact">Reverses part of the original funding movement and reduces the original expense. Active refunds cannot exceed that expense.</string>
+    <string name="reconciliation_repayment_impact">Reduces the bank asset and the credit-card debt by the same amount. It is not counted as a new expense.</string>
+    <string name="reconciliation_evidence_heading">Linked drafts</string>
+    <plurals name="reconciliation_evidence_count">
+        <item quantity="one">This posting links %1$d source draft and keeps its immutable evidence chain.</item>
+        <item quantity="other">This posting links %1$d source drafts and keeps their immutable evidence chain.</item>
+    </plurals>
+    <string name="reconciliation_undo_heading">Reversible without deleting evidence</string>
+    <string name="reconciliation_undo_body">The input drafts and source evidence are kept. Undoing this reconciliation returns the drafts to review.</string>
+    <string name="reconciliation_confirm">Confirm this reconciliation</string>
+    <string name="reconciliation_saving">Reconciling…</string>
+    <string name="reconciliation_later">Review later</string>
+    <string name="reconciliation_error_changed">The drafts, account, or related transaction changed. Close this sheet and review the latest suggestion.</string>
+    <string name="reconciliation_error_failed">The reconciliation could not be saved. No partial posting was kept.</string>
 
     <string name="manual_draft_title">Manual entry</string>
     <string name="manual_draft_explanation">This creates a draft, not a posted transaction. You will choose the real funding account on the next step.</string>
@@ -39,6 +69,9 @@
     <string name="selected_text_file_draft_title">Complete selected text file</string>
     <string name="selected_text_file_draft_explanation">You selected this text file through Android’s document picker. Bill copied a bounded local evidence copy without retaining its URI or identifying a provider, so confirm every field before continuing.</string>
     <string name="selected_text_file_draft_duplicate_explanation">Matching file evidence has already been captured. Check existing drafts and posted transactions before continuing; Bill will not merge it automatically.</string>
+    <string name="delimited_statement_draft_title">Review imported statement row</string>
+    <string name="delimited_statement_draft_explanation">These values came from the mapping you confirmed. Check the direction, currency, amount, time, and counterparty, then choose the real funding account. Nothing is posted automatically.</string>
+    <string name="delimited_statement_draft_duplicate_explanation">A matching mapped row may already exist. Check pending drafts and posted transactions before continuing; Bill will not merge it automatically.</string>
     <string name="shared_receipt_image_draft_title">Complete receipt screenshot</string>
     <string name="shared_receipt_image_draft_explanation">You explicitly shared one PNG receipt screenshot to Bill. It stays only on this device; Bill does not OCR or infer it. Use the original receipt to confirm every field before continuing.</string>
     <string name="shared_receipt_image_draft_duplicate_explanation">Matching receipt-image evidence has already been captured. Check existing drafts and posted transactions before continuing; Bill will not merge it automatically.</string>

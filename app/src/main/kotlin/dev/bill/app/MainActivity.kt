@@ -97,6 +97,7 @@ import dev.bill.feature.overview.OverviewScreen
 import dev.bill.feature.overview.OverviewUiState
 import dev.bill.feature.review.DraftsScreen
 import dev.bill.feature.review.ManualDraftSheet
+import dev.bill.feature.review.ReconciliationBottomSheet
 import dev.bill.feature.review.ReviewAction
 import dev.bill.feature.review.ReviewBottomSheet
 import dev.bill.feature.review.ReviewPresenter
@@ -104,6 +105,7 @@ import dev.bill.feature.review.SourceDraftSheet
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.SourceFamily
 import dev.bill.source.contract.TextEvidenceMediaTypes
+import dev.bill.source.genericdelimited.DelimitedDelimiter
 import dev.bill.source.review.EvidencePayloadState
 import dev.bill.source.review.SourceEvidenceItem
 import java.time.ZoneId
@@ -123,12 +125,16 @@ class MainActivity : ComponentActivity() {
             sourceEvidenceManager = application.container.sourceEvidenceLifecycleService,
             selectedTextFileIngestionService = application.container.selectedTextFileIngestionService,
             selectedTextDocumentReader = ContentResolverSelectedTextDocumentReader(contentResolver),
+            delimitedStatementImport = application.container.localDelimitedStatementImportService,
+            delimitedStatementDocumentReader =
+                ContentResolverSelectedDelimitedStatementDocumentReader(contentResolver),
             sharedReceiptImageIngestionService = application.container
                 .sharedReceiptImageIngestionService,
             sharedReceiptImageDocumentReader = ContentResolverSharedReceiptImageDocumentReader(
                 contentResolver,
             ),
             selectedPhotoOcrImporter = ContentResolverSelectedPhotoOcrImporter(
+                applicationContext = applicationContext,
                 contentResolver = contentResolver,
                 capture = application.container.photoOcrTranscriptIngestionService,
             ),
@@ -279,8 +285,12 @@ private fun BillApp(
     var manualDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedDraftId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSourceReviewId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedReconciliationCaseId by rememberSaveable { mutableStateOf<String?>(null) }
+    var reconciliationCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var sourceDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTextFileCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showImportMethod by rememberSaveable { mutableStateOf(false) }
+    var pendingStatementDelimiter by rememberSaveable { mutableStateOf<String?>(null) }
     var showLocalOnlyDeclaration by remember(application) {
         mutableStateOf(application?.localOnlyDeclarationState?.shouldShow() != false)
     }
@@ -308,6 +318,19 @@ private fun BillApp(
             viewModel.ingestSelectedTextFile(commandId, uri.toString())
         }
     }
+    val selectedStatementLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val delimiter = pendingStatementDelimiter
+            ?.let { name -> runCatching { DelimitedDelimiter.valueOf(name) }.getOrNull() }
+        pendingStatementDelimiter = null
+        if (uri != null && delimiter != null) {
+            viewModel.ingestSelectedDelimitedStatement(
+                documentUri = uri.toString(),
+                delimiter = delimiter,
+            )
+        }
+    }
     val selectedPhotoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(MAX_SELECTED_OCR_IMAGES),
     ) { uris ->
@@ -318,6 +341,24 @@ private fun BillApp(
         if (selectedTextFileCommandId != null) return
         selectedTextFileCommandId = viewModel.newCommandId()
         selectedTextFileLauncher.launch(TextEvidenceMediaTypes.USER_SELECTED_TEXT_FILE.toTypedArray())
+    }
+
+    fun openStructuredStatement(delimiter: DelimitedDelimiter) {
+        if (pendingStatementDelimiter != null) return
+        pendingStatementDelimiter = delimiter.name
+        val mediaTypes = when (delimiter) {
+            DelimitedDelimiter.COMMA -> arrayOf(
+                TextEvidenceMediaTypes.TEXT_CSV,
+                TextEvidenceMediaTypes.APPLICATION_CSV,
+                TextEvidenceMediaTypes.TEXT_PLAIN,
+            )
+
+            DelimitedDelimiter.TAB -> arrayOf(
+                TextEvidenceMediaTypes.TEXT_TAB_SEPARATED,
+                TextEvidenceMediaTypes.TEXT_PLAIN,
+            )
+        }
+        selectedStatementLauncher.launch(mediaTypes)
     }
 
     fun consumeSourceCapture(commandId: String): Boolean {
@@ -373,6 +414,11 @@ private fun BillApp(
                             selectedDraftId = null
                             destination = AppDestination.LEDGER
                         }
+                        BillOperationKind.RESOLVE_RECONCILIATION -> {
+                            selectedReconciliationCaseId = null
+                            reconciliationCommandId = null
+                            destination = AppDestination.LEDGER
+                        }
                         BillOperationKind.DISMISS_DRAFT -> selectedDraftId = null
                         BillOperationKind.VOID_TRANSACTION -> destination = AppDestination.DRAFTS
                     }
@@ -385,6 +431,8 @@ private fun BillApp(
 
                 is BillUiEvent.SourceReviewReady -> {
                     if (consumeSourceCapture(event.commandId)) {
+                        selectedReconciliationCaseId = null
+                        reconciliationCommandId = null
                         selectedSourceReviewId = event.proposalId
                         sourceDraftCommandId = viewModel.newCommandId()
                         destination = AppDestination.DRAFTS
@@ -563,6 +611,7 @@ private fun BillApp(
                 AppDestination.DRAFTS -> DraftsScreen(
                     drafts = snapshot.pendingDrafts,
                     sourceReviews = snapshot.pendingSourceReviews,
+                    reconciliationCases = snapshot.reconciliationCases,
                     amountsMasked = state.amountsMasked,
                     onAddManualDraft = {
                         viewModel.clearOperationFeedback()
@@ -570,16 +619,31 @@ private fun BillApp(
                     },
                     onImportTextFile = {
                         viewModel.clearOperationFeedback()
-                        openSelectedTextFile()
+                        showImportMethod = true
                     },
                     onReviewDraft = { draftId ->
                         viewModel.clearOperationFeedback()
+                        selectedReconciliationCaseId = null
+                        reconciliationCommandId = null
+                        selectedSourceReviewId = null
+                        sourceDraftCommandId = null
                         selectedDraftId = draftId
                     },
                     onReviewSource = { proposalId ->
                         viewModel.clearOperationFeedback()
+                        selectedReconciliationCaseId = null
+                        reconciliationCommandId = null
+                        selectedDraftId = null
                         selectedSourceReviewId = proposalId
                         sourceDraftCommandId = viewModel.newCommandId()
+                    },
+                    onReviewReconciliation = { caseId ->
+                        viewModel.clearOperationFeedback()
+                        selectedDraftId = null
+                        selectedSourceReviewId = null
+                        sourceDraftCommandId = null
+                        selectedReconciliationCaseId = caseId
+                        reconciliationCommandId = viewModel.newCommandId()
                     },
                     contentPadding = innerPadding,
                 )
@@ -648,6 +712,31 @@ private fun BillApp(
         }
     }
 
+        if (showImportMethod) {
+            ImportMethodSheet(
+                onCsvSelected = {
+                    showImportMethod = false
+                    openStructuredStatement(DelimitedDelimiter.COMMA)
+                },
+                onTsvSelected = {
+                    showImportMethod = false
+                    openStructuredStatement(DelimitedDelimiter.TAB)
+                },
+                onPlainTextSelected = {
+                    showImportMethod = false
+                    openSelectedTextFile()
+                },
+                onDismiss = { showImportMethod = false },
+            )
+        }
+
+        StatementImportSheet(
+            state = state.statementImport,
+            onInputChanged = viewModel::updateStatementImportMapping,
+            onConfirm = viewModel::confirmStatementImport,
+            onDismiss = viewModel::cancelStatementImport,
+        )
+
         val snapshot = state.snapshot
         if (showManualDraft && snapshot != null) {
             ManualDraftSheet(
@@ -698,6 +787,7 @@ private fun BillApp(
                             counterparty = input.counterparty,
                             note = input.note,
                             currency = input.currency,
+                            occurredAt = selectedSourceReview.suggestedOccurredAt,
                         )
                     }
                 },
@@ -738,6 +828,34 @@ private fun BillApp(
                     }
                 }
             },
+            )
+        }
+
+        val selectedReconciliation = snapshot?.reconciliationCases
+            ?.firstOrNull { it.id == selectedReconciliationCaseId }
+        if (selectedReconciliation != null) {
+            val isSavingReconciliation = state.activeOperation?.let { operation ->
+                operation.kind == BillOperationKind.RESOLVE_RECONCILIATION &&
+                    operation.entityId == selectedReconciliation.id
+            } == true
+            ReconciliationBottomSheet(
+                case = selectedReconciliation,
+                amountsMasked = state.amountsMasked,
+                isSaving = isSavingReconciliation,
+                operationError = state.operationError,
+                onConfirm = {
+                    reconciliationCommandId?.let { commandId ->
+                        viewModel.resolveReconciliation(
+                            commandId = commandId,
+                            caseId = selectedReconciliation.id,
+                        )
+                    }
+                },
+                onDismiss = {
+                    selectedReconciliationCaseId = null
+                    reconciliationCommandId = null
+                    viewModel.clearOperationFeedback()
+                },
             )
         }
 

@@ -1,8 +1,8 @@
 # 系统架构地图
 
-- 状态：部分实现；本地账本、通用显式文本证据、空模板通知边界与持久观察去重已实现，provider 适配待验证
+- 状态：部分实现；本地账本、通用显式文本/CSV/TSV 证据、用户确认对账、空模板通知边界与持久观察去重已实现，provider 适配待验证
 - 所有者：项目维护者
-- 最后核验：2026-07-26
+- 最后核验：2026-07-30
 - 事实来源：当前 Gradle/Room 工程、项目负责人范围修正、`docs/design-docs/` 下的细化文档、[ADR-0005](docs/decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](docs/decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](docs/decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](docs/decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0009](docs/decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0010](docs/decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0011](docs/decisions/0011-local-resource-budget-first-capture.md)
 
 本文只描述稳定边界。实体字段、解析规则和 UI 细节分别由 [领域模型](docs/design-docs/domain-model.md)、[来源适配器](docs/design-docs/ingestion-and-source-adapters.md) 与 [产品规格](docs/product-specs/index.md) 维护。
@@ -35,7 +35,7 @@ flowchart LR
 
 采集成功不代表入账成功。所有外部输入先成为可追溯证据，再由共享领域规则决定其经济含义。
 
-手工输入不是外部采集证据：当前实现把它直接建模为 ManualIntent/Draft，不创建假的 `RawEvent`。显式分享文本和用户选择的小型文本文件则走已实现的来源中立证据链：
+手工输入不是外部采集证据：当前实现把它直接建模为 ManualIntent/Draft，不创建假的 `RawEvent`。显式分享文本、不透明小型文本文件和用户映射 CSV/TSV 则走已实现的来源中立证据链：
 
 ```text
 ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
@@ -46,19 +46,28 @@ ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
   -> source draft proposal
   -> user-completed external Draft
   -> Transaction + balanced Entries
+
+SAF OpenDocument(CSV, TSV) + explicit column mapping
+  -> bounded process-local document
+  -> ImportBatch(file hash + mapping hash)
+  -> one immutable row evidence / RawEvent per valid row
+  -> GenericDelimitedStatementParser / ParseAttempt
+  -> source draft proposal with amount, direction, time and counterparty candidates
+  -> user-completed external Draft
+  -> Reconcile or Transaction + balanced Entries
 ```
 
-两个通用入口分别标记为 `GENERIC/SHARE_TEXT` 与 `GENERIC/STATEMENT_IMPORT`，不从任意文本猜测支付宝、微信、银行、金额或账户；后者不保存 URI/文件名，也不是结构化账单批量导入。外部 provider 通知和文件适配器仍未实现；支付宝、微信和银行在运行时都必须显示 `FALLBACK_REQUIRED`，直到各自具有真实脱敏样本和回放证据。
+通用入口标记为 `GENERIC/SHARE_TEXT`、不透明 `GENERIC/STATEMENT_IMPORT` 或逐行 `GENERIC/STATEMENT_IMPORT`。自由文本不猜支付宝、微信、银行、金额或账户；结构化路径也只采用用户明确确认的列、格式、方向值和币种，不按表头猜 provider。所有 SAF 路径都不保存 URI/文件名。外部 provider 通知和专属文件适配器仍未实现；支付宝、微信和具体银行在运行时都必须显示 `FALLBACK_REQUIRED`，直到各自具有真实脱敏样本和回放证据。
 
 ## 当前实现断面
 
-账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建账户后以平衡 `ADJUSTMENT` 表示期初余额；手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries。Room schema v6 持久化账户、草稿、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
+账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建账户后以平衡 `ADJUSTMENT` 表示期初余额；手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries。Room schema v7 持久化账户、草稿、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
 
 账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
 
 来源断面先在 Room 登记 5 分钟暂存租约，再把证据写入 `noBackupFilesDir`；文本载荷限制为 64 KiB 并严格校验 UTF-8，用户显式分享的单张 PNG 收据限制为 4 MiB 并只校验有界 PNG 结构/CRC、不解码像素。两类载荷均校验长度和 SHA-256。RawEvent/生命周期事务原子消费租约；到期租约和旧版孤儿由 CAS 接管与有界扫描恢复。`RawEvent` ID 碰撞、解析/建议/证据链接/载荷生命周期跨表不一致以及损坏载荷均失败关闭。重复哈希只产生用户可见提示，不自动合并；忽略追加审计并保留证据。原始载荷使用两阶段清除、7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算和 keyset 分页；自动保留/容量清理不删除待复核载荷，清除后结构化事实链继续保留。
 
-以上是代码实现状态，不是发布支持结论。本轮组合 `test lint assembleDebug :data:local:assembleDebugAndroidTest` 的 549 个任务成功、Lint 通过；Room v5→v6 迁移和通知观察仓储 Android 测试已编译，尚未在真机执行。Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过。多币种、转账、还款、退款、投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
+以上是代码实现状态，不是发布支持结论。既有组合 `test lint assembleDebug :data:local:assembleDebugAndroidTest` 曾成功，当前 CSV/TSV、来源时间/方向预填和用户确认对账又通过目标 JVM/应用测试与 Android 测试 APK 编译；本轮最终全量 Lint/APK 仍须重新完成。Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过；v5→v6→v7 的 Android 测试尚未在设备执行。投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
 
 ## 建议模块边界
 
@@ -70,15 +79,17 @@ ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
 | `core:model` | 金额、账户类型、交易类型与分录值对象 | Kotlin 标准库 |
 | `core:domain` | 首片领域实体、状态与仓储端口 | `core:model`、Kotlin Coroutines |
 | `core:ledger` | 平衡校验与过账构造 | `core:model`、`core:domain` |
-| `domain:reconcile`（规划） | 去重、资金来源、退款、转账、还款关联 | `core:model` |
+| `core:domain` + `application` 对账切片 | 转账、信用卡还款、退款候选与用户确认编排；不自动合并 | `core:model`、`core:ledger`、来源复核端口 |
 | `source:contract` | 证据、RawEvent、解析身份、候选与安全诊断契约 | Kotlin 标准库 |
 | `source:pipeline` | 解析器注册、证据读取、不可变提交与 ParseAttempt 编排 | `source:contract` |
 | `source:review-contract` | 来源建议、Draft 证据链接、载荷生命周期与审计端口 | `source:contract`、`core:domain` |
 | `source:generic-share-text` | 通用分享文本的最小、非推断解析器 | `source:contract` |
+| `source:generic-delimited-statement` | 严格 CSV/TSV 读取、用户映射、行证据 codec 与来源中立解析 | `source:contract` |
+| `ocr:paddle` | 静态随包 PP-OCRv6/ONNX/OpenCV 原型；只由用户动作触发 | Android SDK、本地模型 |
 | `source:alipay` | 支付宝通知/导入格式适配 | source:contract |
 | `source:wechat` | 微信支付通知/导入格式适配 | source:contract |
 | `source:bank:*` | 银行通知和文件配置/适配器 | source:contract |
-| `data:local` | Room v6、迁移、账本/来源/生命周期/暂存/通知观察仓储与应用私有证据文件 | `core:domain` 与来源端口 |
+| `data:local` | Room v7、迁移、账本/来源/生命周期/暂存/通知观察/导入批次/对账仓储与应用私有证据文件 | `core:domain` 与来源端口 |
 | `platform:android` | 通知监听、SAF、WorkManager、Keystore | Android SDK、source:contract |
 | `security` | 加密、密钥、脱敏、导出封装 | 平台抽象 |
 
@@ -108,13 +119,13 @@ ACTION_SEND text/plain / SAF OpenDocument(text/plain, CSV, TSV)
 - `Entry`：交易对账户的借贷/增减影响；同币种交易必须平衡。
 - `TxRelation`：表达 `DUPLICATE_OF`、`FUNDED_BY`、`REFUNDS`、`TRANSFER_PAIR`、`REPLACES` 等关系。
 
-当前已实现首片所需的账户、Manual/外部来源 Draft、Transaction/Entry、Audit，以及 `RawEvent -> ParseAttempt -> source proposal -> draft_source_evidence` 的单证据链。`TxRelation`、多证据合并、provider 适配和完整对账仍是设计约束；“可能重复”只是复核信号，不等于已经建立 `DUPLICATE_OF`。
+当前已实现账户、Manual/外部来源 Draft、Transaction/Entry、Audit、`RawEvent -> ParseAttempt -> source proposal -> draft_source_evidence` 证据链，以及用户确认的 `TRANSFER`、`LIABILITY_REPAY`、`REFUND` 对账切片。应用只在金额、币种、方向、账户角色和时间窗满足硬门时生成有限建议，用户确认后原子写入平衡交易、Draft 链接和关系；撤销会恢复相关 Draft。一般 `DUPLICATE_OF`、多证据自动合并、投资和 provider 适配仍未实现；“可能重复”只是复核信号。
 
 渠道作为交易元数据；只有真实持有余额时，支付宝余额或微信零钱才是资产账户。绑卡支付时，银行/信用卡才是资金账户；钱包余额内收付没有银行资金腿，不能由银行卡流水或余额差推断。
 
 ## 存储与安全边界
 
-- 结构化数据进入应用私有 Room/SQLite；当前分享文本和用户选择文本文件证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 另提供不含通知 key/正文的观察摘要与恢复租约。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
+- 结构化数据进入应用私有 Room/SQLite；分享文本、不透明文件和 CSV/TSV 行证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 增加不含通知 key/正文的观察摘要与恢复租约，v7 增加不含单元格的导入批次/行状态和对账关系。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
 - 密钥由 Android Keystore 保护；备份在离开应用私有目录前加密。
 - 导入使用 Storage Access Framework，不申请广泛文件访问。
 - 生产日志只记录事件 ID、规则版本和错误码；不记录金额、商户、账号、通知正文或文件内容。

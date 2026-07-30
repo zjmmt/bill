@@ -11,11 +11,26 @@ import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.PostedTransaction
+import dev.bill.core.domain.ReconciliationDraftLink
+import dev.bill.core.domain.ReconciliationDraftRole
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
+import dev.bill.core.domain.RelationDecision
 import dev.bill.core.domain.RepositoryWriteStatus
+import dev.bill.core.domain.TransactionRelation
+import dev.bill.core.domain.TransactionRelationId
+import dev.bill.core.domain.TransactionRelationType
+import dev.bill.core.domain.TransactionSourceMode
+import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.ledger.PostingBuildResult
+import dev.bill.core.ledger.PostingFactory
+import dev.bill.core.ledger.ValidatedLedgerTransaction
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
+import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
 import java.time.Instant
 import kotlinx.coroutines.flow.first
@@ -192,6 +207,368 @@ class RoomLedgerRepositoryTest {
     }
 
     @Test
+    fun transferReconciliationCanBeUndoneAndResolvedAgainWithoutLosingHistory() = runBlocking {
+        val occurredAt = Instant.parse("2026-07-19T08:00:00Z")
+        val confirmedAt = occurredAt.plusSeconds(120)
+        val source = userAccount("source-bank", AccountType.ASSET_BANK, occurredAt)
+        val destination = userAccount(
+            "destination-wallet",
+            AccountType.ASSET_EWALLET_BALANCE,
+            occurredAt,
+        )
+        persistAccount(source, occurredAt)
+        persistAccount(destination, occurredAt)
+        val outbound = reviewDraft(
+            id = "transfer-out",
+            type = TransactionType.EXPENSE,
+            accountId = source.id,
+            occurredAt = occurredAt,
+        )
+        val inbound = reviewDraft(
+            id = "transfer-in",
+            type = TransactionType.INCOME,
+            accountId = destination.id,
+            occurredAt = occurredAt.plusSeconds(30),
+        )
+        persistDraft(outbound)
+        persistDraft(inbound)
+
+        val commandId = CommandId("reconcile-transfer")
+        val validated = (
+            PostingFactory.transferPair(
+                outboundDraft = outbound,
+                inboundDraft = inbound,
+                sourceAccount = source,
+                destinationAccount = destination,
+                transactionId = TransactionId("transaction:reconcile-transfer"),
+                confirmedAt = confirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val transaction = postedTransaction(
+            validated = validated,
+            draftId = null,
+            commandId = commandId,
+            confirmedAt = confirmedAt,
+            title = "TEST TRANSFER",
+        )
+        val resolution = ReconciliationResolution(
+            kind = ReconciliationKind.TRANSFER_PAIR,
+            transaction = transaction,
+            draftLinks = listOf(
+                ReconciliationDraftLink(
+                    outbound.id,
+                    ReconciliationDraftRole.TRANSFER_OUTBOUND,
+                ),
+                ReconciliationDraftLink(
+                    inbound.id,
+                    ReconciliationDraftRole.TRANSFER_INBOUND,
+                ),
+            ),
+            relations = emptyList(),
+        )
+        val reconcileAudit = audit(
+            commandId,
+            "reconciliation-confirmed",
+            AuditAction.RECONCILIATION_CONFIRMED,
+            "transaction",
+            transaction.id.value,
+            confirmedAt,
+        )
+
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.resolveReconciliation(resolution, reconcileAudit).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.ALREADY_APPLIED,
+            repository.resolveReconciliation(resolution, reconcileAudit).status,
+        )
+        val reconciled = repository.observeState().first()
+        val balances = reconciled.accountBalances.associate { it.account.id to it.balance }
+        assertEquals(Money.cny(-2_500L), balances[source.id])
+        assertEquals(Money.cny(2_500L), balances[destination.id])
+        assertTrue(reconciled.pendingDrafts.isEmpty())
+        assertEquals(
+            "LINKED",
+            database.ledgerDao().findDraft(outbound.id.value)?.draft?.state,
+        )
+        assertEquals(
+            "LINKED",
+            database.ledgerDao().findDraft(inbound.id.value)?.draft?.state,
+        )
+
+        val voidedAt = confirmedAt.plusSeconds(60)
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.voidTransaction(
+                transaction.id,
+                audit(
+                    CommandId("void-transfer"),
+                    "transaction-voided",
+                    AuditAction.TRANSACTION_VOIDED,
+                    "transaction",
+                    transaction.id.value,
+                    voidedAt,
+                ),
+            ).status,
+        )
+        val restored = repository.observeState().first()
+        val restoredBalances = restored.accountBalances.associate { it.account.id to it.balance }
+        assertEquals(Money.cny(0L), restoredBalances[source.id])
+        assertEquals(Money.cny(0L), restoredBalances[destination.id])
+        assertEquals(
+            setOf(outbound.id, inbound.id),
+            restored.pendingDrafts.map { it.id }.toSet(),
+        )
+
+        val secondConfirmedAt = voidedAt.plusSeconds(60)
+        val secondCommandId = CommandId("reconcile-transfer-again")
+        val secondValidated = (
+            PostingFactory.transferPair(
+                outboundDraft = outbound,
+                inboundDraft = inbound,
+                sourceAccount = source,
+                destinationAccount = destination,
+                transactionId = TransactionId("transaction:reconcile-transfer-again"),
+                confirmedAt = secondConfirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val secondTransaction = postedTransaction(
+            validated = secondValidated,
+            draftId = null,
+            commandId = secondCommandId,
+            confirmedAt = secondConfirmedAt,
+            title = "TEST TRANSFER AGAIN",
+        )
+        val secondResolution = ReconciliationResolution(
+            kind = ReconciliationKind.TRANSFER_PAIR,
+            transaction = secondTransaction,
+            draftLinks = resolution.draftLinks,
+            relations = emptyList(),
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.resolveReconciliation(
+                secondResolution,
+                audit(
+                    secondCommandId,
+                    "reconciliation-confirmed",
+                    AuditAction.RECONCILIATION_CONFIRMED,
+                    "transaction",
+                    secondTransaction.id.value,
+                    secondConfirmedAt,
+                ),
+            ).status,
+        )
+        val reconciledAgain = repository.observeState().first()
+        val reconciledAgainBalances = reconciledAgain.accountBalances.associate {
+            it.account.id to it.balance
+        }
+        assertEquals(Money.cny(-2_500L), reconciledAgainBalances[source.id])
+        assertEquals(Money.cny(2_500L), reconciledAgainBalances[destination.id])
+        assertTrue(reconciledAgain.pendingDrafts.isEmpty())
+        assertEquals(
+            2,
+            database.ledgerDao().findReconciliationDraftLinks(transaction.id.value).size,
+        )
+        assertEquals(
+            2,
+            database.ledgerDao().findReconciliationDraftLinks(
+                secondTransaction.id.value,
+            ).size,
+        )
+    }
+
+    @Test
+    fun refundCapBlocksOverRefundAndOriginalVoidUntilRefundIsUndone() = runBlocking {
+        val createdAt = Instant.parse("2026-07-19T00:00:00Z")
+        val bank = userAccount("refund-bank", AccountType.ASSET_BANK, createdAt)
+        persistAccount(bank, createdAt)
+
+        val originalDraft = reviewDraft(
+            id = "original-expense",
+            type = TransactionType.EXPENSE,
+            accountId = bank.id,
+            occurredAt = createdAt.plusSeconds(60),
+            amount = Money.cny(5_000L),
+        )
+        persistDraft(originalDraft)
+        val originalCommand = CommandId("confirm-original")
+        val originalConfirmedAt = createdAt.plusSeconds(120)
+        val originalValidated = (
+            PostingFactory.manualDraft(
+                draft = originalDraft,
+                fundingAccount = bank,
+                transactionId = TransactionId("transaction:original-expense"),
+                confirmedAt = originalConfirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val original = postedTransaction(
+            validated = originalValidated,
+            draftId = originalDraft.id,
+            commandId = originalCommand,
+            confirmedAt = originalConfirmedAt,
+            title = originalDraft.counterparty,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.confirmDraft(
+                originalDraft.id,
+                original,
+                audit(
+                    originalCommand,
+                    "draft-confirmed",
+                    AuditAction.DRAFT_CONFIRMED,
+                    "draft",
+                    originalDraft.id.value,
+                    originalConfirmedAt,
+                ),
+            ).status,
+        )
+
+        val firstRefundDraft = reviewDraft(
+            id = "refund-one",
+            type = TransactionType.INCOME,
+            accountId = bank.id,
+            occurredAt = createdAt.plusSeconds(180),
+            amount = Money.cny(3_000L),
+        )
+        persistDraft(firstRefundDraft)
+        val refundCommand = CommandId("reconcile-refund-one")
+        val refundConfirmedAt = createdAt.plusSeconds(240)
+        val refundValidated = (
+            PostingFactory.refund(
+                inboundDraft = firstRefundDraft,
+                destinationAccount = bank,
+                originalExpense = original,
+                alreadyRefundedMinorUnits = 0L,
+                transactionId = TransactionId("transaction:refund-one"),
+                confirmedAt = refundConfirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val refund = postedTransaction(
+            validated = refundValidated,
+            draftId = null,
+            commandId = refundCommand,
+            confirmedAt = refundConfirmedAt,
+            title = "TEST REFUND",
+        )
+        val refundResolution = refundResolution(
+            transaction = refund,
+            draft = firstRefundDraft,
+            original = original,
+            createdAt = refundConfirmedAt,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.resolveReconciliation(
+                refundResolution,
+                audit(
+                    refundCommand,
+                    "reconciliation-confirmed",
+                    AuditAction.RECONCILIATION_CONFIRMED,
+                    "transaction",
+                    refund.id.value,
+                    refundConfirmedAt,
+                ),
+            ).status,
+        )
+        assertEquals(Money.cny(3_000L), repository.activeRefundTotal(original.id))
+
+        val excessiveDraft = reviewDraft(
+            id = "refund-too-large",
+            type = TransactionType.INCOME,
+            accountId = bank.id,
+            occurredAt = createdAt.plusSeconds(300),
+            amount = Money.cny(2_500L),
+        )
+        persistDraft(excessiveDraft)
+        val excessiveCommand = CommandId("reconcile-refund-too-large")
+        val excessiveConfirmedAt = createdAt.plusSeconds(360)
+        val excessiveValidated = (
+            PostingFactory.refund(
+                inboundDraft = excessiveDraft,
+                destinationAccount = bank,
+                originalExpense = original,
+                alreadyRefundedMinorUnits = 0L,
+                transactionId = TransactionId("transaction:refund-too-large"),
+                confirmedAt = excessiveConfirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val excessive = postedTransaction(
+            validated = excessiveValidated,
+            draftId = null,
+            commandId = excessiveCommand,
+            confirmedAt = excessiveConfirmedAt,
+            title = "TEST EXCESSIVE REFUND",
+        )
+        assertEquals(
+            RepositoryWriteStatus.INVALID_STATE,
+            repository.resolveReconciliation(
+                refundResolution(
+                    transaction = excessive,
+                    draft = excessiveDraft,
+                    original = original,
+                    createdAt = excessiveConfirmedAt,
+                ),
+                audit(
+                    excessiveCommand,
+                    "reconciliation-confirmed",
+                    AuditAction.RECONCILIATION_CONFIRMED,
+                    "transaction",
+                    excessive.id.value,
+                    excessiveConfirmedAt,
+                ),
+            ).status,
+        )
+        assertTrue(repository.findTransaction(excessive.id) == null)
+
+        assertEquals(
+            RepositoryWriteStatus.INVALID_STATE,
+            repository.voidTransaction(
+                original.id,
+                audit(
+                    CommandId("void-original-too-early"),
+                    "transaction-voided",
+                    AuditAction.TRANSACTION_VOIDED,
+                    "transaction",
+                    original.id.value,
+                    excessiveConfirmedAt.plusSeconds(60),
+                ),
+            ).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.voidTransaction(
+                refund.id,
+                audit(
+                    CommandId("void-refund"),
+                    "transaction-voided",
+                    AuditAction.TRANSACTION_VOIDED,
+                    "transaction",
+                    refund.id.value,
+                    excessiveConfirmedAt.plusSeconds(120),
+                ),
+            ).status,
+        )
+        assertEquals(Money.cny(0L), repository.activeRefundTotal(original.id))
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.voidTransaction(
+                original.id,
+                audit(
+                    CommandId("void-original"),
+                    "transaction-voided",
+                    AuditAction.TRANSACTION_VOIDED,
+                    "transaction",
+                    original.id.value,
+                    excessiveConfirmedAt.plusSeconds(180),
+                ),
+            ).status,
+        )
+    }
+
+    @Test
     fun invalidActiveLedgerStateFailsClosedInsteadOfPublishingAPartialSnapshot() = runBlocking {
         database.openHelper.writableDatabase.execSQL(
             """
@@ -315,6 +692,147 @@ class RoomLedgerRepositoryTest {
         isArchived = false,
         createdAt = createdAt,
         creationCommandId = CommandId("stable-command"),
+    )
+
+    private fun userAccount(
+        id: String,
+        type: AccountType,
+        createdAt: Instant,
+    ) = LedgerAccount(
+        id = AccountId("account:$id"),
+        name = "TEST $id",
+        normalizedName = "test $id",
+        type = type,
+        currency = CurrencyCode.CNY,
+        isSystem = false,
+        isArchived = false,
+        createdAt = createdAt,
+        creationCommandId = CommandId("create-account:$id"),
+    )
+
+    private fun reviewDraft(
+        id: String,
+        type: TransactionType,
+        accountId: AccountId,
+        occurredAt: Instant,
+        amount: Money = Money.cny(2_500L),
+    ) = ManualDraft(
+        id = DraftId("draft:$id"),
+        state = DraftState.EDITED,
+        type = type,
+        amount = amount,
+        occurredAt = occurredAt,
+        counterparty = "TEST $id",
+        note = null,
+        fundingAccountId = accountId,
+        createdAt = occurredAt,
+        updatedAt = occurredAt,
+        creationCommandId = CommandId("create-draft:$id"),
+        sourceMode = TransactionSourceMode.MANUAL,
+    )
+
+    private suspend fun persistAccount(account: LedgerAccount, occurredAt: Instant) {
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createAccount(
+                account,
+                null,
+                listOf(
+                    audit(
+                        account.creationCommandId,
+                        "account-created",
+                        AuditAction.ACCOUNT_CREATED,
+                        "account",
+                        account.id.value,
+                        occurredAt,
+                    ),
+                ),
+            ).status,
+        )
+    }
+
+    private suspend fun persistDraft(draft: ManualDraft) {
+        val waitingDraft = draft.copy(
+            state = DraftState.WAITING_USER,
+            fundingAccountId = null,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createManualDraft(
+                waitingDraft,
+                audit(
+                    draft.creationCommandId,
+                    "draft-created",
+                    AuditAction.MANUAL_DRAFT_CREATED,
+                    "draft",
+                    draft.id.value,
+                    draft.createdAt,
+                ),
+            ).status,
+        )
+        val fundingAccountId = requireNotNull(draft.fundingAccountId)
+        val selectionCommandId = CommandId("select-funding:${draft.id.value}")
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.selectFundingAccount(
+                draft.id,
+                fundingAccountId,
+                audit(
+                    selectionCommandId,
+                    "funding-selected",
+                    AuditAction.FUNDING_ACCOUNT_SELECTED,
+                    "draft",
+                    draft.id.value,
+                    draft.updatedAt,
+                ),
+            ).status,
+        )
+    }
+
+    private fun postedTransaction(
+        validated: ValidatedLedgerTransaction,
+        draftId: DraftId?,
+        commandId: CommandId,
+        confirmedAt: Instant,
+        title: String,
+    ) = PostedTransaction(
+        id = validated.id,
+        draftId = draftId,
+        type = validated.type,
+        status = TransactionStatus.ACTIVE,
+        sourceMode = TransactionSourceMode.MANUAL,
+        occurredAt = validated.occurredAt,
+        confirmedAt = confirmedAt,
+        title = title,
+        note = null,
+        commandId = commandId,
+        entries = validated.entries,
+    )
+
+    private fun refundResolution(
+        transaction: PostedTransaction,
+        draft: ManualDraft,
+        original: PostedTransaction,
+        createdAt: Instant,
+    ) = ReconciliationResolution(
+        kind = ReconciliationKind.REFUND,
+        transaction = transaction,
+        draftLinks = listOf(
+            ReconciliationDraftLink(
+                draft.id,
+                ReconciliationDraftRole.REFUND_INBOUND,
+            ),
+        ),
+        relations = listOf(
+            TransactionRelation(
+                id = TransactionRelationId("relation:${transaction.id.value}"),
+                fromTransactionId = transaction.id,
+                toTransactionId = original.id,
+                type = TransactionRelationType.REFUNDS,
+                decision = RelationDecision.USER_CONFIRMED,
+                createdAt = createdAt,
+            ),
+        ),
     )
 
     private fun draft(occurredAt: Instant) = ManualDraft(

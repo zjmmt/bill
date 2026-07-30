@@ -1,11 +1,11 @@
 # 数据源覆盖与支持状态
 
-- 状态：部分实现；手工、通用分享文本、用户选择文本文件、用户显式单次 PNG 收据、受控通知 route catalog 边界和持久观察去重已有代码；Quick Settings/Photo Picker OCR 仅为未通过隐私发布门的开发原型，三类 provider 适配器未实现
+- 状态：部分实现；手工、通用分享文本、不透明文本证据、本地 CSV/TSV 显式映射、用户显式单次 PNG 收据、受控通知 route catalog 边界、用户确认对账和持久观察去重已有代码；Quick Settings/Photo Picker 本地 OCR 已有未签名 Release 静态审计，但真机发布门未完成，三类 provider 适配器未实现
 - 所有者：项目维护者
-- 最后核验：2026-07-26
+- 最后核验：2026-07-30
 - 事实来源：当前 Android/Room/来源模块、项目负责人范围、Android/平台官方资料、财付通公开隐私政策、来源适配器设计、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
 
-本文件定义目标能力和“什么才算支持”，同时记录生成矩阵上线前的人工核验快照。当前已有受限 CNY/USD 手工账本闭环，以及 provider-unverified 的显式分享文本、用户选择小型文本文件和单次 PNG 收据截图证据/复核闭环；另有 Quick Settings 单次截图与 Photo Picker 单图 OCR 开发原型，但其 Chinese ML Kit 运行时未通过无遥测/无传输组件发布门，也未满足中文+英文、日文+英文验收。支付宝、微信支付和银行的真实通知、文件导入与解析适配器均未实现。现金、支付宝余额和微信零钱只能是 CNY；只有银行卡和信用卡可为 USD，且没有汇率换算。电子钱包余额与银行卡是独立资金账户：银行卡流水不能补齐钱包余额内的红包、个人转账、余额消费或余额退款。未来生成器建立后，逐格式实际矩阵必须由代码和测试写入 `docs/generated/`，不得手工伪造。
+本文件定义目标能力和“什么才算支持”，同时记录生成矩阵上线前的人工核验快照。当前已有受限 CNY/USD 手工账本闭环，以及 provider-unverified 的显式分享文本、不透明文本文件、用户逐列映射 CSV/TSV 和单次 PNG 收据截图证据/复核闭环；另有 Quick Settings 单次截图与 Photo Picker 最多 5 张串行 OCR。CSV/TSV 只提供来源中立映射，不识别银行或支付平台。PP-OCRv6 small + ONNX Runtime/OpenCV 已静态随包，并通过源码/AAR 与当前未签名 Release 分包的权限、组件、ABI、模型、体积和 16 KiB ZIP 对齐审计；实际中英/日英推理、ELF LOAD 段页兼容、目标真机资源和签名发行证据仍未完成。支付宝、微信支付和具体银行的真实通知、专属文件格式与解析适配器均未实现。现金、支付宝余额和微信零钱只能是 CNY；只有银行卡和信用卡可为 USD，且没有汇率换算。电子钱包余额与银行卡是独立资金账户：银行卡流水不能补齐钱包余额内的红包、个人转账、余额消费或余额退款。未来生成器建立后，逐格式实际矩阵必须由代码和测试写入 `docs/generated/`，不得手工伪造。
 
 ## 支持标签
 
@@ -25,14 +25,15 @@
 | 支付宝通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于支付宝支持 |
 | 微信支付通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 无真实适配器、无脱敏样本、无回放测试；只能手工补录。通用通知底座不等于微信支持 |
 | 银行通知与文件 | 未实现 | `FALLBACK_REQUIRED` | 未选择可验证格式/首批银行，无脱敏样本和回放测试；只能手工补录。通用通知底座不等于银行支持 |
-| 通用受控通知 route 证据 | 已实现，不能独立使用 | 生产目录为空；不改变 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。空目录、关闭或未知 route 都不读正文、不落库；ingress 会再次检查开关，以防关闭发生在队列准备后。未来候选使用容量 16 队列、Room v6 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，复核 UI 只显示本地安全标签，不识别金额或直接过账 |
-| 通用手工录入/期初余额 | 已实现，发布门未完成 | CNY 路径经自动化与 MuMu API 32 验证；USD 回归待本轮完整验收 | 现金、电子钱包余额只允许 CNY；银行卡和信用卡允许 CNY/USD。收入/支出先 Draft，选择同币种资金账户后平衡确认；无跨币种汇率或总额 |
-| 用户显式分享 `text/plain` | 已实现，发布门未完成 | 生命周期单测、Room v5 staging 与 MuMu API 32 已验证；当前 schema 为 v6 | 始终为 `GENERIC/SHARE_TEXT`；64 KiB、严格 UTF-8、私有 no-backup 证据和哈希校验；不猜 provider/金额/类型/账户，用户补全；重复只提示；已有逐项两阶段清除、7/30/90/永久保留、已提交与暂存共用的 16 MiB/512 份预算、租约恢复、有界孤儿扫描和 keyset 分页；缺压力、真实系统强杀、自动化 Compose 和完整真机证据 |
-| 用户显式选择小型文本/CSV/TSV 文件 | 已实现，发布门未完成 | 单元测试与完整构建已覆盖；SAF 真机和 Room instrumentation 待本轮验收 | 始终为 `GENERIC/STATEMENT_IMPORT`；只读取用户当次选择的 `text/plain`、CSV 或 TSV，64 KiB 有界复制到私有证据链，不持久化 URI/文件名，不猜 provider/金额/类型/账户；不是任何钱包或银行账单格式支持声明 |
+| 通用受控通知 route 证据 | 已实现，不能独立使用 | 生产目录为空；不改变 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。空目录、关闭或未知 route 都不读正文、不落库；ingress 会再次检查开关，以防关闭发生在队列准备后。未来候选使用容量 16 队列、Room v7 HMAC 观察租约和 command 恢复去重；通用 parser 只产出待复核，复核 UI 只显示本地安全标签，不识别金额或直接过账 |
+| 通用手工录入/期初余额 | 已实现，发布门未完成 | CNY 路径经自动化与 MuMu API 32 验证；USD 自动回归通过，相关 Android instrumentation 只编译、未在设备执行 | 现金、电子钱包余额只允许 CNY；银行卡和信用卡允许 CNY/USD。收入/支出先 Draft，选择同币种资金账户后平衡确认；无跨币种汇率或总额 |
+| 用户显式分享 `text/plain` | 已实现，发布门未完成 | 生命周期单测、Room v5 staging 与 MuMu API 32 已验证；当前 schema 为 v7 | 始终为 `GENERIC/SHARE_TEXT`；64 KiB、严格 UTF-8、私有 no-backup 证据和哈希校验；不猜 provider/金额/类型/账户，用户补全；重复只提示；已有逐项两阶段清除、7/30/90/永久保留、已提交与暂存共用的 16 MiB/512 份预算、租约恢复、有界孤儿扫描和 keyset 分页；缺压力、真实系统强杀、自动化 Compose 和完整真机证据 |
+| 用户显式选择不透明文本文件 | 已实现，发布门未完成 | 既有 JVM/ViewModel 回归通过；SAF 真机待验收 | `GENERIC/STATEMENT_IMPORT` 的证据回退；当次读取 `text/plain`、CSV 或 TSV，64 KiB 有界复制为一条证据，不持久化 URI/文件名，不解析行或猜 provider/金额/账户 |
+| 用户显式映射 CSV/TSV | 已实现候选，发布门未完成 | 纯 Kotlin 解析/映射、application 批次、ViewModel 状态机与来源投影测试以及全量 JVM/Lint/Debug/Release 构建通过；Room v7 AndroidTest APK 已编译，设备 Room/SAF 仍待验收 | 当次 SAF 读取严格 UTF-8，文件最多 2 MiB、5000 数据行、64 列；用户必须映射日期、金额、方向、对方和可选参考号，选择 CNY/USD。有效行各自生成可清除 `GENERIC/STATEMENT_IMPORT` 证据与待复核建议；文件名/URI 不保存，未知表头不自动猜列，拒绝行只留安全错误码，停止后同文件+同映射可续传。行记录使用事务内 O(1) 增量汇总，不再逐行全表扫描。不是任何钱包或银行格式支持声明 |
 | 用户显式分享单张 PNG 收据截图 | 已实现，发布门未完成 | JVM 结构/边界、application 与 ViewModel 回归及完整构建已覆盖；Sharesheet 真机和 Room instrumentation 待本轮验收 | 只接收系统 `ACTION_SEND` 的当次 `content://`、声明与解析后均为 `image/png` 的一张图片；4 MiB 有界复制，验证签名/IHDR/分块 CRC/终止分块后作为 `GENERIC/SHARE_FILE` 保存。无相册权限、无 URI/文件名持久化、无图像解码/预览/OCR、无金额/来源推断；只打开用户填写的手工复核表单，不是 provider 支持声明 |
-| Quick Settings 单次截图与 Photo Picker 单图 OCR | 已实现开发原型，发布禁止 | JVM/application 回归和 debug 构建存在；无最终语言回归、release APK 组件审计或目标真机资源证据 | 磁贴只在用户点击后截取当前画面一次；Photo Picker 只读取用户选中一张图片；无节点读取、手势、后台捕获、相册广泛权限或自动过账。原始像素只作瞬时输入，`GENERIC/PHOTO_OCR` 转录只生成可编辑待复核项。当前 Chinese ML Kit 依赖的官方数据披露及组件审计不满足无遥测发布门，不能称纯本地 OCR 或任一 provider 支持 |
+| Quick Settings 单次截图与 Photo Picker 有界多选 OCR | 已实现候选，发布禁止 | 模型哈希/中英日字典、AAR 边界以及未签名 Release 分包的权限、组件、ABI、模型、体积与 16 KiB ZIP 对齐已有静态证据；实际语言回归、ELF 页兼容和目标真机资源证据缺失 | 磁贴只在用户点击后截取当前画面一次；Photo Picker 最多 5 张并逐张处理；无节点读取、手势、后台捕获、相册广泛权限或自动过账。PP-OCRv6 small 静态随包，ONNX Runtime 建会话前关闭 telemetry；原始像素只作瞬时输入，`GENERIC/PHOTO_OCR` 转录只生成可编辑待复核项。不能据此声称任一 provider 支持 |
 
-手工录入是 `ManualIntent -> Draft`，不会制造外部 `RawEvent`。分享文本、用户选择文件、单次 PNG 截图与实验性单次 OCR 分别是 `ACTION_SEND text/plain -> RawEvent -> ParseAttempt -> source proposal -> user-completed Draft`、`SAF OpenDocument -> RawEvent -> ParseAttempt -> source proposal -> user-completed Draft`、`ACTION_SEND image/png -> RawEvent -> ParseAttempt -> source proposal -> user-completed Draft` 与 `Quick Tile/Photo Picker -> bounded OCR transcript -> RawEvent -> ParseAttempt -> source proposal -> user-completed Draft`。前两个 Sharesheet/SAF 入口的接收方或 MIME 都不能证明 provider；PNG 和 OCR 入口同样只证明用户提供了一张不可信的当前凭证。四条通用证据入口都可以作为三类来源不可用时的回退，却不能替任何来源满足格式漂移、授权、provider 归属、批量导入或跨来源关联验收门。
+手工录入是 `ManualIntent -> Draft`，不会制造外部 `RawEvent`。分享文本、不透明文件、映射 CSV/TSV 行、单次 PNG 截图与实验性单次 OCR 分别进入同一 `RawEvent -> ParseAttempt -> source proposal -> user-completed Draft` 主干；映射 CSV/TSV 先以文件摘要+映射摘要建立 `ImportBatch`，再为每个有效行建立独立证据和稳定 command。Sharesheet/SAF 的接收方、MIME 或用户映射都不能证明 provider；PNG 和 OCR 入口同样只证明用户提供了一张不可信的当前凭证。这些通用证据入口都可以作为三类来源不可用时的回退，却不能替任何来源满足格式漂移、授权、provider 归属或脱敏样本验收门。
 
 ## 一等数据源的完成定义
 
@@ -64,9 +65,9 @@
 | 银行 | 统一个人开放 API | Experimental | 仅在具体银行和正式合作协议下评估；当前无统一公共消费者接口假设 |
 | 通用 | 手工录入/期初余额 | Supported | 目标标签；当前受限 CNY/USD 切片已有自动化，CNY 还通过 MuMu；现金/钱包仅 CNY、银行卡/信用卡可用 USD，真机和发布门仍未完成，是所有来源的共同回退路径 |
 | 通用 | 用户从短信/邮件/文件 App 主动分享文本 | Supported | 目标标签；当前 `text/plain` 切片已实现但仍属发布前部分实现，不读取整箱，只处理显式分享内容，不证明发送 App |
-| 通用 | 用户经 SAF 选择小型文本/CSV/TSV | Experimental | 当前只提供 bounded generic evidence/review 入口；不含 CSV 批量映射、XLS/XLSX、账单解析或 provider 识别 |
+| 通用 | 用户经 SAF 选择文本/CSV/TSV | Experimental | 当前同时保留 64 KiB 不透明文本证据和 2 MiB/5000 行的显式 CSV/TSV 映射；有效行逐条进入待复核，不含 XLS/XLSX、余额/账户列、provider 预设或 provider 识别 |
 | 通用 | 用户从系统分享单张 PNG 收据截图 | Experimental | 当前只提供有界、私有、无 OCR 的 `GENERIC/SHARE_FILE` 手工复核入口；不读取相册、不保存 URI/文件名、不推断财务字段或 provider |
-| 通用 | Quick Settings 单次截图 / Photo Picker 单图 OCR | Experimental，当前发布禁止 | 只在用户点磁贴或选择图片后处理一次；不绕过 `FLAG_SECURE`，结果必须确认。当前 Chinese ML Kit 原型未通过无遥测/无传输组件审计，也未完成中文+英文、日文+英文和三台目标真机验收；不能用作 provider 支持声明 |
+| 通用 | Quick Settings 单次截图 / Photo Picker 最多 5 张串行 OCR | Experimental，当前发布禁止 | 只在用户点磁贴或选择图片后处理；不绕过 `FLAG_SECURE`，结果必须确认。随包 PP-OCRv6/ONNX 候选已有未签名 Release 静态审计，但尚未完成实际中英/日英推理、ELF 页兼容、签名发行和三台目标真机验收；不能用作 provider 支持声明 |
 | 通用 | 直接读取短信箱 | Experimental / 默认排除 | 受 Play 权限与合规审核约束；基础发行包不包含该权限 |
 | 通用 | Accessibility 自动操作支付/银行 UI | Unsupported | 脆弱且风险高，不作为产品路线 |
 | 通用 | 读取其他 App 私有目录、Root、抓包 | Unsupported | 违反系统/产品安全边界 |

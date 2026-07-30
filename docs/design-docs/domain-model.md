@@ -2,8 +2,8 @@
 
 - 状态：部分实现；受限 CNY/USD 账本与单证据来源链已有自动化验证，真机与来源适配仍待完成
 - 所有者：项目维护者
-- 最后核验：2026-07-26
-- 事实来源：当前 `core:model`、`core:domain`、`core:ledger`、来源模块与 Room v6 schema；[ADR-0005](../decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](../decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0010](../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0013](../decisions/0013-bank-card-only-usd-without-fx.md)
+- 最后核验：2026-07-30
+- 事实来源：当前 `core:model`、`core:domain`、`core:ledger`、来源模块与 Room v7 schema；[ADR-0005](../decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](../decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0010](../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0013](../decisions/0013-bank-card-only-usd-without-fx.md)
 
 ## 建模目标
 
@@ -14,7 +14,7 @@
 
 ## 当前已实现的首片
 
-当前代码落地受限的 CNY/USD 手工账本，以及 `GENERIC/SHARE_TEXT` 单证据来源链：用户创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。期初余额以同币种平衡的 `ADJUSTMENT` 交易表示；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v6 保存 Account、Draft、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、AuditEvent 与全局 command receipt，Overview/账户/草稿/流水从仓储状态投影。
+当前代码落地受限的 CNY/USD 手工账本，以及 `GENERIC/SHARE_TEXT` 单证据来源链：用户创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。期初余额以同币种平衡的 `ADJUSTMENT` 交易表示；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v7 保存 Account、Draft、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、结构化账单导入批次、对账 Draft 链接、交易关系、AuditEvent 与全局 command receipt，Overview/账户/草稿/流水从仓储状态投影。
 
 手工输入属于 `ManualIntent -> Draft`，不创建假的 `RawEvent`。分享文本属于 `RawEvent -> ParseAttempt -> SourceDraftProposal -> DraftSourceEvidence -> Draft`，但通用解析器不推断 provider 或交易事实，且一条 Draft 当前只链接该来源建议的单条证据。`RawEvent` 结构化事实保持不可变；其文件载荷通过独立生命周期在 `AVAILABLE -> CLEAR_PENDING -> CLEARED` 间转换，清除后仍保留来源链、完成的 Draft provenance 与追加式审计。支付宝、微信支付和银行的真实适配器尚未实现；下面的完整多证据关系、投资与期间实体仍是目标模型，不能从 schema 推断为已有功能。
 
@@ -78,7 +78,7 @@ erDiagram
 
 `NEW`、`WAITING_USER`、`EDITED`、`AUTO_CONFIRMED`、`CONFIRMED`、`LINKED`、`DISMISSED`、`ERROR`。
 
-完整枚举是目标状态机。当前账本 Draft 实现 `WAITING_USER`、`EDITED`、`CONFIRMED` 与 `DISMISSED`；来源建议也有独立的 `WAITING_USER`、`COMPLETED`、`DISMISSED` 状态。单证据来源链接已实现，自动确认、多证据关联和 provider 错误重放仍须等待样本门。
+完整枚举是目标状态机。当前账本 Draft 实现 `WAITING_USER`、`EDITED`、`CONFIRMED`、`LINKED` 与 `DISMISSED`；`LINKED` 由用户确认的转账、还款或退款替代交易持有，撤销后恢复为 `WAITING_USER`。来源建议另有 `WAITING_USER`、`COMPLETED`、`DISMISSED` 状态。单证据来源链接与对账交易的一至两条 Draft 链接已实现；自动确认、通用多证据合并和 provider 错误重放仍须等待样本门。
 
 ### TxType
 
@@ -127,6 +127,6 @@ erDiagram
 
 ## Room 落地门
 
-Room schema v1/v2/v3/v4/v5/v6 与 `v1 -> v2 -> v3 -> v4 -> v5 -> v6` 正式迁移已经导出，且仓储把账户创建、来源建议提交/忽略、草稿确认、证据链接、生命周期请求、暂存消费、审计、命令回执和 void 放在 Room 事务内；运行时没有 destructive fallback。迁移、重放/碰撞、证据存储、两阶段清除、租约/孤儿恢复、磁盘数据库重开、keyset 分页和来源/生命周期跨表损坏测试已在 MuMu API 32 执行通过；v5→v6 通知观察迁移当前只完成编译验证，仍待真机执行。
+Room schema v1/v2/v3/v4/v5/v6/v7 与 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7` 正式迁移已经导出，且仓储把账户创建、来源建议提交/忽略、草稿确认、证据链接、生命周期请求、暂存消费、结构化账单批次、对账确认、交易关系、审计、命令回执和 void 放在 Room 事务内；运行时没有 destructive fallback。迁移、重放/碰撞、证据存储、两阶段清除、租约/孤儿恢复、磁盘数据库重开、keyset 分页和来源/生命周期跨表损坏测试已在 MuMu API 32 执行通过；v5→v6 通知观察迁移与 v6→v7 结构化账单/对账迁移当前只完成编译验证，仍待真机执行。
 
 复杂关系查询、10 万级导入、已清除历史增长下的完整性查询基准、多适配器并发压力、应用层加密、FTS/搜索、真实系统强杀矩阵和备份恢复仍是后续落地门。未来数据库事实生成器建立后，应由构建生成 `docs/generated/database-schema.md`；本文件不复制列级 schema。

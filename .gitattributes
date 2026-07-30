@@ -1,0 +1,2 @@
+*.onnx binary
+ocr/paddle/src/main/assets/ocr/ppocrv6-small/rec/inference.yml -text

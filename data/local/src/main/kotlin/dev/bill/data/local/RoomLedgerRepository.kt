@@ -15,17 +15,26 @@ import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
+import dev.bill.core.domain.ReconciliationDraftRole
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
+import dev.bill.core.domain.RelationDecision
 import dev.bill.core.domain.SystemAccountIds
+import dev.bill.core.domain.TransactionRelationType
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.ledger.PostingBuildResult
+import dev.bill.core.ledger.PostingFactory
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.EntryRole
+import dev.bill.core.model.Money
 import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
 import dev.bill.core.model.allowsUserAccountCurrency
 import dev.bill.core.model.isSupportedLedgerCurrency
+import dev.bill.core.model.toLongExactCompat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import java.math.BigInteger
@@ -48,13 +57,47 @@ class RoomLedgerRepository(
     override fun observeState(): Flow<LedgerState> = combine(
         dao.observeAccountBalances(),
         dao.observePendingDrafts(),
-        dao.observeRecentTransactions(recentTransactionLimit),
-        dao.observeLedgerIntegrityIssueCount(),
+        combine(
+            dao.observeRecentTransactions(recentTransactionLimit),
+            dao.observeActiveRefundTotals(),
+        ) { transactions, refundTotals ->
+            transactions to refundTotals
+        },
+        combine(
+            dao.observeLedgerIntegrityIssueCount(),
+            dao.observeReconciliationLinkIntegrityIssueCount(),
+            dao.observeTransactionRelationIntegrityIssueCount(),
+            dao.observeReconciliationTransactionIntegrityIssueCount(),
+        ) { ledger, draftLinks, transactionRelations, reconciliationTransactions ->
+            Math.addExact(
+                Math.addExact(ledger, draftLinks),
+                Math.addExact(transactionRelations, reconciliationTransactions),
+            )
+        },
         sourceDao.observeSourceIntegrityIssueCount(),
-    ) { balanceRows, draftRelations, transactionRelations, ledgerIssueCount, sourceIssueCount ->
+    ) { balanceRows, draftRelations, transactionAndRefunds, ledgerIssueCount, sourceIssueCount ->
         if (ledgerIssueCount > 0L || sourceIssueCount > 0L) {
             reportIntegrityFailure()
             throw LocalDataIntegrityException("active ledger")
+        }
+        val activeRefundTotals = linkedMapOf<TransactionId, Money>()
+        transactionAndRefunds.second.forEach { row ->
+            val id = try {
+                TransactionId(row.originalTransactionId)
+            } catch (_: IllegalArgumentException) {
+                throw LocalDataIntegrityException("active refund total")
+            }
+            val currency = try {
+                CurrencyCode(row.currency)
+            } catch (_: IllegalArgumentException) {
+                throw LocalDataIntegrityException("active refund total")
+            }
+            if (
+                row.amountMinorUnits <= 0L ||
+                activeRefundTotals.put(id, Money(row.amountMinorUnits, currency)) != null
+            ) {
+                throw LocalDataIntegrityException("active refund total")
+            }
         }
         LedgerState(
             accountBalances = balanceRows.map { row ->
@@ -65,9 +108,10 @@ class RoomLedgerRepository(
             }.filter { draft ->
                 draft.state == DraftState.WAITING_USER || draft.state == DraftState.EDITED
             },
-            recentTransactions = transactionRelations.map { relation ->
+            recentTransactions = transactionAndRefunds.first.map { relation ->
                 mapTransaction(relation)
             },
+            activeRefundTotals = activeRefundTotals,
         )
     }
 
@@ -419,6 +463,138 @@ class RoomLedgerRepository(
         applied(draftId.value)
     }
 
+    override suspend fun activeRefundTotal(
+        originalTransactionId: TransactionId,
+    ): Money? = database.withTransaction {
+        activeRefundTotalLocked(originalTransactionId)
+    }
+
+    override suspend fun resolveReconciliation(
+        resolution: ReconciliationResolution,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult = safelyWrite {
+        val transaction = resolution.transaction
+        val fingerprint = Fingerprints.reconciliation(resolution)
+        when (
+            val replay = inspectCommand(
+                commandId = transaction.commandId,
+                operation = Operation.RESOLVE_RECONCILIATION,
+                targetId = transaction.id.value,
+                fingerprint = fingerprint,
+            )
+        ) {
+            is CommandInspection.Replay -> return@safelyWrite replay.result
+            CommandInspection.Collision -> return@safelyWrite collision()
+            CommandInspection.New -> Unit
+        }
+
+        if (
+            transaction.commandId != auditRecord.commandId ||
+            transaction.draftId != null ||
+            dao.findTransactionWithEntries(transaction.id.value) != null ||
+            resolution.relations.any { it.createdAt != auditRecord.occurredAt } ||
+            resolution.relations.map { it.id }.distinct().size != resolution.relations.size
+        ) {
+            return@safelyWrite invalidState()
+        }
+        val drafts = resolution.draftLinks.associate { link ->
+            val draft = findDraftSafely(link.draftId.value)
+                ?: return@safelyWrite notFound()
+            if (
+                draft.state != DraftState.WAITING_USER &&
+                draft.state != DraftState.EDITED
+            ) {
+                return@safelyWrite invalidState()
+            }
+            if (dao.countActiveReconciliationsForDraft(link.draftId.value) != 0) {
+                return@safelyWrite invalidState()
+            }
+            link.role to draft
+        }
+        if (drafts.size != resolution.draftLinks.size) {
+            return@safelyWrite invalidState()
+        }
+        val expectedSourceMode = if (
+            drafts.values.any { it.sourceMode == TransactionSourceMode.EXTERNAL }
+        ) {
+            TransactionSourceMode.EXTERNAL
+        } else {
+            TransactionSourceMode.MANUAL
+        }
+        if (
+            transaction.sourceMode != expectedSourceMode ||
+            transaction.occurredAt > transaction.confirmedAt ||
+            transaction.confirmedAt > auditRecord.occurredAt
+        ) {
+            return@safelyWrite invalidState()
+        }
+        when (validateTransaction(transaction, additionalAccount = null)) {
+            TransactionValidation.VALID -> Unit
+            TransactionValidation.ACCOUNT_NOT_FOUND -> return@safelyWrite accountNotFound()
+            TransactionValidation.INVALID -> return@safelyWrite invalidState()
+        }
+        if (!reconciliationMatches(resolution, drafts)) {
+            return@safelyWrite invalidState()
+        }
+        if (
+            !auditsAreInsertable(
+                audits = listOf(auditRecord),
+                commandId = transaction.commandId,
+                expectedTargets = mapOf(
+                    AuditAction.RECONCILIATION_CONFIRMED to
+                        AuditTarget("transaction", transaction.id.value),
+                ),
+            )
+        ) {
+            return@safelyWrite collision()
+        }
+
+        claimCommand(
+            commandId = transaction.commandId,
+            operation = Operation.RESOLVE_RECONCILIATION,
+            targetId = transaction.id.value,
+            resultEntityId = transaction.id.value,
+            fingerprint = fingerprint,
+            appliedAtEpochMillis = auditRecord.occurredAt.toEpochMilli(),
+        )
+        insertTransaction(transaction)
+        dao.insertReconciliationDraftLinks(
+            resolution.draftLinks.map { link ->
+                ReconciliationDraftLinkEntity(
+                    transactionId = transaction.id.value,
+                    draftId = link.draftId.value,
+                    role = link.role.name,
+                    linkedAtEpochMillis = auditRecord.occurredAt.toEpochMilli(),
+                )
+            },
+        )
+        if (resolution.relations.isNotEmpty()) {
+            dao.insertTransactionRelations(
+                resolution.relations.map { relation ->
+                    TransactionRelationEntity(
+                        id = relation.id.value,
+                        fromTransactionId = relation.fromTransactionId.value,
+                        toTransactionId = relation.toTransactionId.value,
+                        type = relation.type.name,
+                        decision = relation.decision.name,
+                        createdAtEpochMillis = relation.createdAt.toEpochMilli(),
+                    )
+                },
+            )
+        }
+        val draftIds = resolution.draftLinks.map { it.draftId.value }
+        if (
+            dao.markDraftsLinked(
+                draftIds = draftIds,
+                updatedAtEpochMillis = auditRecord.occurredAt.toEpochMilli(),
+            ) != draftIds.size
+        ) {
+            throw ConcurrentStateChangeException()
+        }
+        dao.insertAuditEvents(listOf(LedgerEntityMapper.auditToEntity(auditRecord)))
+        applied(transaction.id.value)
+    }
+
     override suspend fun voidTransaction(
         transactionId: TransactionId,
         auditRecord: AuditRecord,
@@ -440,12 +616,32 @@ class RoomLedgerRepository(
         val relation = dao.findTransactionWithEntries(transactionId.value)
             ?: return@safelyWrite notFound()
         val transaction = mapTransaction(relation)
-        val draftId = transaction.draftId ?: return@safelyWrite invalidState()
-        val draft = findDraftSafely(draftId.value)
-            ?: return@safelyWrite invalidState()
+        val reconciliationLinks = dao.findReconciliationDraftLinks(transactionId.value)
+        val directDraft = transaction.draftId?.let { draftId ->
+            findDraftSafely(draftId.value) ?: return@safelyWrite invalidState()
+        }
+        val linkedDrafts = reconciliationLinks.map { link ->
+            findDraftSafely(link.draftId) ?: return@safelyWrite invalidState()
+        }
+        if (transaction.status != TransactionStatus.ACTIVE) {
+            return@safelyWrite invalidState()
+        }
+        if (dao.countActiveRefundRelationsTo(transactionId.value) != 0) {
+            return@safelyWrite invalidState()
+        }
         if (
-            transaction.status != TransactionStatus.ACTIVE ||
-            draft.state != DraftState.CONFIRMED
+            directDraft != null &&
+            (directDraft.state != DraftState.CONFIRMED || reconciliationLinks.isNotEmpty())
+        ) {
+            return@safelyWrite invalidState()
+        }
+        if (
+            directDraft == null &&
+            (
+                linkedDrafts.isEmpty() ||
+                    linkedDrafts.any { it.state != DraftState.LINKED } ||
+                    linkedDrafts.size != reconciliationLinks.size
+                )
         ) {
             return@safelyWrite invalidState()
         }
@@ -473,11 +669,138 @@ class RoomLedgerRepository(
         if (dao.markTransactionVoided(transactionId.value) != 1) {
             throw ConcurrentStateChangeException()
         }
-        if (dao.restoreDraftForReview(draftId.value, auditRecord.occurredAt.toEpochMilli()) != 1) {
-            throw ConcurrentStateChangeException()
+        if (directDraft != null) {
+            if (
+                dao.restoreDraftForReview(
+                    directDraft.id.value,
+                    auditRecord.occurredAt.toEpochMilli(),
+                ) != 1
+            ) {
+                throw ConcurrentStateChangeException()
+            }
+        } else {
+            val linkedDraftIds = linkedDrafts.map { it.id.value }
+            if (
+                dao.restoreLinkedDraftsForReview(
+                    linkedDraftIds,
+                    auditRecord.occurredAt.toEpochMilli(),
+                ) != linkedDraftIds.size
+            ) {
+                throw ConcurrentStateChangeException()
+            }
         }
         dao.insertAuditEvents(listOf(LedgerEntityMapper.auditToEntity(auditRecord)))
         applied(transactionId.value)
+    }
+
+    private suspend fun activeRefundTotalLocked(
+        originalTransactionId: TransactionId,
+    ): Money? {
+        val original = dao.findTransactionWithEntries(originalTransactionId.value)
+            ?.let(::mapTransaction)
+            ?: return null
+        if (original.status != TransactionStatus.ACTIVE || original.type != TransactionType.EXPENSE) {
+            return null
+        }
+        val expenseCurrency = original.entries.singleOrNull {
+            it.role == EntryRole.EXPENSE && it.amount.minorUnits > 0L
+        }?.amount?.currency ?: return null
+        val total = try {
+            dao.findActiveRefundExpenseLegs(originalTransactionId.value)
+            .fold(BigInteger.ZERO) { sum, row ->
+                if (
+                    row.currency != expenseCurrency.value ||
+                    row.amountMinorUnits >= 0L
+                ) {
+                    throw LocalDataIntegrityException("active refund relation")
+                }
+                sum + BigInteger.valueOf(row.amountMinorUnits).negate()
+            }
+            .toLongExactCompat()
+        } catch (_: ArithmeticException) {
+            throw LocalDataIntegrityException("active refund relation")
+        }
+        return Money(total, expenseCurrency)
+    }
+
+    private suspend fun reconciliationMatches(
+        resolution: ReconciliationResolution,
+        drafts: Map<ReconciliationDraftRole, ManualDraft>,
+    ): Boolean {
+        val transaction = resolution.transaction
+        val expected = when (resolution.kind) {
+            ReconciliationKind.TRANSFER_PAIR -> {
+                val outbound = drafts[ReconciliationDraftRole.TRANSFER_OUTBOUND] ?: return false
+                val inbound = drafts[ReconciliationDraftRole.TRANSFER_INBOUND] ?: return false
+                val sourceId = outbound.fundingAccountId ?: return false
+                val destinationId = inbound.fundingAccountId ?: return false
+                val source = dao.findAccount(sourceId.value)?.let(::mapAccount) ?: return false
+                val destination = dao.findAccount(destinationId.value)?.let(::mapAccount)
+                    ?: return false
+                PostingFactory.transferPair(
+                    outboundDraft = outbound,
+                    inboundDraft = inbound,
+                    sourceAccount = source,
+                    destinationAccount = destination,
+                    transactionId = transaction.id,
+                    confirmedAt = transaction.confirmedAt,
+                )
+            }
+
+            ReconciliationKind.LIABILITY_REPAYMENT -> {
+                val outbound = drafts[ReconciliationDraftRole.REPAYMENT_OUTBOUND] ?: return false
+                val sourceId = outbound.fundingAccountId ?: return false
+                val source = dao.findAccount(sourceId.value)?.let(::mapAccount) ?: return false
+                val liabilityEntry = transaction.entries.singleOrNull {
+                    it.role == EntryRole.LIABILITY && it.amount.minorUnits > 0L
+                } ?: return false
+                val liability = dao.findAccount(liabilityEntry.accountId.value)?.let(::mapAccount)
+                    ?: return false
+                PostingFactory.liabilityRepayment(
+                    outboundDraft = outbound,
+                    sourceAccount = source,
+                    liabilityAccount = liability,
+                    transactionId = transaction.id,
+                    confirmedAt = transaction.confirmedAt,
+                )
+            }
+
+            ReconciliationKind.REFUND -> {
+                val inbound = drafts[ReconciliationDraftRole.REFUND_INBOUND] ?: return false
+                val relation = resolution.relations.singleOrNull() ?: return false
+                if (
+                    relation.type != TransactionRelationType.REFUNDS ||
+                    relation.decision != RelationDecision.USER_CONFIRMED
+                ) {
+                    return false
+                }
+                val original = dao.findTransactionWithEntries(relation.toTransactionId.value)
+                    ?.let(::mapTransaction)
+                    ?: return false
+                val destinationEntry = transaction.entries.singleOrNull {
+                    it.amount.minorUnits > 0L &&
+                        it.role in setOf(EntryRole.FUNDING, EntryRole.LIABILITY)
+                } ?: return false
+                val destination = dao.findAccount(destinationEntry.accountId.value)
+                    ?.let(::mapAccount)
+                    ?: return false
+                val alreadyRefunded = activeRefundTotalLocked(original.id)
+                    ?: return false
+                PostingFactory.refund(
+                    inboundDraft = inbound,
+                    destinationAccount = destination,
+                    originalExpense = original,
+                    alreadyRefundedMinorUnits = alreadyRefunded.minorUnits,
+                    transactionId = transaction.id,
+                    confirmedAt = transaction.confirmedAt,
+                )
+            }
+        }
+        val validated = (expected as? PostingBuildResult.Valid)?.transaction ?: return false
+        return validated.id == transaction.id &&
+            validated.type == transaction.type &&
+            validated.occurredAt == transaction.occurredAt &&
+            validated.entries == transaction.entries
     }
 
     private suspend fun inspectCommand(
@@ -804,6 +1127,7 @@ private object Operation {
     const val CONFIRM_DRAFT = "CONFIRM_DRAFT"
     const val DISMISS_DRAFT = "DISMISS_DRAFT"
     const val VOID_TRANSACTION = "VOID_TRANSACTION"
+    const val RESOLVE_RECONCILIATION = "RESOLVE_RECONCILIATION"
 }
 
 internal object Fingerprints {
@@ -842,6 +1166,36 @@ internal object Fingerprints {
             .add(Operation.CONFIRM_DRAFT)
             .add(draftId.value)
             .addTransaction(transaction)
+            .finish()
+
+    fun reconciliation(resolution: ReconciliationResolution): String =
+        CanonicalFingerprint()
+            .add(Operation.RESOLVE_RECONCILIATION)
+            .add(resolution.kind.name)
+            .addTransaction(resolution.transaction)
+            .add(resolution.draftLinks.size)
+            .also { fingerprint ->
+                resolution.draftLinks
+                    .sortedWith(
+                        compareBy<dev.bill.core.domain.ReconciliationDraftLink> {
+                            it.role.name
+                        }.thenBy { it.draftId.value },
+                    )
+                    .forEach { link ->
+                        fingerprint.add(link.role.name).add(link.draftId.value)
+                    }
+            }
+            .add(resolution.relations.size)
+            .also { fingerprint ->
+                resolution.relations.sortedBy { it.id.value }.forEach { relation ->
+                    fingerprint
+                        .add(relation.id.value)
+                        .add(relation.fromTransactionId.value)
+                        .add(relation.toTransactionId.value)
+                        .add(relation.type.name)
+                        .add(relation.decision.name)
+                }
+            }
             .finish()
 
     fun targetOnly(operation: String, targetId: String): String = CanonicalFingerprint()

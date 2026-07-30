@@ -1,6 +1,10 @@
 package dev.bill.app
 
 import dev.bill.application.BillService
+import dev.bill.application.DelimitedStatementImport
+import dev.bill.application.LocalDelimitedStatementSession
+import dev.bill.application.ReconciliationCaseKind
+import dev.bill.application.SelectedDelimitedStatementEvidence
 import dev.bill.application.SharedTextCapture
 import dev.bill.application.SelectedTextFileCapture
 import dev.bill.application.SelectedTextFileEvidence
@@ -10,22 +14,45 @@ import dev.bill.application.SourceCaptureResult
 import dev.bill.application.EvidenceMaintenanceReport
 import dev.bill.application.SourceEvidenceManager
 import dev.bill.application.SourceEvidenceOperationResult
+import dev.bill.application.StatementImportConfirmationResult
+import dev.bill.application.StatementImportMappedPreviewRow
+import dev.bill.application.StatementImportMappingPreview
+import dev.bill.application.StatementImportMappingPreviewResult
+import dev.bill.application.StatementImportPreviewResult
+import dev.bill.application.StatementImportProgress
+import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
+import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
+import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
+import dev.bill.core.model.CurrencyCode
+import dev.bill.core.model.Money
+import dev.bill.core.model.TransactionType
 import dev.bill.core.model.TransactionId
 import dev.bill.source.contract.CaptureMethod
+import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.RawEventId
 import dev.bill.source.contract.SourceFamily
+import dev.bill.source.contract.StatementImportBatchId
+import dev.bill.source.contract.StatementImportBatchRecord
+import dev.bill.source.contract.StatementImportBatchState
+import dev.bill.source.genericdelimited.DelimitedDelimiter
+import dev.bill.source.genericdelimited.DelimitedDocument
+import dev.bill.source.genericdelimited.DelimitedRow
+import dev.bill.source.genericdelimited.DelimitedStatementMapping
 import dev.bill.source.review.EvidencePayloadState
 import dev.bill.source.review.SourceEvidenceCursor
 import dev.bill.source.review.SourceEvidenceItem
@@ -38,6 +65,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -45,6 +73,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -109,6 +138,60 @@ class BillViewModelTest {
             assertEquals(1_230L, repository.openingTransaction?.entries?.first()?.amount?.minorUnits)
             assertEquals(BillOperationKind.CREATE_ACCOUNT, viewModel.events.first().successKind())
             assertEquals(null, viewModel.uiState.value.activeOperation)
+        }
+
+    @Test
+    fun `reconciliation confirmation delegates through view model and emits success`() =
+        runTest(dispatcher) {
+            val now = Instant.parse("2026-07-19T00:00:00Z")
+            val bank = ledgerAccount("bank", AccountType.ASSET_BANK, now)
+            val wallet = ledgerAccount("wallet", AccountType.ASSET_EWALLET_BALANCE, now)
+            val repository = FakeLedgerRepository(
+                observedState = MutableStateFlow(
+                    LedgerState(
+                        accountBalances = listOf(
+                            AccountBalance(bank, Money.cny(10_000L)),
+                            AccountBalance(wallet, Money.cny(0L)),
+                        ),
+                        pendingDrafts = listOf(
+                            reconciliationDraft(
+                                id = "transfer-out",
+                                type = TransactionType.EXPENSE,
+                                fundingAccountId = bank.id,
+                                now = now,
+                            ),
+                            reconciliationDraft(
+                                id = "transfer-in",
+                                type = TransactionType.INCOME,
+                                fundingAccountId = wallet.id,
+                                now = now,
+                            ),
+                        ),
+                        recentTransactions = emptyList(),
+                    ),
+                ),
+            )
+            val viewModel = viewModel(repository)
+            advanceUntilIdle()
+            val case = requireNotNull(viewModel.uiState.value.snapshot)
+                .reconciliationCases
+                .single { it.kind == ReconciliationCaseKind.TRANSFER }
+
+            viewModel.resolveReconciliation(
+                commandId = "view-model-reconcile",
+                caseId = case.id,
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                ReconciliationKind.TRANSFER_PAIR,
+                repository.resolvedReconciliation?.kind,
+            )
+            assertEquals(
+                BillOperationKind.RESOLVE_RECONCILIATION,
+                viewModel.events.first().successKind(),
+            )
+            assertNull(viewModel.uiState.value.activeOperation)
         }
 
     @Test
@@ -206,6 +289,118 @@ class BillViewModelTest {
         }
 
     @Test
+    fun `structured statement maps previews and imports rows without retaining selected bytes`() =
+        runTest(dispatcher) {
+            val bytes = "date,amount,counterparty\n2026-07-25,-1.00,Shop".toByteArray()
+            val reader = FakeDelimitedStatementDocumentReader(
+                SelectedDelimitedStatementReadResult.Success(
+                    SelectedDelimitedStatementEvidence(
+                        mediaType = "text/csv",
+                        bytes = bytes,
+                    ),
+                ),
+            )
+            val statementImport = FakeDelimitedStatementImport()
+            val evidenceManager = FakeSourceEvidenceManager()
+            val viewModel = viewModel(
+                repository = FakeLedgerRepository(),
+                evidenceManager = evidenceManager,
+                delimitedImport = statementImport,
+                delimitedReader = reader,
+            )
+            advanceUntilIdle()
+            val initialPageCalls = evidenceManager.pageCalls
+
+            viewModel.ingestSelectedDelimitedStatement(
+                documentUri = "content://test/statement",
+                delimiter = DelimitedDelimiter.COMMA,
+            )
+            advanceUntilIdle()
+
+            assertEquals("content://test/statement", reader.uriString)
+            assertTrue(bytes.all { it == 0.toByte() })
+            val initialMapping = viewModel.uiState.value.statementImport
+                as StatementImportUiState.Mapping
+            assertNull(initialMapping.input.dateColumnIndex)
+            assertEquals(
+                StatementImportConfigurationIssue.INCOMPLETE_FIELDS,
+                initialMapping.configurationIssue,
+            )
+
+            viewModel.updateStatementImportMapping(
+                initialMapping.input.copy(
+                    dateColumnIndex = 0,
+                    amountColumnIndex = 1,
+                    counterpartyColumnIndex = 2,
+                ),
+            )
+            advanceUntilIdle()
+
+            val mapping = viewModel.uiState.value.statementImport
+                as StatementImportUiState.Mapping
+            assertEquals(2, mapping.preview?.validRowCount)
+            assertEquals(0, mapping.preview?.invalidRowCount)
+            assertEquals(3, mapping.columns.size)
+
+            viewModel.confirmStatementImport()
+            advanceUntilIdle()
+
+            val completed = viewModel.uiState.value.statementImport
+                as StatementImportUiState.Completed
+            assertEquals(2, completed.readyForReviewCount)
+            assertEquals(0, completed.rejectedRowCount)
+            assertEquals(1, completed.resumedRowCount)
+            assertEquals(initialPageCalls + 1, evidenceManager.pageCalls)
+            assertTrue(statementImport.session.header.isEmpty())
+        }
+
+    @Test
+    fun `stopping a structured import releases its session and leaves resumable row state`() =
+        runTest(dispatcher) {
+            val reader = FakeDelimitedStatementDocumentReader(
+                SelectedDelimitedStatementReadResult.Success(
+                    SelectedDelimitedStatementEvidence(
+                        mediaType = "text/csv",
+                        bytes = "date,amount,counterparty\n2026-07-25,-1.00,Shop"
+                            .toByteArray(),
+                    ),
+                ),
+            )
+            val statementImport = FakeDelimitedStatementImport(suspendConfirmation = true)
+            val viewModel = viewModel(
+                repository = FakeLedgerRepository(),
+                delimitedImport = statementImport,
+                delimitedReader = reader,
+            )
+            advanceUntilIdle()
+            viewModel.ingestSelectedDelimitedStatement(
+                documentUri = "content://test/statement-stop",
+                delimiter = DelimitedDelimiter.COMMA,
+            )
+            advanceUntilIdle()
+            val initial = viewModel.uiState.value.statementImport
+                as StatementImportUiState.Mapping
+            viewModel.updateStatementImportMapping(
+                initial.input.copy(
+                    dateColumnIndex = 0,
+                    amountColumnIndex = 1,
+                    counterpartyColumnIndex = 2,
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.confirmStatementImport()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.statementImport is StatementImportUiState.Importing)
+
+            viewModel.cancelStatementImport()
+            advanceUntilIdle()
+
+            assertEquals(StatementImportUiState.Idle, viewModel.uiState.value.statementImport)
+            assertTrue(statementImport.session.header.isEmpty())
+        }
+
+    @Test
     fun `shared PNG receipt is read once, opens review, and its bytes are wiped`() =
         runTest(dispatcher) {
             val bytes = byteArrayOf(1, 2, 3)
@@ -287,17 +482,23 @@ class BillViewModelTest {
         documentReader: SelectedTextDocumentReader = FakeSelectedTextDocumentReader(),
         receiptImageCapture: SharedReceiptImageCapture = FakeSharedReceiptImageCapture(),
         receiptImageReader: SharedReceiptImageDocumentReader = FakeSharedReceiptImageDocumentReader(),
+        delimitedImport: DelimitedStatementImport = DelimitedStatementImport.Unavailable,
+        delimitedReader: SelectedDelimitedStatementDocumentReader =
+            SelectedDelimitedStatementDocumentReader.Unavailable,
     ) = BillViewModel(
-        BillService(
+        service = BillService(
             repository = repository,
             clock = Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
         ),
-        capture,
-        evidenceManager,
-        selectedFileCapture,
-        documentReader,
-        receiptImageCapture,
-        receiptImageReader,
+        sharedTextIngestionService = capture,
+        sourceEvidenceManager = evidenceManager,
+        selectedTextFileIngestionService = selectedFileCapture,
+        selectedTextDocumentReader = documentReader,
+        sharedReceiptImageIngestionService = receiptImageCapture,
+        sharedReceiptImageDocumentReader = receiptImageReader,
+        delimitedStatementImport = delimitedImport,
+        delimitedStatementDocumentReader = delimitedReader,
+        statementImportDispatcher = dispatcher,
     )
 }
 
@@ -351,18 +552,69 @@ private class FakeLedgerRepository(
         auditRecord: AuditRecord,
     ) = unsupported()
 
+    override suspend fun activeRefundTotal(originalTransactionId: TransactionId) = null
+
+    override suspend fun resolveReconciliation(
+        resolution: ReconciliationResolution,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult {
+        resolvedReconciliation = resolution
+        return RepositoryWriteResult(
+            RepositoryWriteStatus.APPLIED,
+            resolution.transaction.id.value,
+        )
+    }
+
     override suspend fun voidTransaction(
         transactionId: TransactionId,
         auditRecord: AuditRecord,
     ) = unsupported()
 
     private fun unsupported() = RepositoryWriteResult(RepositoryWriteStatus.INVALID_STATE)
+
+    var resolvedReconciliation: ReconciliationResolution? = null
 }
 
 private fun emptyLedgerState() = LedgerState(
     accountBalances = emptyList(),
     pendingDrafts = emptyList(),
     recentTransactions = emptyList(),
+)
+
+private fun ledgerAccount(
+    id: String,
+    type: AccountType,
+    now: Instant,
+) = LedgerAccount(
+    id = AccountId(id),
+    name = "TEST $id",
+    normalizedName = "test $id",
+    type = type,
+    currency = CurrencyCode.CNY,
+    isSystem = false,
+    isArchived = false,
+    createdAt = now.minusSeconds(120),
+    creationCommandId = CommandId("create-$id"),
+)
+
+private fun reconciliationDraft(
+    id: String,
+    type: TransactionType,
+    fundingAccountId: AccountId,
+    now: Instant,
+) = ManualDraft(
+    id = DraftId(id),
+    state = DraftState.WAITING_USER,
+    type = type,
+    amount = Money.cny(2_500L),
+    occurredAt = now.minusSeconds(60),
+    counterparty = "TEST COUNTERPARTY",
+    note = null,
+    fundingAccountId = fundingAccountId,
+    createdAt = now.minusSeconds(120),
+    updatedAt = now.minusSeconds(30),
+    creationCommandId = CommandId("create-$id"),
+    sourceMode = TransactionSourceMode.EXTERNAL,
 )
 
 private class FakeSharedTextCapture(
@@ -413,6 +665,78 @@ private class FakeSelectedTextFileCapture(
         this.commandId = commandId
         mediaType = evidence.mediaType
         return result
+    }
+}
+
+private class FakeDelimitedStatementDocumentReader(
+    private val result: SelectedDelimitedStatementReadResult,
+) : SelectedDelimitedStatementDocumentReader {
+    var uriString: String? = null
+
+    override suspend fun read(uriString: String): SelectedDelimitedStatementReadResult {
+        this.uriString = uriString
+        return result
+    }
+}
+
+private class FakeDelimitedStatementImport(
+    private val suspendConfirmation: Boolean = false,
+) : DelimitedStatementImport {
+    private val fileHash = EvidenceHash("a".repeat(64))
+    val session = LocalDelimitedStatementSession(
+        DelimitedDocument(
+            delimiter = DelimitedDelimiter.COMMA,
+            fileHash = fileHash,
+            header = listOf("date", "amount", "counterparty"),
+            rows = listOf(
+                DelimitedRow(1, listOf("2026-07-25", "-1.00", "Shop")),
+                DelimitedRow(2, listOf("2026-07-26", "2.00", "Refund")),
+            ),
+        ),
+    )
+
+    override fun preview(
+        evidence: SelectedDelimitedStatementEvidence,
+        delimiter: DelimitedDelimiter,
+    ): StatementImportPreviewResult = StatementImportPreviewResult.Ready(session)
+
+    override fun previewMapping(
+        session: LocalDelimitedStatementSession,
+        mapping: DelimitedStatementMapping,
+    ): StatementImportMappingPreviewResult = StatementImportMappingPreviewResult.Ready(
+        StatementImportMappingPreview(
+            validRowCount = 2,
+            invalidRowCount = 0,
+            previewRows = listOf(
+                StatementImportMappedPreviewRow(1, null),
+                StatementImportMappedPreviewRow(2, null),
+            ),
+        ),
+    )
+
+    override suspend fun confirm(
+        session: LocalDelimitedStatementSession,
+        mapping: DelimitedStatementMapping,
+        onProgress: (StatementImportProgress) -> Unit,
+    ): StatementImportConfirmationResult {
+        if (suspendConfirmation) awaitCancellation()
+        val batchId = StatementImportBatchId("statement-import-test")
+        onProgress(StatementImportProgress(batchId, 2, 2))
+        return StatementImportConfirmationResult.Completed(
+            batch = StatementImportBatchRecord(
+                id = batchId,
+                fileHash = fileHash,
+                mappingHash = EvidenceHash("b".repeat(64)),
+                totalRowCount = 2,
+                processedRowCount = 2,
+                readyForReviewCount = 2,
+                rejectedRowCount = 0,
+                state = StatementImportBatchState.COMPLETED,
+                createdAt = Instant.parse("2026-07-19T00:00:00Z"),
+                updatedAt = Instant.parse("2026-07-19T00:00:01Z"),
+            ),
+            resumedRowCount = 1,
+        )
     }
 }
 

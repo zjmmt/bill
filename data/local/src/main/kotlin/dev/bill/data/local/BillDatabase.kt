@@ -20,12 +20,16 @@ import androidx.room.AutoMigration
         SourceEvidencePolicyEntity::class,
         SourceEvidenceStagingEntity::class,
         NotificationObservationEntity::class,
+        StatementImportBatchEntity::class,
+        StatementImportRowEntity::class,
+        ReconciliationDraftLinkEntity::class,
+        TransactionRelationEntity::class,
     ],
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class BillDatabase : RoomDatabase() {
@@ -40,4 +44,6 @@ abstract class BillDatabase : RoomDatabase() {
     abstract fun sourceEvidenceStagingDao(): SourceEvidenceStagingDao
 
     abstract fun notificationObservationDao(): NotificationObservationDao
+
+    abstract fun statementImportDao(): StatementImportDao
 }

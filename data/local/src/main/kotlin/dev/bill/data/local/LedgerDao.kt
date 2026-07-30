@@ -60,7 +60,7 @@ interface LedgerDao {
     @Query(
         """
         SELECT * FROM drafts
-        WHERE state NOT IN ('CONFIRMED', 'DISMISSED')
+        WHERE state NOT IN ('CONFIRMED', 'LINKED', 'DISMISSED')
         ORDER BY occurredAtEpochMillis DESC, id DESC
         """,
     )
@@ -97,6 +97,20 @@ interface LedgerDao {
     @Query(
         """
         UPDATE drafts
+        SET state = 'LINKED',
+            updatedAtEpochMillis = :updatedAtEpochMillis
+        WHERE id IN (:draftIds)
+          AND state IN ('WAITING_USER', 'EDITED')
+        """,
+    )
+    suspend fun markDraftsLinked(
+        draftIds: List<String>,
+        updatedAtEpochMillis: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE drafts
         SET state = 'DISMISSED',
             updatedAtEpochMillis = :updatedAtEpochMillis
         WHERE id = :draftId
@@ -114,6 +128,20 @@ interface LedgerDao {
         """,
     )
     suspend fun restoreDraftForReview(draftId: String, updatedAtEpochMillis: Long): Int
+
+    @Query(
+        """
+        UPDATE drafts
+        SET state = 'WAITING_USER',
+            updatedAtEpochMillis = :updatedAtEpochMillis
+        WHERE id IN (:draftIds)
+          AND state = 'LINKED'
+        """,
+    )
+    suspend fun restoreLinkedDraftsForReview(
+        draftIds: List<String>,
+        updatedAtEpochMillis: Long,
+    ): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertTransaction(transaction: TransactionEntity)
@@ -205,6 +233,261 @@ interface LedgerDao {
         """,
     )
     suspend fun markTransactionVoided(transactionId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertReconciliationDraftLinks(
+        links: List<ReconciliationDraftLinkEntity>,
+    )
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertTransactionRelations(relations: List<TransactionRelationEntity>)
+
+    @Query(
+        """
+        SELECT * FROM reconciliation_draft_links
+        WHERE transactionId = :transactionId
+        ORDER BY role ASC, draftId ASC
+        """,
+    )
+    suspend fun findReconciliationDraftLinks(
+        transactionId: String,
+    ): List<ReconciliationDraftLinkEntity>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM reconciliation_draft_links AS link
+        INNER JOIN ledger_transactions AS transaction_record
+            ON transaction_record.id = link.transactionId
+        WHERE link.draftId = :draftId
+          AND transaction_record.status = 'ACTIVE'
+        """,
+    )
+    suspend fun countActiveReconciliationsForDraft(draftId: String): Int
+
+    @Query(
+        """
+        SELECT entry.amountMinorUnits AS amountMinorUnits, entry.currency AS currency
+        FROM transaction_relations AS relation_record
+        INNER JOIN ledger_transactions AS refund
+            ON refund.id = relation_record.fromTransactionId
+        INNER JOIN ledger_entries AS entry
+            ON entry.transactionId = refund.id
+        WHERE relation_record.toTransactionId = :originalTransactionId
+          AND relation_record.type = 'REFUNDS'
+          AND refund.status = 'ACTIVE'
+          AND refund.type = 'REFUND'
+          AND entry.role = 'EXPENSE'
+        ORDER BY refund.id ASC, entry.position ASC
+        """,
+    )
+    suspend fun findActiveRefundExpenseLegs(
+        originalTransactionId: String,
+    ): List<ActiveRefundLegRow>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM transaction_relations AS relation_record
+        INNER JOIN ledger_transactions AS refund
+            ON refund.id = relation_record.fromTransactionId
+        WHERE relation_record.toTransactionId = :originalTransactionId
+          AND relation_record.type = 'REFUNDS'
+          AND refund.status = 'ACTIVE'
+        """,
+    )
+    suspend fun countActiveRefundRelationsTo(originalTransactionId: String): Int
+
+    @Query(
+        """
+        SELECT
+            relation_record.toTransactionId AS originalTransactionId,
+            -SUM(entry.amountMinorUnits) AS amountMinorUnits,
+            entry.currency AS currency
+        FROM transaction_relations AS relation_record
+        INNER JOIN ledger_transactions AS refund
+            ON refund.id = relation_record.fromTransactionId
+        INNER JOIN ledger_entries AS entry
+            ON entry.transactionId = refund.id
+        WHERE relation_record.type = 'REFUNDS'
+          AND refund.status = 'ACTIVE'
+          AND refund.type = 'REFUND'
+          AND entry.role = 'EXPENSE'
+        GROUP BY relation_record.toTransactionId, entry.currency
+        ORDER BY relation_record.toTransactionId ASC
+        """,
+    )
+    fun observeActiveRefundTotals(): Flow<List<ActiveRefundTotalRow>>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM reconciliation_draft_links AS link
+        LEFT JOIN ledger_transactions AS transaction_record
+            ON transaction_record.id = link.transactionId
+        LEFT JOIN drafts AS draft
+            ON draft.id = link.draftId
+        LEFT JOIN command_receipts AS receipt
+            ON receipt.commandId = transaction_record.commandId
+        WHERE transaction_record.id IS NULL
+           OR draft.id IS NULL
+           OR receipt.commandId IS NULL
+           OR receipt.operation != 'RESOLVE_RECONCILIATION'
+           OR receipt.targetId != transaction_record.id
+           OR link.role NOT IN (
+               'TRANSFER_OUTBOUND',
+               'TRANSFER_INBOUND',
+               'REPAYMENT_OUTBOUND',
+               'REFUND_INBOUND'
+           )
+           OR (
+               transaction_record.type = 'TRANSFER'
+               AND link.role NOT IN ('TRANSFER_OUTBOUND', 'TRANSFER_INBOUND')
+           )
+           OR (
+               transaction_record.type = 'LIABILITY_REPAY'
+               AND link.role != 'REPAYMENT_OUTBOUND'
+           )
+           OR (
+               transaction_record.type = 'REFUND'
+               AND link.role != 'REFUND_INBOUND'
+           )
+           OR transaction_record.type NOT IN ('TRANSFER', 'LIABILITY_REPAY', 'REFUND')
+           OR (
+               transaction_record.status = 'ACTIVE'
+               AND (
+                   draft.state != 'LINKED'
+                   OR (
+                       SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS active_link
+                       INNER JOIN ledger_transactions AS active_transaction
+                           ON active_transaction.id = active_link.transactionId
+                       WHERE active_link.draftId = link.draftId
+                         AND active_transaction.status = 'ACTIVE'
+                   ) != 1
+               )
+           )
+           OR (
+               transaction_record.status = 'VOIDED'
+               AND draft.state = 'LINKED'
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM reconciliation_draft_links AS active_link
+                   INNER JOIN ledger_transactions AS active_transaction
+                       ON active_transaction.id = active_link.transactionId
+                   WHERE active_link.draftId = link.draftId
+                     AND active_transaction.status = 'ACTIVE'
+               )
+           )
+           OR link.linkedAtEpochMillis < draft.createdAtEpochMillis
+           OR link.linkedAtEpochMillis < transaction_record.occurredAtEpochMillis
+        """,
+    )
+    fun observeReconciliationLinkIntegrityIssueCount(): Flow<Long>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM transaction_relations AS relation_record
+        LEFT JOIN ledger_transactions AS source_transaction
+            ON source_transaction.id = relation_record.fromTransactionId
+        LEFT JOIN ledger_transactions AS target_transaction
+            ON target_transaction.id = relation_record.toTransactionId
+        LEFT JOIN command_receipts AS receipt
+            ON receipt.commandId = source_transaction.commandId
+        WHERE source_transaction.id IS NULL
+           OR target_transaction.id IS NULL
+           OR receipt.commandId IS NULL
+           OR receipt.operation != 'RESOLVE_RECONCILIATION'
+           OR receipt.targetId != source_transaction.id
+           OR relation_record.fromTransactionId = relation_record.toTransactionId
+           OR relation_record.type != 'REFUNDS'
+           OR relation_record.decision != 'USER_CONFIRMED'
+           OR source_transaction.type != 'REFUND'
+           OR target_transaction.type != 'EXPENSE'
+           OR relation_record.createdAtEpochMillis < source_transaction.occurredAtEpochMillis
+           OR relation_record.createdAtEpochMillis < target_transaction.occurredAtEpochMillis
+        """,
+    )
+    fun observeTransactionRelationIntegrityIssueCount(): Flow<Long>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM command_receipts AS receipt
+        LEFT JOIN ledger_transactions AS transaction_record
+            ON transaction_record.id = receipt.targetId
+        WHERE receipt.operation = 'RESOLVE_RECONCILIATION'
+          AND (
+              transaction_record.id IS NULL
+              OR transaction_record.commandId != receipt.commandId
+              OR transaction_record.draftId IS NOT NULL
+              OR transaction_record.type NOT IN ('TRANSFER', 'LIABILITY_REPAY', 'REFUND')
+              OR (
+                  transaction_record.type = 'TRANSFER'
+                  AND (
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id) != 2
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'TRANSFER_OUTBOUND') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'TRANSFER_INBOUND') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM transaction_relations AS relation_record
+                       WHERE relation_record.fromTransactionId = transaction_record.id) != 0
+                  )
+              )
+              OR (
+                  transaction_record.type = 'LIABILITY_REPAY'
+                  AND (
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'REPAYMENT_OUTBOUND') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id) != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM transaction_relations AS relation_record
+                       WHERE relation_record.fromTransactionId = transaction_record.id) != 0
+                  )
+              )
+              OR (
+                  transaction_record.type = 'REFUND'
+                  AND (
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'REFUND_INBOUND') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id) != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM transaction_relations AS relation_record
+                       WHERE relation_record.fromTransactionId = transaction_record.id
+                         AND relation_record.type = 'REFUNDS') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM transaction_relations AS relation_record
+                       WHERE relation_record.fromTransactionId = transaction_record.id) != 1
+                  )
+              )
+          )
+        """,
+    )
+    fun observeReconciliationTransactionIntegrityIssueCount(): Flow<Long>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAuditEvents(events: List<AuditEventEntity>)

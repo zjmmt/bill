@@ -112,4 +112,138 @@
     <string name="capture_method_share_file">收據截圖</string>
     <string name="capture_method_photo">相片辨識</string>
     <string name="capture_method_manual">手動輸入</string>
+    <string name="import_statement_title">匯入本機帳單</string>
+    <string name="import_statement_step_choose">第 1 / 3 步 · 選擇格式</string>
+    <string name="import_statement_intro">每行對應一筆交易時，請使用 CSV/TSV 結構化匯入；純文字仍可作為只保留證據的後備方式。</string>
+    <string name="import_csv_title">CSV · 逗號分隔</string>
+    <string name="import_csv_body">對應欄位、預覽有效資料列，再批次產生待確認草稿。</string>
+    <string name="import_tsv_title">TSV · 定位字元分隔</string>
+    <string name="import_tsv_body">適合銀行或試算表軟件匯出的定位字元帳單。</string>
+    <string name="import_plain_text_title">純文字證據</string>
+    <string name="import_plain_text_body">不拆分資料列，只儲存一份有大小上限的文字供手動確認。</string>
+    <string name="import_file_local_only">所選檔案只在本機處理。Bill 不保留 URI 或檔案名稱，也不會上載檔案。</string>
+    <string name="statement_import_cancel">取消</string>
+
+    <string name="statement_import_reading_title">正在讀取帳單</string>
+    <string name="statement_import_step_reading">第 1 / 3 步 · 本機讀取</string>
+    <string name="statement_import_reading_body">正在驗證有大小上限的 %1$s 檔案，不會傳送任何網絡請求。</string>
+    <string name="statement_import_mapping_title">對應帳單欄位</string>
+    <string name="statement_import_step_mapping">第 2 / 3 步 · 對應與預覽</string>
+    <plurals name="statement_import_detected">
+        <item quantity="other">%1$s · 偵測到 %2$d 行資料</item>
+    </plurals>
+    <string name="statement_import_section_fields">必填欄位</string>
+    <string name="statement_import_date_column">日期時間欄</string>
+    <string name="statement_import_date_format">日期格式</string>
+    <string name="statement_import_amount_column">金額欄</string>
+    <string name="statement_import_amount_format">數字格式</string>
+    <string name="statement_import_counterparty_column">交易對方欄</string>
+    <string name="statement_import_reference_column">交易編號欄（可選）</string>
+    <string name="statement_import_section_direction">資金方向</string>
+    <string name="statement_import_positive_means">正數金額代表</string>
+    <string name="statement_import_direction_column">收支方向欄</string>
+    <string name="statement_import_inbound_tokens">代表入帳的值</string>
+    <string name="statement_import_outbound_tokens">代表出帳的值</string>
+    <string name="statement_import_tokens_hint">可使用中英文逗號、分號或換行分隔。</string>
+    <string name="statement_import_currency">帳單幣種</string>
+    <string name="statement_import_no_fx">人民幣與美元分開記帳，不提供匯率換算。</string>
+    <string name="statement_import_sample_title">所選欄位範例</string>
+    <string name="statement_import_sample_body">此處只會直向顯示 3 行有上限的範例，用於核對對應；完整檔案不會寫入日誌。</string>
+    <string name="statement_import_sample_row">檔案第 %1$d 行</string>
+    <string name="statement_import_not_selected">未選擇</string>
+    <string name="statement_import_preview_title">匯入預覽</string>
+    <plurals name="statement_import_valid_rows">
+        <item quantity="other">%1$d 行可產生待確認草稿</item>
+    </plurals>
+    <plurals name="statement_import_invalid_rows">
+        <item quantity="other">%1$d 行將被拒絕</item>
+    </plurals>
+    <string name="statement_import_invalid_rows_body">被拒絕的資料列只保留安全錯誤碼，不會把儲存格內容複製到診斷資料。</string>
+    <string name="statement_import_row_error">第 %1$d 行 · %2$s</string>
+    <string name="statement_import_previewing">正在檢查對應…</string>
+    <string name="statement_import_previewing_rows">正在本機檢查所有資料列…</string>
+    <string name="statement_import_confirm">確認本機匯入</string>
+
+    <string name="statement_import_importing_title">正在產生待確認草稿</string>
+    <string name="statement_import_step_importing">第 3 / 3 步 · 本機匯入</string>
+    <plurals name="statement_import_importing_count">
+        <item quantity="other">已處理 %1$d / %2$d 行</item>
+    </plurals>
+    <string name="statement_import_importing_body">每個有效資料列只會產生草稿，不會自動確認為正式交易。</string>
+    <string name="statement_import_stop_title">停止本次匯入？</string>
+    <string name="statement_import_stop_body">已完成的資料列會保留在待確認清單。日後重新選擇相同檔案和對應，即可繼續缺少的資料列。</string>
+    <string name="statement_import_stop">停止，稍後繼續</string>
+    <string name="statement_import_keep_running">繼續匯入</string>
+    <string name="statement_import_completed_title">匯入完成</string>
+    <string name="statement_import_step_completed">完成 · 仍需逐筆確認</string>
+    <plurals name="statement_import_completed_body">
+        <item quantity="other">%1$d 筆草稿等待確認，被拒絕行數：%2$d。</item>
+    </plurals>
+    <plurals name="statement_import_resumed_rows">
+        <item quantity="other">已安全沿用上次執行的 %1$d 行結果。</item>
+    </plurals>
+    <string name="statement_import_completed_next">請為每筆草稿選擇資金帳戶並確認，之後才會進入正式帳本。</string>
+    <string name="statement_import_done">查看待確認草稿</string>
+    <string name="statement_import_failed_title">帳單未匯入</string>
+    <string name="statement_import_step_failed">本機匯入已停止</string>
+    <string name="statement_import_failed_body">停止前已完成的資料列仍保留在待確認清單；沒有任何資料列自動進入正式帳本。請檢查檔案或對應後重新選擇。</string>
+    <string name="statement_import_discard_title">放棄目前對應？</string>
+    <string name="statement_import_discard_body">所選檔案和目前對應會從記憶體釋放，不會產生任何草稿。</string>
+    <string name="statement_import_discard">放棄對應</string>
+    <string name="statement_import_keep_editing">繼續編輯</string>
+
+    <string name="statement_import_csv">CSV</string>
+    <string name="statement_import_tsv">TSV</string>
+    <string name="statement_import_none">不匯入此欄位</string>
+    <string name="statement_import_column_option">第 %1$d 欄 · %2$s</string>
+    <string name="statement_import_direction_signed">使用金額正負號</string>
+    <string name="statement_import_direction_signed_body">透過正數和負數判斷入帳或出帳。</string>
+    <string name="statement_import_direction_separate">使用獨立方向欄</string>
+    <string name="statement_import_direction_separate_body">金額保持正數，另一欄填寫「收入」「支出」等方向值。</string>
+    <string name="statement_import_inbound">入帳</string>
+    <string name="statement_import_outbound">出帳</string>
+
+    <string name="statement_date_dash">2026-07-27</string>
+    <string name="statement_date_slash">2026/07/27</string>
+    <string name="statement_datetime_minute_dash">2026-07-27 14:30</string>
+    <string name="statement_datetime_minute_slash">2026/07/27 14:30</string>
+    <string name="statement_datetime_second_dash">2026-07-27 14:30:15</string>
+    <string name="statement_datetime_second_slash">2026/07/27 14:30:15</string>
+    <string name="statement_datetime_iso_minute">2026-07-27T14:30</string>
+    <string name="statement_datetime_iso_second">2026-07-27T14:30:15</string>
+    <string name="statement_amount_dot_decimal">1234.56</string>
+    <string name="statement_amount_comma_group">1,234.56</string>
+    <string name="statement_amount_comma_decimal">1234,56</string>
+    <string name="statement_amount_dot_group">1.234,56</string>
+
+    <string name="statement_mapping_incomplete">請選擇日期、金額和交易對方欄。</string>
+    <string name="statement_mapping_duplicate">同一欄不能同時代表兩個不同欄位。</string>
+    <string name="statement_mapping_empty_tokens">入帳和出帳都至少需要填寫一個方向值。</string>
+    <string name="statement_mapping_too_many_tokens">每種方向最多填寫 16 個值。</string>
+    <string name="statement_mapping_invalid_token">方向值過長，或包含不支援的控制字元。</string>
+    <string name="statement_mapping_overlapping_tokens">入帳與出帳的方向值不能重疊。</string>
+    <string name="statement_mapping_invalid">目前對應不適用於所選檔案。</string>
+
+    <string name="statement_error_unavailable">此建置版本未提供結構化帳單匯入。</string>
+    <string name="statement_error_invalid_document">無法把所選文件作為本機帳單開啟。</string>
+    <string name="statement_error_unsupported_type">請選擇 CSV、TSV 或純文字文件。</string>
+    <string name="statement_error_too_large">檔案超過 2 MiB 本機匯入上限。</string>
+    <string name="statement_error_read_failed">無法讀取檔案，請檢查存取權限後重新選擇。</string>
+    <string name="statement_error_delimiter">所選格式與檔案媒體類型不相符。</string>
+    <string name="statement_error_no_rows">檔案只有標題列，沒有資料列。</string>
+    <string name="statement_error_encoding">檔案必須使用有效的 UTF-8 文字編碼。</string>
+    <string name="statement_error_malformed">CSV/TSV 的引號或資料列結構有誤。</string>
+    <string name="statement_error_too_many_rows">檔案超過 5000 行匯入上限。</string>
+    <string name="statement_error_too_many_columns">某一行的欄數過多。</string>
+    <string name="statement_error_cell_too_long">某個儲存格超過本機安全上限。</string>
+    <string name="statement_error_row_too_long">某一行超過本機安全上限。</string>
+    <string name="statement_error_session_closed">本次記憶體匯入工作階段已失效，請重新選擇檔案。</string>
+    <string name="statement_error_interrupted">匯入在全部完成前停止。再次確認即可安全續傳。</string>
+    <string name="statement_error_identity_collision">已儲存的批次識別與此檔案衝突，衝突資料列沒有被匯入。</string>
+    <string name="statement_row_error_mapping">對應欄缺失</string>
+    <string name="statement_row_error_date">日期或時間無效</string>
+    <string name="statement_row_error_amount">金額無效或超出範圍</string>
+    <string name="statement_row_error_direction">資金方向缺失或無法識別</string>
+    <string name="statement_row_error_counterparty">交易對方缺失或過長</string>
+    <string name="statement_row_error_reference">交易編號過長</string>
 </resources>

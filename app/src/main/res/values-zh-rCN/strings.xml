@@ -112,4 +112,138 @@
     <string name="capture_method_share_file">收据截图</string>
     <string name="capture_method_photo">照片识别</string>
     <string name="capture_method_manual">手工录入</string>
+    <string name="import_statement_title">导入本地账单</string>
+    <string name="import_statement_step_choose">第 1 / 3 步 · 选择格式</string>
+    <string name="import_statement_intro">每行对应一笔交易时，请使用 CSV/TSV 结构化导入；纯文本仍可作为只留证据的回退方式。</string>
+    <string name="import_csv_title">CSV · 逗号分隔</string>
+    <string name="import_csv_body">映射字段、预览有效行，再批量生成待确认草稿。</string>
+    <string name="import_tsv_title">TSV · 制表符分隔</string>
+    <string name="import_tsv_body">适合银行或表格软件导出的制表符账单。</string>
+    <string name="import_plain_text_title">纯文本证据</string>
+    <string name="import_plain_text_body">不拆分行，只保存一份有大小上限的文本供手动确认。</string>
+    <string name="import_file_local_only">所选文件只在本机处理。Bill 不保留 URI 或文件名，也不会上传文件。</string>
+    <string name="statement_import_cancel">取消</string>
+
+    <string name="statement_import_reading_title">正在读取账单</string>
+    <string name="statement_import_step_reading">第 1 / 3 步 · 本地读取</string>
+    <string name="statement_import_reading_body">正在校验有大小上限的 %1$s 文件，不会发送任何网络请求。</string>
+    <string name="statement_import_mapping_title">映射账单字段</string>
+    <string name="statement_import_step_mapping">第 2 / 3 步 · 映射与预览</string>
+    <plurals name="statement_import_detected">
+        <item quantity="other">%1$s · 检测到 %2$d 行数据</item>
+    </plurals>
+    <string name="statement_import_section_fields">必填字段</string>
+    <string name="statement_import_date_column">日期时间列</string>
+    <string name="statement_import_date_format">日期格式</string>
+    <string name="statement_import_amount_column">金额列</string>
+    <string name="statement_import_amount_format">数字格式</string>
+    <string name="statement_import_counterparty_column">交易对方列</string>
+    <string name="statement_import_reference_column">交易号列（可选）</string>
+    <string name="statement_import_section_direction">资金方向</string>
+    <string name="statement_import_positive_means">正数金额代表</string>
+    <string name="statement_import_direction_column">收支方向列</string>
+    <string name="statement_import_inbound_tokens">代表入账的值</string>
+    <string name="statement_import_outbound_tokens">代表出账的值</string>
+    <string name="statement_import_tokens_hint">可用中英文逗号、分号或换行分隔。</string>
+    <string name="statement_import_currency">账单币种</string>
+    <string name="statement_import_no_fx">人民币与美元分别记账，不提供汇率换算。</string>
+    <string name="statement_import_sample_title">所选字段样例</string>
+    <string name="statement_import_sample_body">这里只纵向显示 3 行有上限的样例，用于核对映射；完整文件不会写入日志。</string>
+    <string name="statement_import_sample_row">文件第 %1$d 行</string>
+    <string name="statement_import_not_selected">未选择</string>
+    <string name="statement_import_preview_title">导入预览</string>
+    <plurals name="statement_import_valid_rows">
+        <item quantity="other">%1$d 行可生成待确认草稿</item>
+    </plurals>
+    <plurals name="statement_import_invalid_rows">
+        <item quantity="other">%1$d 行将被拒绝</item>
+    </plurals>
+    <string name="statement_import_invalid_rows_body">被拒绝的行只保留安全错误码，不会把单元格内容复制到诊断信息。</string>
+    <string name="statement_import_row_error">第 %1$d 行 · %2$s</string>
+    <string name="statement_import_previewing">正在检查映射…</string>
+    <string name="statement_import_previewing_rows">正在本地检查全部行…</string>
+    <string name="statement_import_confirm">确认本地导入</string>
+
+    <string name="statement_import_importing_title">正在生成待确认草稿</string>
+    <string name="statement_import_step_importing">第 3 / 3 步 · 本地导入</string>
+    <plurals name="statement_import_importing_count">
+        <item quantity="other">已处理 %1$d / %2$d 行</item>
+    </plurals>
+    <string name="statement_import_importing_body">每个有效行只会生成草稿，不会自动确认为正式交易。</string>
+    <string name="statement_import_stop_title">停止本次导入？</string>
+    <string name="statement_import_stop_body">已完成的行会保留在待确认列表。以后重新选择同一文件和映射，即可继续缺失行。</string>
+    <string name="statement_import_stop">停止，稍后继续</string>
+    <string name="statement_import_keep_running">继续导入</string>
+    <string name="statement_import_completed_title">导入完成</string>
+    <string name="statement_import_step_completed">完成 · 仍需逐笔确认</string>
+    <plurals name="statement_import_completed_body">
+        <item quantity="other">%1$d 笔草稿等待确认，被拒绝行数：%2$d。</item>
+    </plurals>
+    <plurals name="statement_import_resumed_rows">
+        <item quantity="other">已安全复用上次运行的 %1$d 行结果。</item>
+    </plurals>
+    <string name="statement_import_completed_next">请为每笔草稿选择资金账户并确认，之后才会进入正式账本。</string>
+    <string name="statement_import_done">查看待确认草稿</string>
+    <string name="statement_import_failed_title">账单未导入</string>
+    <string name="statement_import_step_failed">本地导入已停止</string>
+    <string name="statement_import_failed_body">停止前已完成的行仍保留在待确认列表；没有任何行自动进入正式账本。请检查文件或映射后重新选择。</string>
+    <string name="statement_import_discard_title">放弃当前映射？</string>
+    <string name="statement_import_discard_body">所选文件和当前映射会从内存释放，不会生成任何草稿。</string>
+    <string name="statement_import_discard">放弃映射</string>
+    <string name="statement_import_keep_editing">继续编辑</string>
+
+    <string name="statement_import_csv">CSV</string>
+    <string name="statement_import_tsv">TSV</string>
+    <string name="statement_import_none">不导入此字段</string>
+    <string name="statement_import_column_option">第 %1$d 列 · %2$s</string>
+    <string name="statement_import_direction_signed">使用金额正负号</string>
+    <string name="statement_import_direction_signed_body">通过正数和负数判断入账或出账。</string>
+    <string name="statement_import_direction_separate">使用独立方向列</string>
+    <string name="statement_import_direction_separate_body">金额保持正数，另一列填写“收入”“支出”等方向值。</string>
+    <string name="statement_import_inbound">入账</string>
+    <string name="statement_import_outbound">出账</string>
+
+    <string name="statement_date_dash">2026-07-27</string>
+    <string name="statement_date_slash">2026/07/27</string>
+    <string name="statement_datetime_minute_dash">2026-07-27 14:30</string>
+    <string name="statement_datetime_minute_slash">2026/07/27 14:30</string>
+    <string name="statement_datetime_second_dash">2026-07-27 14:30:15</string>
+    <string name="statement_datetime_second_slash">2026/07/27 14:30:15</string>
+    <string name="statement_datetime_iso_minute">2026-07-27T14:30</string>
+    <string name="statement_datetime_iso_second">2026-07-27T14:30:15</string>
+    <string name="statement_amount_dot_decimal">1234.56</string>
+    <string name="statement_amount_comma_group">1,234.56</string>
+    <string name="statement_amount_comma_decimal">1234,56</string>
+    <string name="statement_amount_dot_group">1.234,56</string>
+
+    <string name="statement_mapping_incomplete">请选择日期、金额和交易对方列。</string>
+    <string name="statement_mapping_duplicate">同一列不能同时代表两个不同字段。</string>
+    <string name="statement_mapping_empty_tokens">入账和出账都至少需要填写一个方向值。</string>
+    <string name="statement_mapping_too_many_tokens">每种方向最多填写 16 个值。</string>
+    <string name="statement_mapping_invalid_token">方向值过长，或包含不支持的控制字符。</string>
+    <string name="statement_mapping_overlapping_tokens">入账与出账的方向值不能重叠。</string>
+    <string name="statement_mapping_invalid">当前映射不适用于所选文件。</string>
+
+    <string name="statement_error_unavailable">此构建版本未提供结构化账单导入。</string>
+    <string name="statement_error_invalid_document">无法把所选文档作为本地账单打开。</string>
+    <string name="statement_error_unsupported_type">请选择 CSV、TSV 或纯文本文档。</string>
+    <string name="statement_error_too_large">文件超过 2 MiB 本地导入上限。</string>
+    <string name="statement_error_read_failed">无法读取文件，请检查访问权限后重新选择。</string>
+    <string name="statement_error_delimiter">所选格式与文件媒体类型不匹配。</string>
+    <string name="statement_error_no_rows">文件只有表头，没有数据行。</string>
+    <string name="statement_error_encoding">文件必须使用有效的 UTF-8 文本编码。</string>
+    <string name="statement_error_malformed">CSV/TSV 的引号或行结构有误。</string>
+    <string name="statement_error_too_many_rows">文件超过 5000 行导入上限。</string>
+    <string name="statement_error_too_many_columns">某一行的列数过多。</string>
+    <string name="statement_error_cell_too_long">某个单元格超过本地安全上限。</string>
+    <string name="statement_error_row_too_long">某一行超过本地安全上限。</string>
+    <string name="statement_error_session_closed">本次内存导入会话已失效，请重新选择文件。</string>
+    <string name="statement_error_interrupted">导入在全部完成前停止。再次确认即可安全续传。</string>
+    <string name="statement_error_identity_collision">已保存的批次身份与此文件冲突，冲突行没有被导入。</string>
+    <string name="statement_row_error_mapping">映射列缺失</string>
+    <string name="statement_row_error_date">日期或时间无效</string>
+    <string name="statement_row_error_amount">金额无效或超出范围</string>
+    <string name="statement_row_error_direction">资金方向缺失或无法识别</string>
+    <string name="statement_row_error_counterparty">交易对方缺失或过长</string>
+    <string name="statement_row_error_reference">交易号过长</string>
 </resources>

@@ -1,9 +1,9 @@
 # ADR-0012：用户触发的下拉磁贴截图与随包离线 OCR
 
-- 状态：部分实现；当前 OCR 原型未通过隐私发布门
+- 状态：部分实现；本地引擎替换与未签名 Release 静态审计完成，实际推理、签名发行与真机发布门未完成
 - 所有者：项目维护者
-- 最后核验：2026-07-26
-- 事实来源：项目负责人 2026-07-26 的一键补录要求、Android `TileService`/`AccessibilityService.takeScreenshot` 平台边界、当前 Android/merged Manifest 审计、[ML Kit Android 数据披露](https://developers.google.com/ml-kit/android-data-disclosure)、ADR-0001、ADR-0010、ADR-0011
+- 最后核验：2026-07-30
+- 事实来源：项目负责人 2026-07-26 的一键补录要求、Android `TileService`/`AccessibilityService.takeScreenshot` 平台边界、当前 Android/依赖审计、`ocr/paddle/MODEL_PROVENANCE.md`、[PaddleOCR Android deployment](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/cross_platform/android_deployment.html)、ADR-0001、ADR-0010、ADR-0011
 
 ## 背景
 
@@ -13,13 +13,13 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 ## 决定
 
-### 2026-07-26 实施修订：保留交互决定，暂停当前 OCR 引擎的发布资格
+### 2026-07-26 实施修订：替换不合格原型，保留最终发布门
 
-磁贴、专用单次截图无障碍服务、Photo Picker 单图入口、`GENERIC/PHOTO_OCR` 转录证据链和待复核草稿已存在于当前代码。它们只构成开发原型，不能据此宣称已支持任一支付来源。
+磁贴、专用单次截图无障碍服务、最多 5 张 Photo Picker 串行入口、`GENERIC/PHOTO_OCR` 转录证据链和待复核草稿已存在于当前代码。它们仍不能据此宣称已支持任一支付来源。
 
-原型目前依赖 bundled Chinese ML Kit Text Recognition。尽管应用 Manifest 移除了 `INTERNET` 与 `ACCESS_NETWORK_STATE`，ML Kit 的官方数据披露说明 Android SDK 会收集诊断与使用分析所需的设备、应用、性能、API 配置和事件数据。因此该依赖不能满足本项目“纯本地、无遥测”的发布门，也尚未满足中文+英文、日文+英文的最终语言要求。
+早期原型依赖 bundled Chinese ML Kit Text Recognition，因官方数据披露和传输/调度组件未通过本项目发布门而被移除。当前实现改用静态随包的 PP-OCRv6 small ONNX 检测与统一多语言识别模型、ONNX Runtime Android 1.24.3 和 OpenCV Android 4.12.0；模型与许可哈希固定，建会话前显式关闭 ONNX Runtime telemetry，AAR 静态审计未发现网络权限、Android 组件或传输依赖。
 
-在替换引擎并通过最终 APK 审计前，截图/OCR 只能作为开发中实验，不能作为“纯本地 OCR”“无遥测 OCR”或支付宝、微信支付、银行支持的对外承诺。合格替换方案必须把模型静态随包提供、没有运行时模型/规则下载或上传，并在最终 APK 中验证无网络权限、无遥测传输组件及其后台调度入口；同时用合成样本与三台目标设备实测中文+英文、日文+英文的准确性、内存、耗时和空闲释放。
+引擎替换已通过源码、依赖和当前未签名 Release 分包的静态门：包内模型/ABI、权限、组件、体积、哈希与 16 KiB ZIP 对齐已审计。它仍不是签名发行或运行证据；在实际中英/日英推理、ELF 页兼容和三台目标设备资源验收完成前，截图/OCR 只能作为开发中实验，不能作为支付宝、微信支付、银行支持的对外承诺。发布版必须继续证明没有运行时模型/规则下载或上传、没有网络权限和遥测传输/调度组件，并实测准确性、内存、耗时和空闲释放。
 
 ### 用户动作和权限边界
 
@@ -31,7 +31,7 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 ### 本地 OCR 与证据
 
-1. 发布版 OCR 必须使用随 APK 静态打包、无需首次下载且通过无遥测审计的引擎；不在运行时下载模型、规则或上传截图。当前 Chinese ML Kit 原型不满足这项发布门，必须替换或从发行包移除。
+1. 发布版 OCR 使用随 APK 静态打包的 PP-OCRv6 small 与本地 ONNX Runtime/OpenCV，不在运行时下载模型、规则或上传截图；未签名 Release 已复核该静态边界，签名发行包仍须再次复核。
 2. 每次只处理当前显示的一帧。HardwareBuffer、Bitmap、PNG/转录临时字节均有尺寸、像素和并发上限，并在成功、失败或取消后尽快释放；没有摄像流、轮询 OCR 或图库扫描。
 3. 首片将原始截图作为瞬时输入，持久化一个版本化、严格 UTF-8、有界的 OCR 转录证据；原始 Bitmap 和截图文件不落公共目录、不进入日志、崩溃报告或遥测。转录证据进入既有 app-private、容量、保留期限、逐项清除和 RawEvent/ParseAttempt 链。
 4. 通用 OCR 规则只能生成 `GENERIC/PHOTO_OCR` 待复核建议。它可从合成样本中保守提出金额、方向和对手方候选，但不得据此声称支付宝、微信或某银行已支持，不得自动选择资金账户、自动关联转账/退款或自动正式入账。
@@ -39,15 +39,15 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 ### 图片选择回退
 
-系统 Photo Picker/SAF 作为另一条用户显式入口，可在不申请相册广泛读取权限的情况下选择图片。当前代码只接入系统 Photo Picker 的单张图片；多选导入仍需在独立验收步骤接入同一串行 OCR 管线。磁贴切片不以申请 `READ_MEDIA_IMAGES` 换取图库遍历。
+系统 Photo Picker 作为另一条用户显式入口，可在不申请相册广泛读取权限的情况下选择最多 5 张图片。当前代码逐张有界读取、串行 OCR 和入库，不并发保留多个 Bitmap，也不以申请 `READ_MEDIA_IMAGES` 换取图库遍历。
 
 ### 资源与兼容性门
 
-在港版 S24 Ultra、国行 S24 Ultra 和国行小米上分别记录单次截图到草稿的耗时、Bitmap/OCR 峰值、失败码和处理后空闲状态。没有真机结果前只标记为 Experimental；发现持续 CPU、保活、后台 OCR、异常内存或无法释放 HardwareBuffer 时保持关闭。替换引擎还必须在 release APK 上检查网络权限、遥测传输组件及其 Job/Alarm 等调度入口；当前 ML Kit 原型已在该门失败。
+在港版 S24 Ultra、国行 S24 Ultra 和国行小米上分别记录单次截图到草稿的耗时、Bitmap/OCR 峰值、失败码和处理后空闲状态。没有真机结果前只标记为 Experimental；发现持续 CPU、保活、后台 OCR、异常内存或无法释放 HardwareBuffer 时保持关闭。候选引擎固定零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务关闭会话；这些代码约束仍须由目标设备和 release APK 证明。
 
 ## 结果
 
-- 代码已验证用户可在无通知的支付/收款结果页通过下拉磁贴发起一次实验性本地补录，不必先截屏再寻找 Sharesheet；它仍不是可发布来源能力。
+- 代码已验证用户可在无通知的支付/收款结果页通过下拉磁贴发起一次实验性本地补录，不必先截屏再寻找 Sharesheet；本地引擎已替换，但它仍不是已验收的 provider 来源能力。
 - 高敏感截图能力有单独、可撤销的系统授权；通知监听、未来只读节点读取和截图 OCR 不共享一个万能服务。
 - 拒绝权限或系统阻止截图时，手工分享与录入仍可用。只有替换引擎、语言覆盖、依赖审计和目标真机资源验收全部通过后，才可称安装包离线 OCR 可发布。
 - 一键指“一键发起采集”，不是“未经复核自动正式入账”。

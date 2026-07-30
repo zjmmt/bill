@@ -35,6 +35,7 @@ interface SelectedPhotoOcrImporter {
  * No URI, filename, media-library grant, source image, or Bitmap is persisted.
  */
 class ContentResolverSelectedPhotoOcrImporter(
+    private val applicationContext: android.content.Context,
     private val contentResolver: android.content.ContentResolver,
     private val capture: PhotoOcrTranscriptCapture,
 ) : SelectedPhotoOcrImporter {
@@ -54,30 +55,35 @@ class ContentResolverSelectedPhotoOcrImporter(
             ImageReadResult.TooLarge -> return failure(SourceCaptureError.CONTENT_TOO_LARGE)
             ImageReadResult.Rejected -> return failure(SourceCaptureError.PARSE_REJECTED)
         }
-        return withContext(Dispatchers.Default) {
-            var bitmap: Bitmap? = null
-            try {
-                bitmap = decodeBounded(bytes)
-                    ?: return@withContext failure(SourceCaptureError.PARSE_REJECTED)
-                val lines = when (val ocr = BundledLocalOcrEngine.recognize(bitmap)) {
-                    is LocalOcrResult.Lines -> ocr.values
-                    LocalOcrResult.Empty ->
-                        return@withContext failure(SourceCaptureError.EMPTY_CONTENT)
+        return try {
+            withContext(Dispatchers.Default) {
+                var bitmap: Bitmap? = null
+                try {
+                    bitmap = decodeBounded(bytes)
+                        ?: return@withContext failure(SourceCaptureError.PARSE_REJECTED)
+                    val lines = when (
+                        val ocr = BundledLocalOcrEngine.recognize(applicationContext, bitmap)
+                    ) {
+                        is LocalOcrResult.Lines -> ocr.values
+                        LocalOcrResult.Empty ->
+                            return@withContext failure(SourceCaptureError.EMPTY_CONTENT)
 
-                    LocalOcrResult.Failed ->
-                        return@withContext failure(SourceCaptureError.PARSE_REJECTED)
+                        LocalOcrResult.Failed ->
+                            return@withContext failure(SourceCaptureError.PARSE_REJECTED)
+                    }
+                    val transcript = OcrTranscript.encode(lines)
+                        ?: return@withContext failure(SourceCaptureError.CONTENT_TOO_LARGE)
+                    capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: RuntimeException) {
+                    failure(SourceCaptureError.PARSE_REJECTED)
+                } finally {
+                    bitmap?.recycle()
                 }
-                val transcript = OcrTranscript.encode(lines)
-                    ?: return@withContext failure(SourceCaptureError.CONTENT_TOO_LARGE)
-                capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: RuntimeException) {
-                failure(SourceCaptureError.PARSE_REJECTED)
-            } finally {
-                bitmap?.recycle()
-                bytes.fill(0)
             }
+        } finally {
+            bytes.fill(0)
         }
     }
 
@@ -104,6 +110,8 @@ class ContentResolverSelectedPhotoOcrImporter(
                 ImageReadResult.Rejected
             } catch (_: IOException) {
                 ImageReadResult.Rejected
+            } catch (cancellation: CancellationException) {
+                throw cancellation
             } catch (_: RuntimeException) {
                 ImageReadResult.Rejected
             }
@@ -158,8 +166,16 @@ class ContentResolverSelectedPhotoOcrImporter(
             },
         ) ?: return null
         if (decoded.width == target.first && decoded.height == target.second) return decoded
-        return Bitmap.createScaledBitmap(decoded, target.first, target.second, true).also {
-            decoded.recycle()
+        var scaled: Bitmap? = null
+        return try {
+            Bitmap.createScaledBitmap(
+                decoded,
+                target.first,
+                target.second,
+                true,
+            ).also { scaled = it }
+        } finally {
+            if (scaled !== decoded) decoded.recycle()
         }
     }
 
@@ -199,9 +215,9 @@ class ContentResolverSelectedPhotoOcrImporter(
         const val MAX_IMAGE_BYTES = 16 * 1024 * 1024
         const val MAX_SOURCE_DIMENSION = 16_384
         const val MAX_SOURCE_PIXELS = 32_000_000L
-        const val MAX_OCR_PIXELS = 6_000_000L
-        const val MAX_OCR_WIDTH = 2_048
-        const val MAX_OCR_HEIGHT = 4_096
+        const val MAX_OCR_PIXELS = 2_560_000L
+        const val MAX_OCR_WIDTH = 1_600
+        const val MAX_OCR_HEIGHT = 1_600
         val SUPPORTED_MEDIA_TYPES = setOf(
             "image/png",
             "image/jpeg",

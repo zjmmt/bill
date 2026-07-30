@@ -70,9 +70,9 @@ class PhotoOcrTranscriptIngestionService(
     override suspend fun ingest(
         commandId: String,
         evidence: PhotoOcrTranscriptEvidence,
-    ): SourceCaptureResult = withContext(Dispatchers.Default) {
-        intakeMutex.withLock {
-            try {
+    ): SourceCaptureResult = try {
+        withContext(Dispatchers.Default) {
+            intakeMutex.withLock {
                 if (evidence.bytes.isEmpty()) {
                     return@withLock SourceCaptureResult.Failure(
                         error = SourceCaptureError.EMPTY_CONTENT,
@@ -96,9 +96,9 @@ class PhotoOcrTranscriptIngestionService(
                     mediaType = OcrTranscript.MEDIA_TYPE,
                     bytes = evidence.bytes,
                 )
-            } finally {
-                evidence.bytes.fill(0)
             }
         }
+    } finally {
+        evidence.bytes.fill(0)
     }
 }

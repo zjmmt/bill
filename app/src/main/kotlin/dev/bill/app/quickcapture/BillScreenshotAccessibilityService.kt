@@ -3,8 +3,10 @@ package dev.bill.app.quickcapture
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorSpace
 import android.graphics.Paint
 import android.graphics.Rect
+import android.hardware.HardwareBuffer
 import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
@@ -13,6 +15,7 @@ import dev.bill.application.SourceCaptureError
 import dev.bill.application.SourceCaptureResult
 import dev.bill.app.BillApplication
 import dev.bill.source.genericphotoocr.OcrTranscript
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +31,6 @@ import kotlinx.coroutines.launch
  */
 class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreenshotGateway {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val processorDelegate = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        OnDeviceScreenshotOcrProcessor(
-            capture = (application as BillApplication)
-                .container
-                .photoOcrTranscriptIngestionService,
-        )
-    }
 
     override fun onServiceConnected() {
         BillQuickCaptureRuntime.controller.attach(this)
@@ -64,15 +60,32 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
                 mainExecutor,
                 object : TakeScreenshotCallback {
                     override fun onSuccess(screenshot: ScreenshotResult) {
-                        serviceScope.launch {
+                        val hardwareBuffer = screenshot.hardwareBuffer
+                        val colorSpace = screenshot.colorSpace
+                        val pendingOwnership = AtomicBoolean(true)
+                        val processing = serviceScope.launch {
+                            if (!pendingOwnership.compareAndSet(true, false)) return@launch
                             val outcome = try {
-                                processorDelegate.value.process(commandId, screenshot)
-                            } catch (cancellation: CancellationException) {
-                                throw cancellation
-                            } catch (_: RuntimeException) {
-                                QuickCaptureOutcome.Failed(QuickCaptureFailure.OCR_FAILED)
+                                try {
+                                    screenshotProcessor().process(
+                                        commandId,
+                                        hardwareBuffer,
+                                        colorSpace,
+                                    )
+                                } catch (cancellation: CancellationException) {
+                                    throw cancellation
+                                } catch (_: RuntimeException) {
+                                    QuickCaptureOutcome.Failed(QuickCaptureFailure.OCR_FAILED)
+                                }
+                            } finally {
+                                hardwareBuffer.close()
                             }
                             completion(outcome)
+                        }
+                        processing.invokeOnCompletion {
+                            if (pendingOwnership.compareAndSet(true, false)) {
+                                hardwareBuffer.close()
+                            }
                         }
                     }
 
@@ -97,6 +110,15 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
             )
         }
     }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
+    private fun screenshotProcessor(): OnDeviceScreenshotOcrProcessor =
+        OnDeviceScreenshotOcrProcessor(
+            applicationContext = applicationContext,
+            capture = (application as BillApplication)
+                .container
+                .photoOcrTranscriptIngestionService,
+        )
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
     private fun mapScreenshotFailure(errorCode: Int): QuickCaptureFailure = when (errorCode) {
@@ -127,24 +149,26 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
 
 @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
 private class OnDeviceScreenshotOcrProcessor(
+    private val applicationContext: android.content.Context,
     private val capture: dev.bill.application.PhotoOcrTranscriptCapture,
 ) {
 
     suspend fun process(
         commandId: String,
-        screenshot: AccessibilityService.ScreenshotResult,
+        hardwareBuffer: HardwareBuffer,
+        colorSpace: ColorSpace,
     ): QuickCaptureOutcome {
-        val hardwareBuffer = screenshot.hardwareBuffer
         var hardwareBitmap: Bitmap? = null
         var ocrBitmap: Bitmap? = null
         try {
-            val colorSpace = screenshot.colorSpace
             hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
                 ?: return failed(QuickCaptureFailure.SCREENSHOT_FAILED)
             ocrBitmap = boundedSoftwareCopy(hardwareBitmap)
                 ?: return failed(QuickCaptureFailure.IMAGE_TOO_LARGE)
 
-            val lines = when (val recognized = BundledLocalOcrEngine.recognize(ocrBitmap)) {
+            val lines = when (
+                val recognized = BundledLocalOcrEngine.recognize(applicationContext, ocrBitmap)
+            ) {
                 is LocalOcrResult.Lines -> recognized.values
                 LocalOcrResult.Empty -> return failed(QuickCaptureFailure.EMPTY_OCR)
                 LocalOcrResult.Failed -> return failed(QuickCaptureFailure.OCR_FAILED)
@@ -175,7 +199,6 @@ private class OnDeviceScreenshotOcrProcessor(
         } finally {
             ocrBitmap?.recycle()
             hardwareBitmap?.recycle()
-            hardwareBuffer.close()
         }
     }
 
@@ -212,8 +235,8 @@ private class OnDeviceScreenshotOcrProcessor(
 
     private companion object {
         const val MAX_SOURCE_PIXELS = 32_000_000L
-        const val MAX_OCR_PIXELS = 6_000_000L
-        const val MAX_OCR_WIDTH = 2_048
-        const val MAX_OCR_HEIGHT = 4_096
+        const val MAX_OCR_PIXELS = 2_560_000L
+        const val MAX_OCR_WIDTH = 1_600
+        const val MAX_OCR_HEIGHT = 1_600
     }
 }

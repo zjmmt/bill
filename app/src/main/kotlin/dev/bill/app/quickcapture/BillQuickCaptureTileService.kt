@@ -1,5 +1,6 @@
 package dev.bill.app.quickcapture
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
@@ -63,6 +64,7 @@ class BillQuickCaptureTileService : TileService() {
         tile.updateTile()
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun launchCaptureRelay() {
         val intent = Intent(this, QuickCaptureRelayActivity::class.java).apply {
             action = QuickCaptureRelayActivity.ACTION_CAPTURE
@@ -82,11 +84,11 @@ class BillQuickCaptureTileService : TileService() {
                 ),
             )
         } else {
-            @Suppress("DEPRECATION")
             startActivityAndCollapse(intent)
         }
     }
 
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openBillSetup() {
         val intent = Intent(this, MainActivity::class.java).apply {
             action = ACTION_OPEN_QUICK_CAPTURE_SETUP
@@ -102,7 +104,6 @@ class BillQuickCaptureTileService : TileService() {
                 ),
             )
         } else {
-            @Suppress("DEPRECATION")
             startActivityAndCollapse(intent)
         }
     }

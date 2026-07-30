@@ -1,8 +1,8 @@
 # 采集、导入与来源适配器
 
-- 状态：部分实现；来源中立显式文本与单次 PNG 收据证据、受控通知 route 边界、持久观察去重与证据生命周期已实现；单次截图/Photo Picker OCR 仅有未通过隐私发布门的开发原型，provider 格式待样本
+- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界、持久观察去重与证据生命周期已实现；单次截图/Photo Picker 本地 OCR 的未签名 Release 静态门完成，实际推理/真机/签名发布门未完成，provider 格式待样本
 - 所有者：项目维护者
-- 最后核验：2026-07-26
+- 最后核验：2026-07-30
 - 事实来源：多来源产品要求、Android 官方能力边界、当前来源/Room/Application 实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
 
 ## 目的
@@ -33,7 +33,7 @@ SourceConnector
 
 ## 当前实现：用户显式本地证据
 
-当前可运行的 provider-neutral 纵向切片有三个已过代码验证的显式证据入口，以及一个未过隐私发布门的 OCR 开发原型：
+当前可运行的 provider-neutral 纵向切片有四个已过代码验证的显式证据入口，以及一个已过未签名 Release 静态门、尚未完成实际推理/真机/签名发布门的本地 OCR 切片：
 
 ```text
 ACTION_SEND text/plain       SAF OpenDocument(text/plain, CSV, TSV)       ACTION_SEND image/png
@@ -49,18 +49,26 @@ ACTION_SEND text/plain       SAF OpenDocument(text/plain, CSV, TSV)       ACTION
                                        -> user-completed external Draft
                                        -> balanced Transaction/Entries
 
-Quick Settings tile / one-image Photo Picker
+Quick Settings tile / Photo Picker (up to 5, serial)
   -> one-shot screenshot or selected image
   -> bounded OCR transcript
   -> GenericPhotoOcrParser
   -> immutable RawEvent -> ParseAttempt -> SourceDraftProposal
   -> user-completed external Draft
+
+SAF OpenDocument(CSV, TSV) + user-confirmed mapping
+  -> bounded process-local document (2 MiB / 5000 rows)
+  -> ImportBatch(file hash + mapping hash)
+  -> versioned row evidence + stable row command
+  -> GenericDelimitedStatementParser
+  -> one SourceDraftProposal per valid row
+  -> user-completed external Draft
 ```
 
-- `source:contract` 定义 Evidence、RawEvent、parser identity、候选和封闭诊断；`source:pipeline` 负责注册、读取、校验和追加式解析；`source:review-contract` 定义建议、证据链接和载荷生命周期端口；`source:generic-share-text` 实现最小分享文本与用户选择文本文件解析，`source:generic-receipt-image` 实现单张 PNG 收据的结构校验与手工复核建议，`source:generic-photo-ocr` 实现有界转录和保守候选解析。
-- `data:local` 的 Room schema v6 保存 `parse_attempts`、`source_draft_proposals`、`draft_source_evidence`、`source_evidence_payloads`、`source_evidence_staging`、`notification_observations` 与单例保留策略；正式迁移链为 v1→v2→v3→v4→v5→v6。通知观察表只保存安装私有 HMAC 摘要、opaque command/lease、状态和时间，绝不保存 Android notification key、包名、频道或正文。证据文件位于 `noBackupFilesDir/source-evidence`，使用 opaque 名称、原子写入、大小与 SHA-256 校验。
-- 文本在创建完整字符串/字节副本前检查字符上限，严格 UTF-8 编码后再次检查 64 KiB 字节上限；Sharesheet PNG 只在用户明确分享的当次 `content://` 临时授权中读取，要求声明与解析后 MIME 都为 `image/png`，最多 4 MiB，并校验签名、IHDR、尺寸、分块 CRC、非空 IDAT 与终止 IEND。该 Sharesheet 路径不解码像素、不预览、不读取图中文字、不运行 OCR。独立的磁贴/Photo Picker 原型会在用户动作后将一帧像素作为瞬时 OCR 输入，只持久化有界转录；它目前是未通过隐私发布门的 Chinese ML Kit 原型。畸形 Unicode、损坏/缺失文件、无效图像、哈希不一致和 ID 冲突均安全失败。
-- 通用解析器不从自由文本提取或猜测金额、方向、账户、商户或 provider；首版结果始终 `WAITING_USER`，必须由用户补全再进入普通 Draft。它没有自动确认路径，也不把 CSV/TSV 视为批量账单格式。
+- `source:contract` 定义 Evidence、RawEvent、parser identity、候选、导入批次端口和封闭诊断；`source:pipeline` 负责注册、读取、校验和追加式解析；`source:review-contract` 定义建议、证据链接和载荷生命周期端口；`source:generic-share-text` 实现最小分享文本与不透明用户文件解析，`source:generic-delimited-statement` 实现严格 CSV/TSV、显式映射与行证据 codec，`source:generic-receipt-image` 实现单张 PNG 收据的结构校验与手工复核建议，`source:generic-photo-ocr` 实现有界转录和保守候选解析。
+- `data:local` 的 Room schema v7 保存 `parse_attempts`、`source_draft_proposals`、`draft_source_evidence`、`source_evidence_payloads`、`source_evidence_staging`、`notification_observations`、`statement_import_batches`、`statement_import_rows`、对账链接/关系与单例保留策略；正式迁移链为 v1→v2→v3→v4→v5→v6→v7。导入批次表只保存文件/映射摘要、计数、状态和时间，行表只保存行号、指纹、RawEvent ID 或安全错误码；不保存文件名、URI、表头或单元格。通知观察表只保存安装私有 HMAC 摘要、opaque command/lease、状态和时间，绝不保存 Android notification key、包名、频道或正文。证据文件位于 `noBackupFilesDir/source-evidence`，使用 opaque 名称、原子写入、大小与 SHA-256 校验。
+- 自由文本在创建完整字符串/字节副本前检查字符上限，严格 UTF-8 编码后再次检查 64 KiB 字节上限。结构化 CSV/TSV 当次最多读取 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 Ki 字符/记录；用户必须显式选择必填列，预览计算以 250 ms 去抖在主线程外运行。确认后只把每个有效行的版本化证据接入私有链，停止后可用同文件+同映射续传缺失行。Sharesheet PNG 只在用户明确分享的当次 `content://` 临时授权中读取，要求声明与解析后 MIME 都为 `image/png`，最多 4 MiB，并校验签名、IHDR、尺寸、分块 CRC、非空 IDAT 与终止 IEND。该 Sharesheet 路径不解码像素、不预览、不读取图中文字、不运行 OCR。独立的磁贴/Photo Picker 路径会在用户动作后把一帧或最多 5 张逐张像素作为瞬时输入，只持久化有界转录；PP-OCRv6 small 静态随包，运行时零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。畸形 Unicode、损坏/缺失文件、无效图像、哈希不一致和 ID 冲突均安全失败。
+- 自由文本解析器不提取或猜测金额、方向、账户、商户或 provider；映射 CSV/TSV 只采用用户确认的列、格式、方向值和币种，不按未知表头猜列或 provider。两类结果都始终 `WAITING_USER`，必须由用户核对并选择资金账户；没有自动确认路径。
 - 同 `(connectorId, contentHash, captureScope)` 的既有观察只产生 `isPossibleDuplicate`，UI 提醒检查已有草稿/流水但不会自动合并。
 - 用户可将来源建议标记为 `DISMISSED`；该动作有幂等回执和审计，默认仍保留 RawEvent、ParseAttempt 与证据文件。
 - 设置页提供 7/30/90 天或永久保留、20 项 keyset 分页和逐项清除。清除采用 `AVAILABLE -> CLEAR_PENDING -> CLEARED`，文件失败保持可重试；待复核建议会被 dismiss，已完成 Draft/provenance 和结构化审计保留。
@@ -68,7 +76,7 @@ Quick Settings tile / one-image Photo Picker
 - 文件写入前先登记 5 分钟 `ACTIVE` 租约；RawEvent 与生命周期在同一事务消费登记。启动维护接管到期租约，并对至少 10 分钟以前的遗留文件执行有界扫描（单轮最多检查 4096 个目录项、认领 512 个 payload）。扫描先排除可用、待清除和活动/恢复载荷；截断时拒绝新分享并分批恢复。
 - 账本状态流验证 RawEvent、ParseAttempt、Proposal、Draft evidence、载荷生命周期和 Draft 的跨表链；不一致时失败关闭，不能把损坏链静默当作部分正常数据。
 
-`MainActivity` 因接收 Sharesheet 而 exported，任意 App 都可能直接发送 Intent；SAF URI、PNG 分享和 Photo Picker 的 `content://` URI 都只在一次读取边界内使用，既不持久化 URI/原文件名，也不取得持久 URI 权限。所有入口都必须作为不可信外部输入处理；包名、正文、MIME 或 Intent 本身都不是 provider 证明。PNG 临时字节在暂存完成或失败后擦除；Sharesheet 路径没有图像预览或 OCR，用户需以自己保留的原始截图填写复核事实。磁贴/Photo Picker 原型会生成待复核转录，但不是 provider 适配器。Room v6 已关闭未登记文件的核心崩溃窗口，并为通知实例恢复建立了持久租约，但当前仍缺大量/恶意输入压力、真实系统强杀切点矩阵、自动化 Compose、完整真机矩阵、结构化文件样本、OCR 发布审计和 OCR 目标设备资源证据，因此不能把此切片标为发布级 `Supported`。
+`MainActivity` 因接收 Sharesheet 而 exported，任意 App 都可能直接发送 Intent；SAF URI、PNG 分享和 Photo Picker 的 `content://` URI 都只在一次读取边界内使用，既不持久化 URI/原文件名，也不取得持久 URI 权限。所有入口都必须作为不可信外部输入处理；包名、正文、MIME、用户映射或 Intent 本身都不是 provider 证明。CSV/TSV 与 PNG 临时字节在解析/暂存完成或失败后擦除；Sharesheet 路径没有图像预览或 OCR，用户需以自己保留的原始截图填写复核事实。磁贴/Photo Picker 原型会生成待复核转录，但不是 provider 适配器。Room v7 已关闭未登记文件的核心崩溃窗口，为通知实例恢复建立持久租约，并保存不含原文的导入/对账状态；但当前仍缺大量/恶意输入压力、真实系统强杀切点矩阵、自动化 Compose、完整真机矩阵、真实脱敏结构化文件、OCR 发布审计和 OCR 目标设备资源证据，因此不能把这些切片标为发布级 `Supported`。
 
 ## 通知入口（受控 route 基础已实现，provider 未实现）
 
@@ -80,7 +88,7 @@ Quick Settings tile / one-image Photo Picker
 
 ## 被动无障碍读取（研究门）
 
-当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。它的 OCR 运行时仍是未通过隐私发布门的开发原型；用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
+当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。本地 OCR 的未签名 APK 静态门已完成，实际推理/真机/签名门尚未完成；用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
 
 当前没有可用的页面文字/节点观察 service。若项目负责人在有脱敏页面样本后明确选择被动读取路线，必须另建只读 `AccessibilityService`：系统只对微信/支付宝的明确目标包和最小窗口事件类型回调，服务只在疑似交易结果/账单详情窗口读取一次节点树并提交待复核证据。它不得取得截图、录屏、轮询、自动点击、打开页面、发起交易或保留非交易窗口内容；实现必须在事件回调外完成有界解析并清除临时节点/文本。
 
@@ -88,17 +96,17 @@ Quick Settings tile / one-image Photo Picker
 
 ## 用户可见本地声明与资源边界
 
-每次新进程启动，App 先显示“纯本地 / 不走网络”的显著声明：当前 Manifest 不声明 Internet 权限，Bill 不向项目方服务器上传通知、截图、账户、余额或账本数据。该声明不能替代第三方 SDK 的遥测/组件审计；当前截图/Photo Picker OCR 必须同时标为未通过隐私发布门的原型，不能被启动文案掩盖。设置页的三轨教程分别说明通知访问、未来只读结果页和实验性的单次截图/Photo Picker；教程明确图片 OCR 只创建本地待复核项、不证明 provider，替换引擎前不能作为正式能力。
+每次新进程启动，App 先显示“纯本地 / 不走网络”的显著声明：当前 Manifest 不声明 Internet 权限，Bill 不向项目方服务器上传通知、截图、账户、余额或账本数据。该声明不能替代第三方 SDK、签名发行与目标真机审计；当前截图/Photo Picker OCR 即使已过未签名 Release 静态门，也必须标为尚未完成发布门的 Experimental，不能被启动文案掩盖。设置页的三轨教程分别说明通知访问、未来只读结果页和单次截图/Photo Picker；教程明确图片 OCR 只创建本地待复核项、不证明 provider。
 
 通知、结果页和截图是物理分开的能力：普通通知路径不承担读屏/OCR 成本；未来读屏路线不能截图或操作 UI；截图/Photo Picker 只在用户动作后处理一次有界像素输入，当前只形成待复核转录证据。没有真实设备资源基线前，不以某个虚构的电量百分比承诺低耗电，也不默认要求忽略电池优化。
 
 ## 文件/分享入口
 
-- 使用 Storage Access Framework 或 Android Sharesheet 接收用户明确选择的文件/文本；不申请全盘读取。当前 SAF 切片只接收 64 KiB 内的纯文本/CSV/TSV 证据；Sharesheet 另接收一张 4 MiB 内的 `image/png` 收据。实验性 Photo Picker OCR 只读取用户选择的一张图片，不申请广泛相册权限，但仍受 OCR 隐私发布门限制。不持久化 URI 或文件名。
+- 使用 Storage Access Framework 或 Android Sharesheet 接收用户明确选择的文件/文本；不申请全盘读取。当前 SAF 同时提供 64 KiB 内的不透明纯文本/CSV/TSV 证据回退，以及 2 MiB/5000 行的 CSV/TSV 显式映射；Sharesheet 另接收一张 4 MiB 内的 `image/png` 收据。实验性 Photo Picker OCR 最多逐张处理用户选择的 5 张图片，不申请广泛相册权限，但仍受 OCR 隐私发布门限制。不持久化 URI 或文件名。
 - Sharesheet 接收组件属于外部信任边界；应用不能密码学证明用户手势或发送 App，必须对类型、大小、编码和内容重新验证。
 - 文件视为不可信：验证真实内容而非只信扩展名/MIME，限制大小、行列数、嵌套压缩、公式和资源消耗。
-- 探测容器 -> 编码 -> 来源/格式版本 -> 列映射；探测结果必须可由用户修正。
-- 导入先 dry-run，展示新增、重复、冲突、异常和账户映射，再原子提交。
+- 当前 CSV/TSV 不探测 provider 或自动猜列：用户先选分隔格式，再明确选择日期、金额、方向、对方、可选参考号、日期/数字格式和 CNY/USD。
+- 导入先 dry-run，展示有效/拒绝计数与最多 5 个安全行错误；确认后逐行原子提交。中断不会回滚已完成行，也不会把任何行自动写入正式账本。
 - `ImportBatch` 保存文件哈希、适配器版本、映射方案和统计；每行/记录有稳定幂等键。
 - 原始附件可按用户策略删除；删除后保留解析/审计所需最小摘要。
 

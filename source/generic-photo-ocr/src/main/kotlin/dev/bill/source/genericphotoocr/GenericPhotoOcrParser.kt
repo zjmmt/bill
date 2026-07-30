@@ -1,6 +1,7 @@
 package dev.bill.source.genericphotoocr
 
 import dev.bill.core.model.Money
+import dev.bill.core.model.toLongExactCompat
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.ConnectorId
 import dev.bill.source.contract.DiagnosticCode
@@ -180,7 +181,7 @@ class GenericPhotoOcrParser : SourceParser {
     private fun parseMinorUnits(value: String): Long? = runCatching {
         BigDecimal(value.replace(",", ""))
             .movePointRight(2)
-            .longValueExact()
+            .toLongExactCompat()
     }.getOrNull()
 
     private fun rejected(code: DiagnosticCode) = ParseResult.Rejected(

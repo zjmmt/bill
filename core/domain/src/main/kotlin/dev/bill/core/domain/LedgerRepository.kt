@@ -2,6 +2,7 @@ package dev.bill.core.domain
 
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.TransactionId
+import dev.bill.core.model.Money
 import kotlinx.coroutines.flow.Flow
 
 enum class RepositoryWriteStatus {
@@ -53,6 +54,13 @@ interface LedgerRepository {
 
     suspend fun dismissDraft(
         draftId: DraftId,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult
+
+    suspend fun activeRefundTotal(originalTransactionId: TransactionId): Money?
+
+    suspend fun resolveReconciliation(
+        resolution: ReconciliationResolution,
         auditRecord: AuditRecord,
     ): RepositoryWriteResult
 

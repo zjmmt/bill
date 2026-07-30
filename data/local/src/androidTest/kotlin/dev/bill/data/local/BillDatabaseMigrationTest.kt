@@ -100,6 +100,7 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration3To4,
                 BillMigrations.Migration4To5,
                 BillMigrations.Migration5To6,
+                BillMigrations.Migration6To7,
             )
             .allowMainThreadQueries()
             .build()
@@ -213,6 +214,7 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration3To4,
                 BillMigrations.Migration4To5,
                 BillMigrations.Migration5To6,
+                BillMigrations.Migration6To7,
             )
             .allowMainThreadQueries()
             .build()
@@ -415,12 +417,76 @@ class BillDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate6To7PreservesDataAndCreatesEmptyImportAndReconciliationHistory() = runBlocking {
+        helper.createDatabase(DatabaseV6Name, 6).apply {
+            execSQL(
+                """
+                INSERT INTO raw_events (
+                    id,
+                    sourceFamily,
+                    connectorId,
+                    captureMethod,
+                    captureScope,
+                    contentHash,
+                    capturedAtEpochMillis,
+                    payloadReference
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                arrayOf<Any>(
+                    "fixture-v6-event",
+                    "GENERIC",
+                    "android-share-text",
+                    "SHARE_TEXT",
+                    "local-install",
+                    ValidHash,
+                    1_753_000_000_000L,
+                    "fixture-v6-payload",
+                ),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DatabaseV6Name,
+            7,
+            true,
+            BillMigrations.Migration6To7,
+        ).use { migrated ->
+            migrated.query(
+                "SELECT id, payloadReference FROM raw_events WHERE id = ?",
+                arrayOf("fixture-v6-event"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("fixture-v6-event", cursor.getString(0))
+                assertEquals("fixture-v6-payload", cursor.getString(1))
+            }
+            migrated.query("SELECT COUNT(*) FROM statement_import_batches").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM statement_import_rows").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM reconciliation_draft_links").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM transaction_relations").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+        }
+    }
+
     private companion object {
         const val DatabaseName = "bill-v1-to-v2-migration-test"
         const val DatabaseV2Name = "bill-v2-to-v3-migration-test"
         const val DatabaseV3Name = "bill-v3-to-v4-migration-test"
         const val DatabaseV4Name = "bill-v4-to-v5-migration-test"
         const val DatabaseV5Name = "bill-v5-to-v6-migration-test"
+        const val DatabaseV6Name = "bill-v6-to-v7-migration-test"
         const val ValidHash =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val ExpectedLedgerTables = setOf(

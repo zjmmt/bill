@@ -14,10 +14,18 @@ import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
+import dev.bill.core.domain.ReconciliationDraftLink
+import dev.bill.core.domain.ReconciliationDraftRole
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
+import dev.bill.core.domain.RelationDecision
 import dev.bill.core.domain.ReviewDraft
 import dev.bill.core.domain.SystemAccountIds
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.domain.TransactionRelation
+import dev.bill.core.domain.TransactionRelationId
+import dev.bill.core.domain.TransactionRelationType
 import dev.bill.core.ledger.PostingBuildResult
 import dev.bill.core.ledger.PostingFactory
 import dev.bill.core.model.AccountId
@@ -29,11 +37,17 @@ import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
 import dev.bill.core.model.allowsUserAccountCurrency
 import dev.bill.core.model.isSupportedLedgerCurrency
+import dev.bill.core.model.toLongExactCompat
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.RoundingMode
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +58,8 @@ import dev.bill.source.review.SourceProposalRecord
 import dev.bill.source.review.SourceReviewRepository
 import dev.bill.source.review.allowedExternalDraftCurrencies
 import dev.bill.source.review.allowsExternalDraftCurrency
+import dev.bill.source.contract.ObservedTime
+import dev.bill.source.contract.GenericDelimitedStatementIdentity
 
 enum class OperationError {
     INVALID_NAME,
@@ -76,6 +92,14 @@ fun interface NotificationRouteLabelResolver {
     }
 }
 
+private fun ObservedTime.resolveForReview(localZoneId: ZoneId): Instant = when (this) {
+    is ObservedTime.DateOnly -> date.atStartOfDay(localZoneId).toInstant()
+    is ObservedTime.DateTime -> resolvedInstant
+        ?: offset?.let(localDateTime::toInstant)
+        ?: zoneId?.let { zone -> localDateTime.atZone(zone).toInstant() }
+        ?: localDateTime.atZone(localZoneId).toInstant()
+}
+
 data class CreateAccountCommand(
     val commandId: CommandId,
     val name: String,
@@ -105,12 +129,18 @@ data class CreateExternalDraftCommand(
     val currency: CurrencyCode = CurrencyCode.CNY,
 )
 
+data class ResolveReconciliationCommand(
+    val commandId: CommandId,
+    val caseId: String,
+)
+
 class BillService(
     private val repository: LedgerRepository,
     private val clock: Clock = Clock.systemUTC(),
     private val sourceReviewRepository: SourceReviewRepository = SourceReviewRepository.Empty,
     private val notificationRouteLabelResolver: NotificationRouteLabelResolver =
         NotificationRouteLabelResolver.Empty,
+    private val localZoneId: ZoneId = ZoneId.systemDefault(),
 ) {
     fun newCommandId(): CommandId = CommandId(UUID.randomUUID().toString())
 
@@ -459,6 +489,189 @@ class BillService(
         ).toOperationResult()
     }
 
+    suspend fun resolveReconciliation(
+        command: ResolveReconciliationCommand,
+    ): OperationResult {
+        if (
+            command.caseId.isBlank() ||
+            command.caseId.length > MAX_RECONCILIATION_CASE_ID_LENGTH ||
+            command.caseId.hasControlCharacter()
+        ) {
+            return OperationResult.Failure(OperationError.INVALID_STATE)
+        }
+        val transactionId = TransactionId(
+            "transaction:reconcile:${stableDigest(command.commandId.value, command.caseId)}",
+        )
+        repository.findTransaction(transactionId)?.let { existing ->
+            return if (existing.commandId == command.commandId) {
+                OperationResult.Success(existing.id.value)
+            } else {
+                OperationResult.Failure(OperationError.CONFLICT)
+            }
+        }
+
+        val state = repository.observeState().first()
+        val case = reconciliationCases(state).firstOrNull { it.id == command.caseId }
+            ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+        val draftsById = state.pendingDrafts.associateBy { it.id.value }
+        val accountsById = state.accountBalances.associateBy { it.account.id.value }
+        val transactionsById = state.recentTransactions.associateBy { it.id.value }
+        val now = clock.instant()
+
+        val build = when (case.kind) {
+            ReconciliationCaseKind.TRANSFER -> {
+                val outbound = draftsById[case.draftIds.getOrNull(0)]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val inbound = draftsById[case.draftIds.getOrNull(1)]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val source = case.sourceAccountId
+                    ?.let(accountsById::get)
+                    ?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                val destination = accountsById[case.destinationAccountId]?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                PostingFactory.transferPair(
+                    outboundDraft = outbound,
+                    inboundDraft = inbound,
+                    sourceAccount = source,
+                    destinationAccount = destination,
+                    transactionId = transactionId,
+                    confirmedAt = now,
+                )
+            }
+
+            ReconciliationCaseKind.LIABILITY_REPAYMENT -> {
+                val outbound = draftsById[case.draftIds.singleOrNull()]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val source = case.sourceAccountId
+                    ?.let(accountsById::get)
+                    ?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                val liability = accountsById[case.destinationAccountId]?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                PostingFactory.liabilityRepayment(
+                    outboundDraft = outbound,
+                    sourceAccount = source,
+                    liabilityAccount = liability,
+                    transactionId = transactionId,
+                    confirmedAt = now,
+                )
+            }
+
+            ReconciliationCaseKind.REFUND -> {
+                val inbound = draftsById[case.draftIds.singleOrNull()]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val destination = accountsById[case.destinationAccountId]?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                val originalId = case.relatedTransactionId
+                    ?: return OperationResult.Failure(OperationError.INVALID_STATE)
+                val original = transactionsById[originalId]
+                    ?: repository.findTransaction(TransactionId(originalId))
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val refunded = repository.activeRefundTotal(original.id)
+                    ?: return OperationResult.Failure(OperationError.INVALID_STATE)
+                PostingFactory.refund(
+                    inboundDraft = inbound,
+                    destinationAccount = destination,
+                    originalExpense = original,
+                    alreadyRefundedMinorUnits = refunded.minorUnits,
+                    transactionId = transactionId,
+                    confirmedAt = now,
+                )
+            }
+        }
+        val validated = (build as? PostingBuildResult.Valid)?.transaction
+            ?: return OperationResult.Failure(build.toOperationError())
+        val inputDrafts = case.draftIds.mapNotNull(draftsById::get)
+        if (inputDrafts.size != case.draftIds.size) {
+            return OperationResult.Failure(OperationError.NOT_FOUND)
+        }
+        val sourceMode = if (
+            inputDrafts.any { it.sourceMode == TransactionSourceMode.EXTERNAL }
+        ) {
+            TransactionSourceMode.EXTERNAL
+        } else {
+            TransactionSourceMode.MANUAL
+        }
+        val transaction = PostedTransaction(
+            id = validated.id,
+            draftId = null,
+            type = validated.type,
+            status = TransactionStatus.ACTIVE,
+            sourceMode = sourceMode,
+            occurredAt = validated.occurredAt,
+            confirmedAt = now,
+            title = case.title,
+            note = null,
+            commandId = command.commandId,
+            entries = validated.entries,
+        )
+        val draftLinks = when (case.kind) {
+            ReconciliationCaseKind.TRANSFER -> listOf(
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds[0]),
+                    ReconciliationDraftRole.TRANSFER_OUTBOUND,
+                ),
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds[1]),
+                    ReconciliationDraftRole.TRANSFER_INBOUND,
+                ),
+            )
+
+            ReconciliationCaseKind.LIABILITY_REPAYMENT -> listOf(
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds.single()),
+                    ReconciliationDraftRole.REPAYMENT_OUTBOUND,
+                ),
+            )
+
+            ReconciliationCaseKind.REFUND -> listOf(
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds.single()),
+                    ReconciliationDraftRole.REFUND_INBOUND,
+                ),
+            )
+        }
+        val relations = if (case.kind == ReconciliationCaseKind.REFUND) {
+            listOf(
+                TransactionRelation(
+                    id = TransactionRelationId(
+                        "relation:refund:${stableDigest(command.commandId.value, case.id)}",
+                    ),
+                    fromTransactionId = transaction.id,
+                    toTransactionId = TransactionId(requireNotNull(case.relatedTransactionId)),
+                    type = TransactionRelationType.REFUNDS,
+                    decision = RelationDecision.USER_CONFIRMED,
+                    createdAt = now,
+                ),
+            )
+        } else {
+            emptyList()
+        }
+        return repository.resolveReconciliation(
+            resolution = ReconciliationResolution(
+                kind = when (case.kind) {
+                    ReconciliationCaseKind.TRANSFER -> ReconciliationKind.TRANSFER_PAIR
+                    ReconciliationCaseKind.LIABILITY_REPAYMENT ->
+                        ReconciliationKind.LIABILITY_REPAYMENT
+
+                    ReconciliationCaseKind.REFUND -> ReconciliationKind.REFUND
+                },
+                transaction = transaction,
+                draftLinks = draftLinks,
+                relations = relations,
+            ),
+            auditRecord = audit(
+                commandId = command.commandId,
+                suffix = "reconciliation-confirmed",
+                action = AuditAction.RECONCILIATION_CONFIRMED,
+                entityType = "transaction",
+                entityId = transaction.id.value,
+                occurredAt = now,
+            ),
+        ).toOperationResult()
+    }
+
     suspend fun voidTransaction(
         commandId: CommandId,
         transactionId: TransactionId,
@@ -565,7 +778,14 @@ class BillService(
                         SourceReviewKind.SHARED_TEXT
 
                     dev.bill.source.contract.CaptureMethod.STATEMENT_IMPORT ->
-                        SourceReviewKind.SELECTED_TEXT_FILE
+                        if (
+                            record.parserId == GenericDelimitedStatementIdentity.PARSER_ID &&
+                            record.connectorId == GenericDelimitedStatementIdentity.CONNECTOR_ID
+                        ) {
+                            SourceReviewKind.DELIMITED_STATEMENT_ROW
+                        } else {
+                            SourceReviewKind.SELECTED_TEXT_FILE
+                        }
 
                     dev.bill.source.contract.CaptureMethod.SHARE_FILE ->
                         SourceReviewKind.SHARED_RECEIPT_IMAGE
@@ -601,6 +821,8 @@ class BillService(
                         null -> null
                     },
                     suggestedCounterparty = record.candidate?.counterparty?.value,
+                    suggestedOccurredAt = record.candidate?.occurredAt?.value
+                        ?.resolveForReview(localZoneId),
                     diagnosticCode = record.diagnostic?.code?.name,
                     isPossibleDuplicate = record.isPossibleDuplicate,
                 )
@@ -649,8 +871,230 @@ class BillService(
             accounts = accounts,
             pendingDrafts = pendingDrafts,
             pendingSourceReviews = pendingSourceReviews,
+            reconciliationCases = reconciliationCases(state),
         )
     }
+
+    private fun reconciliationCases(state: LedgerState): List<ReconciliationCaseSummary> {
+        val accountsById = state.accountBalances.associateBy { it.account.id }
+        val pending = state.pendingDrafts.asSequence()
+            .filter {
+                it.state == DraftState.WAITING_USER || it.state == DraftState.EDITED
+            }
+            .sortedWith(
+                compareByDescending<ManualDraft> { it.updatedAt }.thenBy { it.id.value },
+            )
+            .take(MAX_RECONCILIATION_INPUT_DRAFTS)
+            .toList()
+        val outboundDrafts = pending.filter { it.type == TransactionType.EXPENSE }
+        val inboundDrafts = pending.filter { it.type == TransactionType.INCOME }
+        val inboundDraftsByAmount = inboundDrafts.groupBy(ManualDraft::amount)
+        val refundSourceTransactions = state.recentTransactions.asSequence()
+            .sortedWith(
+                compareByDescending<PostedTransaction> { it.confirmedAt }
+                    .thenBy { it.id.value },
+            )
+            .take(MAX_RECONCILIATION_INPUT_TRANSACTIONS)
+            .toList()
+        val cases = mutableListOf<ReconciliationCaseSummary>()
+
+        outboundDrafts.forEach { outbound ->
+            val source = outbound.fundingAccountId?.let(accountsById::get)?.account
+                ?: return@forEach
+            if (source.type !in assetMovementTypes || source.isArchived || source.isSystem) {
+                return@forEach
+            }
+            inboundDraftsByAmount[outbound.amount].orEmpty().asSequence()
+                .filter { inbound ->
+                    withinWindow(
+                        outbound.occurredAt,
+                        inbound.occurredAt,
+                        TRANSFER_MATCH_WINDOW,
+                    )
+                }
+                .mapNotNull { inbound ->
+                    val destination = inbound.fundingAccountId
+                        ?.let(accountsById::get)
+                        ?.account
+                        ?: return@mapNotNull null
+                    destination.takeIf {
+                        it.id != source.id &&
+                            it.type in assetMovementTypes &&
+                            !it.isArchived &&
+                            !it.isSystem &&
+                            it.currency == source.currency
+                    }?.let { inbound to it }
+                }
+                .sortedBy { (inbound, _) ->
+                    timeDistanceMillis(outbound.occurredAt, inbound.occurredAt)
+                }
+                .take(MAX_CASES_PER_DRAFT)
+                .forEach { (inbound, destination) ->
+                    cases += ReconciliationCaseSummary(
+                        id = reconciliationCaseId(
+                            ReconciliationCaseKind.TRANSFER,
+                            outbound.id.value,
+                            inbound.id.value,
+                        ),
+                        kind = ReconciliationCaseKind.TRANSFER,
+                        amount = outbound.amount,
+                        occurredAt = minOf(outbound.occurredAt, inbound.occurredAt),
+                        title = "${source.name} → ${destination.name}",
+                        draftIds = listOf(outbound.id.value, inbound.id.value),
+                        sourceAccountId = source.id.value,
+                        destinationAccountId = destination.id.value,
+                        relatedTransactionId = null,
+                    )
+                }
+
+            state.accountBalances.asSequence()
+                .map(AccountBalance::account)
+                .filter { account ->
+                    source.type == AccountType.ASSET_BANK &&
+                        account.type == AccountType.LIABILITY_CC &&
+                        !account.isArchived &&
+                        !account.isSystem &&
+                        account.currency == outbound.amount.currency
+                }
+                .sortedWith(
+                    compareBy<LedgerAccount> { it.createdAt }
+                        .thenBy { it.id.value },
+                )
+                .take(MAX_CASES_PER_DRAFT)
+                .forEach { liability ->
+                    cases += ReconciliationCaseSummary(
+                        id = reconciliationCaseId(
+                            ReconciliationCaseKind.LIABILITY_REPAYMENT,
+                            outbound.id.value,
+                            liability.id.value,
+                        ),
+                        kind = ReconciliationCaseKind.LIABILITY_REPAYMENT,
+                        amount = outbound.amount,
+                        occurredAt = outbound.occurredAt,
+                        title = "${source.name} → ${liability.name}",
+                        draftIds = listOf(outbound.id.value),
+                        sourceAccountId = source.id.value,
+                        destinationAccountId = liability.id.value,
+                        relatedTransactionId = null,
+                    )
+                }
+        }
+
+        inboundDrafts.forEach { inbound ->
+            refundSourceTransactions.asSequence()
+                .filter { original ->
+                    original.status == TransactionStatus.ACTIVE &&
+                        original.type == TransactionType.EXPENSE &&
+                        !inbound.occurredAt.isBefore(original.occurredAt) &&
+                        withinWindow(
+                            original.occurredAt,
+                            inbound.occurredAt,
+                            REFUND_MATCH_WINDOW,
+                        )
+                }
+                .mapNotNull { original ->
+                    val expense = original.entries.singleOrNull {
+                        it.role == EntryRole.EXPENSE && it.amount.minorUnits > 0L
+                    } ?: return@mapNotNull null
+                    val refunded = state.activeRefundTotals[original.id]?.also {
+                        if (it.currency != expense.amount.currency) return@mapNotNull null
+                    }?.minorUnits ?: 0L
+                    val remaining = try {
+                        Math.subtractExact(expense.amount.minorUnits, refunded)
+                    } catch (_: ArithmeticException) {
+                        return@mapNotNull null
+                    }
+                    if (
+                        inbound.amount.currency != expense.amount.currency ||
+                        inbound.amount.minorUnits > remaining
+                    ) {
+                        return@mapNotNull null
+                    }
+                    val counterpart = original.entries.singleOrNull {
+                        it.amount.minorUnits < 0L &&
+                            it.amount.currency == inbound.amount.currency &&
+                            it.role in setOf(EntryRole.FUNDING, EntryRole.LIABILITY)
+                    } ?: return@mapNotNull null
+                    if (
+                        inbound.fundingAccountId != null &&
+                        inbound.fundingAccountId != counterpart.accountId
+                    ) {
+                        return@mapNotNull null
+                    }
+                    val destination = accountsById[counterpart.accountId]?.account
+                        ?: return@mapNotNull null
+                    if (
+                        destination.type !in refundDestinationTypes ||
+                        destination.isArchived ||
+                        destination.isSystem
+                    ) {
+                        return@mapNotNull null
+                    }
+                    Triple(original, destination, remaining)
+                }
+                .sortedBy { (original, _, _) ->
+                    timeDistanceMillis(original.occurredAt, inbound.occurredAt)
+                }
+                .take(MAX_CASES_PER_DRAFT)
+                .forEach { (original, destination, _) ->
+                    cases += ReconciliationCaseSummary(
+                        id = reconciliationCaseId(
+                            ReconciliationCaseKind.REFUND,
+                            inbound.id.value,
+                            original.id.value,
+                        ),
+                        kind = ReconciliationCaseKind.REFUND,
+                        amount = inbound.amount,
+                        occurredAt = inbound.occurredAt,
+                        title = "${original.title} · ${destination.name}",
+                        draftIds = listOf(inbound.id.value),
+                        sourceAccountId = null,
+                        destinationAccountId = destination.id.value,
+                        relatedTransactionId = original.id.value,
+                    )
+                }
+        }
+
+        return cases
+            .distinctBy(ReconciliationCaseSummary::id)
+            .sortedWith(
+                compareByDescending<ReconciliationCaseSummary> { it.occurredAt }
+                    .thenBy { it.kind.name }
+                    .thenBy { it.id },
+            )
+            .take(MAX_RECONCILIATION_CASES)
+    }
+
+    private fun reconciliationCaseId(
+        kind: ReconciliationCaseKind,
+        vararg ids: String,
+    ): String = "reconcile-${kind.name.lowercase(Locale.ROOT)}-${stableDigest(*ids)}"
+
+    private fun stableDigest(vararg values: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        values.forEach { value ->
+            val bytes = value.toByteArray(StandardCharsets.UTF_8)
+            try {
+                digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+                digest.update(bytes)
+            } finally {
+                bytes.fill(0)
+            }
+        }
+        return digest.digest().joinToString(separator = "") { byte ->
+            "%02x".format(byte.toInt() and 0xff)
+        }
+    }
+
+    private fun withinWindow(
+        first: Instant,
+        second: Instant,
+        window: Duration,
+    ): Boolean = Duration.between(first, second).abs() <= window
+
+    private fun timeDistanceMillis(first: Instant, second: Instant): Long =
+        runCatching { Duration.between(first, second).abs().toMillis() }
+            .getOrDefault(Long.MAX_VALUE)
 
     private fun PostedTransaction.toSummary(): TransactionSummary {
         val (kind, amount) = when (type) {
@@ -678,7 +1122,10 @@ class BillService(
             },
             amount = amount,
             kind = kind,
-            canUndo = draftId != null,
+            canUndo = draftId != null ||
+                type == TransactionType.TRANSFER ||
+                type == TransactionType.REFUND ||
+                type == TransactionType.LIABILITY_REPAY,
         )
     }
 
@@ -720,7 +1167,14 @@ class BillService(
         const val MAX_COUNTERPARTY_LENGTH = 80
         const val MAX_NOTE_LENGTH = 200
         const val MAX_SOURCE_PROPOSAL_ID_LENGTH = 160
+        const val MAX_RECONCILIATION_CASE_ID_LENGTH = 128
         const val MAX_RECENT_TRANSACTIONS = 20
+        const val MAX_RECONCILIATION_CASES = 50
+        const val MAX_CASES_PER_DRAFT = 3
+        const val MAX_RECONCILIATION_INPUT_DRAFTS = 500
+        const val MAX_RECONCILIATION_INPUT_TRANSACTIONS = 50
+        val TRANSFER_MATCH_WINDOW: Duration = Duration.ofDays(3)
+        val REFUND_MATCH_WINDOW: Duration = Duration.ofDays(180)
         val whitespace = Regex("\\s+")
         val creatableAccountTypes = setOf(
             AccountType.ASSET_CASH,
@@ -728,6 +1182,12 @@ class BillService(
             AccountType.ASSET_EWALLET_BALANCE,
             AccountType.LIABILITY_CC,
         )
+        val assetMovementTypes = setOf(
+            AccountType.ASSET_CASH,
+            AccountType.ASSET_BANK,
+            AccountType.ASSET_EWALLET_BALANCE,
+        )
+        val refundDestinationTypes = assetMovementTypes + AccountType.LIABILITY_CC
     }
 }
 
@@ -749,7 +1209,7 @@ private object MoneyInput {
             val minorUnits = BigDecimal(normalized)
                 .movePointRight(2)
                 .setScale(0, RoundingMode.UNNECESSARY)
-                .longValueExact()
+                .toLongExactCompat()
             Money(minorUnits, currency)
         }.getOrNull()
     }
@@ -779,6 +1239,11 @@ private fun PostingBuildResult.toOperationError(): OperationError = when (this) 
     -> OperationError.UNSUPPORTED_CURRENCY
 
     is PostingBuildResult.ValidationFailed -> OperationError.INVALID_STATE
+    PostingBuildResult.InvalidDraftPair,
+    PostingBuildResult.SameAccount,
+    PostingBuildResult.InvalidRelatedTransaction,
+    PostingBuildResult.AmountExceedsRemaining,
+    -> OperationError.INVALID_STATE
     is PostingBuildResult.Valid -> error("A valid posting has no operation error")
 }
 
@@ -786,7 +1251,7 @@ private fun List<AccountBalance>.sumMinorUnitsExact(): Long {
     val sum = fold(BigInteger.ZERO) { total, accountBalance ->
         total + BigInteger.valueOf(accountBalance.balance.minorUnits)
     }
-    return sum.longValueExact()
+    return sum.toLongExactCompat()
 }
 
 private fun AccountType.isAssetLike(): Boolean = when (this) {

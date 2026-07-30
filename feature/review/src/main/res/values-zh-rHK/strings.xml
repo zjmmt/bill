@@ -8,7 +8,8 @@
     <string name="drafts_heading">待覆核草稿</string>
     <string name="drafts_intro">手動輸入和用戶提供的證據都會先停在覆核區，確認經濟含義和實際資金帳戶後才正式入帳。</string>
     <string name="add_manual_draft">輸入收入或支出</string>
-    <string name="import_text_file">匯入文字檔案</string>
+    <string name="import_text_file">匯入本機帳單</string>
+    <string name="source_occurred_at">發生時間：%1$s（按目前裝置時區）</string>
     <string name="drafts_empty_title">暫時沒有待覆核內容</string>
     <string name="drafts_empty_body">你可以手動輸入，或從其他應用程式把純文字、PNG 收據截圖主動分享到 Bill。支付寶、微信支付和銀行的專用匯入仍要等去識別樣本通過重播測試。</string>
     <string name="source_reviews_heading">待補全的本機證據</string>
@@ -19,6 +20,8 @@
     <string name="shared_text_needs_confirmation">金額、類型和說明都需要你確認</string>
     <string name="selected_text_file_source">用戶選取的文字檔案</string>
     <string name="selected_text_file_needs_confirmation">檔案來源未經驗證，金額、類型和說明都需要你確認</string>
+    <string name="delimited_statement_source">已對應帳單資料列</string>
+    <string name="delimited_statement_needs_confirmation">匯入欄位只是建議；請確認交易與資金帳戶</string>
     <string name="shared_receipt_image_source">主動分享的收據截圖</string>
     <string name="shared_receipt_image_needs_confirmation">Bill 不會 OCR 這張圖，金額、類型和說明都需要你確認</string>
     <string name="photo_ocr_source">單次截圖 · 本機 OCR</string>
@@ -30,6 +33,32 @@
     <string name="funding_account_missing">需要選擇資金帳戶</string>
     <string name="funding_account_selected">已選擇資金帳戶</string>
     <string name="review_draft">覆核草稿</string>
+    <string name="reconciliation_candidates_heading">對帳建議</string>
+    <string name="reconciliation_candidates_intro">只有金額、幣種、方向、帳戶角色和時間窗都通過硬性檢查時才會顯示；Bill 不會自動確認。</string>
+    <string name="reconciliation_candidate_not_automatic">只屬建議 · 必須由你明確確認</string>
+    <string name="reconciliation_review">核對這項建議</string>
+    <string name="reconciliation_kind_transfer">本人帳戶間轉帳</string>
+    <string name="reconciliation_kind_refund">退款</string>
+    <string name="reconciliation_kind_repayment">信用卡還款</string>
+    <string name="reconciliation_marker">06 / 對帳</string>
+    <string name="reconciliation_title">確認對帳</string>
+    <string name="reconciliation_reason_heading">為甚麼出現這項建議</string>
+    <string name="reconciliation_reason_body">本機帳本發現金額、幣種、方向、帳戶角色和時間相容，但這些條件不能證明兩筆記錄必然相關，只有你可以確認。</string>
+    <string name="reconciliation_impact_heading">入帳影響</string>
+    <string name="reconciliation_transfer_impact">只在你的兩個資產帳戶之間移動資金，不計入收入或支出。</string>
+    <string name="reconciliation_refund_impact">沖回原付款的一部分並沖減原支出；仍有效的累計退款不能超過原支出。</string>
+    <string name="reconciliation_repayment_impact">銀行資產和信用卡欠款等額減少，不會重複計作一筆新支出。</string>
+    <string name="reconciliation_evidence_heading">連結草稿</string>
+    <plurals name="reconciliation_evidence_count">
+        <item quantity="other">這筆分錄會連結 %1$d 項來源草稿，並保留它們的不可變證據鏈。</item>
+    </plurals>
+    <string name="reconciliation_undo_heading">可撤銷，不刪除證據</string>
+    <string name="reconciliation_undo_body">輸入草稿和來源證據都會保留；撤銷這筆對帳後，草稿會回到待覆核區。</string>
+    <string name="reconciliation_confirm">確認按此對帳</string>
+    <string name="reconciliation_saving">正在對帳…</string>
+    <string name="reconciliation_later">稍後再看</string>
+    <string name="reconciliation_error_changed">草稿、帳戶或關聯交易已經變更，請關閉後核對最新建議。</string>
+    <string name="reconciliation_error_failed">無法儲存這筆對帳，沒有留下不完整分錄。</string>
 
     <string name="manual_draft_title">手動輸入</string>
     <string name="manual_draft_explanation">這裡建立的是草稿，不會直接入帳。下一步還要選擇真實的資金帳戶。</string>
@@ -39,6 +68,9 @@
     <string name="selected_text_file_draft_title">補全文字檔案</string>
     <string name="selected_text_file_draft_explanation">這個文字檔案由你透過 Android 檔案選擇器主動選取。Bill 只複製有大小上限的本機證據副本，不保留檔案 URI，也不會據此識別來源平台；請逐項確認後再繼續。</string>
     <string name="selected_text_file_draft_duplicate_explanation">相同檔案證據此前已經擷取過。繼續前請檢查已有草稿和已入帳流水；Bill 不會自動合併。</string>
+    <string name="delimited_statement_draft_title">核對匯入帳單資料列</string>
+    <string name="delimited_statement_draft_explanation">這些值來自你確認的欄位對應。請核對方向、幣種、金額、時間和交易對方，再選擇真實資金帳戶；不會自動入帳。</string>
+    <string name="delimited_statement_draft_duplicate_explanation">可能已有相同的對應帳單資料列，請先檢查待確認草稿和正式交易。Bill 不會自動合併。</string>
     <string name="shared_receipt_image_draft_title">補全收據截圖</string>
     <string name="shared_receipt_image_draft_explanation">這張 PNG 收據截圖由你主動分享到 Bill，只儲存在本機。Bill 不會 OCR 或推斷其中資料；請參照原始收據逐項確認後再繼續。</string>
     <string name="shared_receipt_image_draft_duplicate_explanation">相同收據圖片證據此前已經擷取過。繼續前請檢查已有草稿和已入帳流水；Bill 不會自動合併。</string>

@@ -1,9 +1,9 @@
 # 质量评分与证据缺口
 
-- 状态：部分实现；账本、通用分享文本、空模板通知边界与持久观察去重已有自动化/MuMu 证据
+- 状态：部分实现；账本、通用分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界与持久观察去重已有自动化/MuMu 或编译证据
 - 所有者：项目维护者
-- 最后核验：2026-07-26
-- 事实来源：当前仓库代码、Room schema v1/v2/v3/v4/v5/v6、已执行测试/Lint/构建与 MuMu 验收、ADR-0010、ADR-0011；未完成的真机和发布门不计为通过
+- 最后核验：2026-07-30
+- 事实来源：当前仓库代码、Room schema v1/v2/v3/v4/v5/v6/v7、已执行测试/Lint/构建与 MuMu 验收、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0003、ExecPlan 0006；未完成的真机和发布门不计为通过
 
 ## 评分规则
 
@@ -15,22 +15,24 @@
 
 每个领域的总状态取关键维度最低分，避免平均分掩盖安全或可靠性空洞。
 
-## 2026-07-26 快照
+## 2026-07-30 快照
 
 | 领域 | 产品规格 | 架构边界 | 测试证据 | 安全/隐私 | 实际支持 | 当前瓶颈 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 本地账本与存储 | 2 | 3 | 3 | 1 | 1 | Room v6、失败关闭映射、原子仓储与 v1→v2→v3→v4→v5 instrumentation 已通过；v5→v6 迁移已编译，仍无数据库应用层加密和完整真机证据 |
+| 本地账本与存储 | 2 | 3 | 3 | 1 | 1 | Room v7、失败关闭映射与原子仓储已实现；v1→v5 instrumentation 已通过，v5→v6→v7、导入批次/行与对账事务目前只编译了 Android 测试 APK，仍无数据库应用层加密和完整真机证据 |
 | 受限 CNY/USD 手工账户与期初余额 | 2 | 3 | 3 | 1 | 2 | 现金/钱包仅 CNY，银行卡/信用卡可为 CNY/USD；逐币种平衡、分币种总览、混币失败关闭和 USD 回归已实现，CNY MuMu 冷启持久化及审查后回归已验证；USD Android instrumentation 仅已编译，完整真机矩阵仍待完成 |
-| 采集与导入框架 | 2 | 3 | 3 | 2 | 1 | 来源契约、受控证据读取、RawEvent/ParseAttempt/建议/Draft/载荷生命周期及租约暂存已实现；另有空模板通知边界、持久观察去重和单测，但没有 provider 模板、listener 真机或大数据门 |
+| 采集与导入框架 | 2 | 3 | 3 | 2 | 1 | 来源契约、受控证据读取、RawEvent/ParseAttempt/建议/Draft/载荷生命周期、租约暂存和结构化导入批次已实现；另有空模板通知边界、持久观察去重和单测，但没有 provider 模板、listener 真机或大数据门 |
 | 通用显式分享文本 | 2 | 3 | 3 | 2 | 1 | 64 KiB/严格 UTF-8、私有证据、两阶段清除、租约/孤儿恢复、保留/容量/分页和跨表失败关闭已通过自动化/MuMu；另有一次 S24U-HK 合成 `ACTION_SEND` 应用级冒烟。不证明 provider，压力/系统强杀/完整真机门未完成 |
+| 用户显式映射 CSV/TSV | 2 | 3 | 3 | 2 | 1 | 2 MiB/5000 行等硬门、严格 UTF-8、显式列映射、逐行证据、后台预览、批次幂等与停止/继续已有 JVM/ViewModel 回归；Room v7 instrumentation 只编译，SAF/大文件/真机门未完成，不证明银行或钱包格式 |
+| 用户触发的随包本地 OCR | 2 | 3 | 2 | 2 | 0 | Quick Settings 单帧与 Photo Picker 最多 5 张串行路径、模型哈希、词典和无网络静态边界已有代码；未签名 Release 分包的权限、组件、ABI、模型、体积及 16 KiB ZIP 对齐已有静态证据，实际中英/日英推理、ELF 页兼容、峰值资源与三台目标真机证据仍缺失，保持发布禁止 |
 | 支付宝适配器 | 2 | 2 | 0 | 1 | 0 | 缺脱敏通知/文件样本 |
 | 微信支付适配器 | 2 | 2 | 0 | 1 | 0 | 缺真实格式发现与样本 |
 | 银行适配器框架 | 2 | 2 | 0 | 1 | 0 | 需选择首批银行与文件格式 |
-| 去重与资金流关联 | 2 | 2 | 0 | 2 | 0 | 缺性质测试与阈值校准 |
+| 去重与资金流关联 | 2 | 3 | 3 | 2 | 1 | 转账、信用卡还款和退款已有硬门、平衡分录、退款累计上限、幂等/撤销与有界候选测试；一般重复、多来源自动合并、真实来源样本和阈值校准仍缺失 |
 | 完整账户、负债、投资 | 2 | 2 | 0 | 2 | 0 | 当前只有现金/银行卡/钱包/信用卡和受限 CNY/USD；贷款、投资、换汇与完整多币种仍未实现 |
 | 手工草稿确认与账本 UI | 2 | 3 | 3 | 1 | 2 | MuMu 数据库驱动闭环及审查后构建回归已通过；自动化 Compose/进程重建和真机待完成 |
 | 来源草稿复核 UI | 2 | 3 | 2 | 2 | 1 | 分享复核、重复警告、忽略和 Intent 消费已手工验证且 ViewModel 有单测；自动化 Compose/进程死亡未完成 |
-| 跨来源对账 UI | 2 | 1 | 0 | 1 | 0 | 无真实来源 Draft、关系候选或解释/合并实现 |
+| 跨来源对账 UI | 2 | 3 | 3 | 2 | 1 | 竖屏候选列表、影响解释、用户确认/撤销已接入；application、Room 测试源码与 ViewModel 确认路由回归覆盖合成 Draft，但没有真实来源 Draft、Compose 自动化或真机关系验收 |
 | 备份、导出、删除 | 1 | 2 | 2 | 2 | 1 | 来源原始载荷逐项两阶段清除已实现并有 Room/MuMu 测试；全部账本删除、加密格式与密钥恢复未决 |
 | 文档系统 | 2 | 2 | 2 | 2 | 1 | 本地检查与 GitHub Actions workflow 已存在；尚无远程成功运行或生成事实 |
 
@@ -39,9 +41,9 @@
 ## 当前实现证据与边界
 
 - `core:model`、`core:domain` 与 `core:ledger` 定义金额、受限 CNY/USD 领域状态、仓储端口、逐币种平衡校验和过账构造；`application` 提供账户/同币种 Draft/确认/void 用例与数据库状态投影，不提供汇率或跨币种加法。
-- `source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text` 与 `source:generic-notification` 已接通有界证据、不可变 RawEvent、追加 ParseAttempt、待补全建议和 Draft 证据链；通用解析器不猜 provider 或交易字段。通知生产目录为空，空目录/未命中 metadata 不读取正文。
-- `data:local` 导出 Room schema v1/v2/v3/v4/v5/v6，并为账户、Draft、Transaction、Entry、RawEvent、ParseAttempt、来源建议、Draft evidence、载荷生命周期/策略、暂存租约、通知观察摘要、AuditEvent 和 command receipt 提供事务仓储；账本和来源跨表损坏均失败关闭。
-- Android 界面面向本地状态展示总览、账户、草稿、流水、分享复核和证据设置；本轮组合 `test lint assembleDebug :data:local:assembleDebugAndroidTest` 已成功，Room v5→v6 迁移/观察仓储 Android 测试已编译。MuMu API 32 的 32 个 v5 设备测试及此前覆盖升级/竖屏设置页手工验收均已通过。`S24U-HK` 的 Debug 安装、强停冷启、竖屏静态窗口与合成分享覆核也已观察；仍需自动化 Compose、真实系统强杀与完整设备回归。
+- `source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-delimited-statement` 与 `source:generic-notification` 已接通有界证据、不可变 RawEvent、追加 ParseAttempt、待补全建议、显式行映射和 Draft 证据链；未知 CSV 表头和通用文本都不猜 provider。通知生产目录为空，空目录/未命中 metadata 不读取正文。
+- `data:local` 导出 Room schema v1/v2/v3/v4/v5/v6/v7，并为账户、Draft、Transaction、Entry、RawEvent、ParseAttempt、来源建议、Draft evidence、载荷生命周期/策略、暂存租约、通知观察摘要、导入批次/行、对账链接/关系、AuditEvent 和 command receipt 提供事务仓储；账本和来源跨表损坏均失败关闭。
+- Android 界面面向本地状态展示总览、账户、草稿、流水、分享复核、CSV/TSV 映射、对账和证据设置；结构化导入与对账的针对性 JVM/ViewModel/编译测试已通过，Room v5→v6→v7 迁移及新增仓储 Android 测试已编译。2026-07-30 的全量 JVM/Lint/Debug/Release 与 AndroidTest APK 构建已通过；此前 MuMu API 32 的 32 个 v5 设备测试和覆盖升级/竖屏设置页手工验收均已通过，`S24U-HK` 也只有受限应用级冒烟。自动化 Compose、真实系统强杀、v6→v7 设备 migration、OCR instrumentation 与完整设备回归仍待完成。
 - 支付宝、微信支付和银行没有真实适配器或脱敏样本，实际支持仍为 `0`。UI 的 `FALLBACK_REQUIRED` 只表示可以转到共同的手工回退路径，不表示该来源已接入。
 - 分享证据已有用户逐项清除、保留期限、已提交/暂存共同容量、租约/孤儿恢复和 keyset 分页，但 exported share Activity 不能证明发送 App，压力、真实系统强杀和完整真机门仍未完成。这些限制把通用分享文本的实际支持保持在 `1`。
 

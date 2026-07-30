@@ -27,6 +27,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.bill.application.DraftSummary
 import dev.bill.application.DraftSummaryKind
+import dev.bill.application.ReconciliationCaseKind
+import dev.bill.application.ReconciliationCaseSummary
 import dev.bill.application.SourceReviewSummary
 import dev.bill.application.SourceReviewKind
 import dev.bill.core.designsystem.component.LedgerCard
@@ -38,11 +40,13 @@ import dev.bill.core.designsystem.component.SectionMarker
 fun DraftsScreen(
     drafts: List<DraftSummary>,
     sourceReviews: List<SourceReviewSummary>,
+    reconciliationCases: List<ReconciliationCaseSummary>,
     amountsMasked: Boolean,
     onAddManualDraft: () -> Unit,
     onImportTextFile: () -> Unit,
     onReviewDraft: (String) -> Unit,
     onReviewSource: (String) -> Unit,
+    onReviewReconciliation: (String) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -89,7 +93,7 @@ fun DraftsScreen(
             }
         }
 
-        if (drafts.isEmpty() && sourceReviews.isEmpty()) {
+        if (drafts.isEmpty() && sourceReviews.isEmpty() && reconciliationCases.isEmpty()) {
             item {
                 PosterPanel(contentPadding = PaddingValues(20.dp)) {
                     Text(
@@ -132,6 +136,32 @@ fun DraftsScreen(
             }
         }
 
+        if (reconciliationCases.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.reconciliation_candidates_heading),
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.reconciliation_candidates_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            items(
+                items = reconciliationCases,
+                key = { case -> "reconciliation-${case.id}" },
+            ) { case ->
+                ReconciliationRow(
+                    case = case,
+                    amountsMasked = amountsMasked,
+                    onReview = { onReviewReconciliation(case.id) },
+                )
+            }
+        }
+
         if (drafts.isNotEmpty()) {
             item {
                 Text(
@@ -155,6 +185,67 @@ fun DraftsScreen(
 }
 
 @Composable
+private fun ReconciliationRow(
+    case: ReconciliationCaseSummary,
+    amountsMasked: Boolean,
+    onReview: () -> Unit,
+) {
+    LedgerCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = case.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(
+                        when (case.kind) {
+                            ReconciliationCaseKind.TRANSFER ->
+                                R.string.reconciliation_kind_transfer
+
+                            ReconciliationCaseKind.REFUND ->
+                                R.string.reconciliation_kind_refund
+
+                            ReconciliationCaseKind.LIABILITY_REPAYMENT ->
+                                R.string.reconciliation_kind_repayment
+                        },
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = stringResource(R.string.reconciliation_candidate_not_automatic),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            MoneyText(
+                amount = case.amount,
+                masked = amountsMasked,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(
+            onClick = onReview,
+            modifier = Modifier
+                .align(Alignment.End)
+                .heightIn(min = 48.dp),
+        ) {
+            Text(stringResource(R.string.reconciliation_review))
+        }
+    }
+}
+
+@Composable
 private fun SourceReviewRow(
     review: SourceReviewSummary,
     amountsMasked: Boolean,
@@ -164,6 +255,8 @@ private fun SourceReviewRow(
         val sourceLabel = when (review.kind) {
             SourceReviewKind.SHARED_TEXT -> stringResource(R.string.shared_text_source)
             SourceReviewKind.SELECTED_TEXT_FILE -> stringResource(R.string.selected_text_file_source)
+            SourceReviewKind.DELIMITED_STATEMENT_ROW ->
+                stringResource(R.string.delimited_statement_source)
             SourceReviewKind.SHARED_RECEIPT_IMAGE ->
                 stringResource(R.string.shared_receipt_image_source)
             SourceReviewKind.PHOTO_OCR -> stringResource(R.string.photo_ocr_source)
@@ -174,6 +267,8 @@ private fun SourceReviewRow(
             SourceReviewKind.SHARED_TEXT -> stringResource(R.string.shared_text_needs_confirmation)
             SourceReviewKind.SELECTED_TEXT_FILE ->
                 stringResource(R.string.selected_text_file_needs_confirmation)
+            SourceReviewKind.DELIMITED_STATEMENT_ROW ->
+                stringResource(R.string.delimited_statement_needs_confirmation)
             SourceReviewKind.SHARED_RECEIPT_IMAGE ->
                 stringResource(R.string.shared_receipt_image_needs_confirmation)
             SourceReviewKind.PHOTO_OCR ->

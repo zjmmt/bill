@@ -21,6 +21,15 @@ android {
         buildConfig = true
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "x86_64")
+            isUniversalApk = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -39,6 +48,8 @@ dependencies {
     implementation(project(":feature:ledger"))
     implementation(project(":feature:overview"))
     implementation(project(":feature:review"))
+    implementation(project(":ocr:paddle"))
+    implementation(project(":source:generic-delimited-statement"))
     implementation(project(":source:generic-photo-ocr"))
     implementation(project(":source:generic-receipt-image"))
     implementation(project(":source:generic-share-text"))
@@ -55,7 +66,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.mlkit.text.recognition.chinese)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

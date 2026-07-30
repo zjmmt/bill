@@ -2,12 +2,15 @@ package dev.bill.app
 
 import android.content.ContentResolver
 import android.net.Uri
+import dev.bill.application.SelectedDelimitedStatementEvidence
 import dev.bill.application.SelectedTextFileIngestionService
 import dev.bill.application.SelectedTextFileEvidence
 import dev.bill.application.SourceCaptureError
 import dev.bill.source.contract.TextEvidenceMediaTypes
+import dev.bill.source.genericdelimited.DelimitedReadLimits
 import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -87,6 +90,9 @@ class ContentResolverSelectedTextDocumentReader(
             SelectedTextDocumentReadResult.Failure(SourceCaptureError.PARSE_REJECTED)
         } catch (_: IOException) {
             SelectedTextDocumentReadResult.Failure(SourceCaptureError.PARSE_REJECTED)
+        } catch (error: RuntimeException) {
+            if (error is CancellationException) throw error
+            SelectedTextDocumentReadResult.Failure(SourceCaptureError.PARSE_REJECTED)
         }
     }
 
@@ -94,6 +100,105 @@ class ContentResolverSelectedTextDocumentReader(
         const val CONTENT_SCHEME = "content"
         val MAX_TEXT_FILE_BYTES =
             SelectedTextFileIngestionService.MAX_SELECTED_TEXT_FILE_BYTES.toInt()
+    }
+}
+
+enum class SelectedDelimitedStatementReadError {
+    INVALID_DOCUMENT,
+    UNSUPPORTED_MEDIA_TYPE,
+    CONTENT_TOO_LARGE,
+    READ_FAILED,
+}
+
+sealed interface SelectedDelimitedStatementReadResult {
+    data class Success(
+        val evidence: SelectedDelimitedStatementEvidence,
+    ) : SelectedDelimitedStatementReadResult
+
+    data class Failure(
+        val error: SelectedDelimitedStatementReadError,
+    ) : SelectedDelimitedStatementReadResult
+}
+
+/**
+ * Android boundary for a structured CSV/TSV import.
+ *
+ * The selected URI and display name remain at this boundary. Only a bounded in-memory byte copy
+ * and a canonical media type cross into the application layer.
+ */
+interface SelectedDelimitedStatementDocumentReader {
+    suspend fun read(uriString: String): SelectedDelimitedStatementReadResult
+
+    data object Unavailable : SelectedDelimitedStatementDocumentReader {
+        override suspend fun read(uriString: String): SelectedDelimitedStatementReadResult =
+            SelectedDelimitedStatementReadResult.Failure(
+                SelectedDelimitedStatementReadError.READ_FAILED,
+            )
+    }
+}
+
+class ContentResolverSelectedDelimitedStatementDocumentReader(
+    private val contentResolver: ContentResolver,
+) : SelectedDelimitedStatementDocumentReader {
+    override suspend fun read(
+        uriString: String,
+    ): SelectedDelimitedStatementReadResult = withContext(Dispatchers.IO) {
+        val uri = try {
+            Uri.parse(uriString)
+        } catch (_: RuntimeException) {
+            return@withContext failure(SelectedDelimitedStatementReadError.INVALID_DOCUMENT)
+        }
+        if (uri.scheme != CONTENT_SCHEME) {
+            return@withContext failure(SelectedDelimitedStatementReadError.INVALID_DOCUMENT)
+        }
+
+        try {
+            val mediaType = contentResolver.getType(uri)
+                ?.let(TextEvidenceMediaTypes::canonicalize)
+                ?: TextEvidenceMediaTypes.TEXT_PLAIN
+            if (mediaType !in TextEvidenceMediaTypes.USER_SELECTED_TEXT_FILE) {
+                return@withContext failure(
+                    SelectedDelimitedStatementReadError.UNSUPPORTED_MEDIA_TYPE,
+                )
+            }
+            val boundedRead = contentResolver.openInputStream(uri)
+                ?.use { stream ->
+                    BoundedDocumentReader.copy(
+                        input = stream,
+                        maxBytes = DelimitedReadLimits.DEFAULT_MAX_BYTES,
+                    )
+                }
+                ?: return@withContext failure(
+                    SelectedDelimitedStatementReadError.INVALID_DOCUMENT,
+                )
+            when (boundedRead) {
+                is BoundedDocumentRead.Success -> SelectedDelimitedStatementReadResult.Success(
+                    SelectedDelimitedStatementEvidence(
+                        mediaType = mediaType,
+                        bytes = boundedRead.bytes,
+                    ),
+                )
+
+                BoundedDocumentRead.TooLarge -> failure(
+                    SelectedDelimitedStatementReadError.CONTENT_TOO_LARGE,
+                )
+            }
+        } catch (_: SecurityException) {
+            failure(SelectedDelimitedStatementReadError.INVALID_DOCUMENT)
+        } catch (_: IOException) {
+            failure(SelectedDelimitedStatementReadError.READ_FAILED)
+        } catch (error: RuntimeException) {
+            if (error is CancellationException) throw error
+            failure(SelectedDelimitedStatementReadError.READ_FAILED)
+        }
+    }
+
+    private fun failure(
+        error: SelectedDelimitedStatementReadError,
+    ) = SelectedDelimitedStatementReadResult.Failure(error)
+
+    private companion object {
+        const val CONTENT_SCHEME = "content"
     }
 }
 
