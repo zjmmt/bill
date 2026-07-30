@@ -25,7 +25,7 @@
     <string name="local_only_headline">你的账务，只留在这台手机。</string>
     <string name="local_only_body">Bill 不声明联网权限，不会把通知文字、截图、账户、余额或账本数据上传到 Bill 的服务器。</string>
     <string name="local_only_boundary_title">三条本地能力，绝不混成一个黑箱权限</string>
-    <string name="local_only_boundary_body">通知、只读支付结果页和单次截图分别启用。下拉磁贴只在你点击后截当前画面一次；OCR 目前还是未通过隐私发布审计的开发实验，不能证明支付来源，未经你的确认绝不正式记账。</string>
+    <string name="local_only_boundary_body">通知、只读支付结果页和单次截图分别启用。下拉磁贴只在你点击后截当前画面一次；内置中英日 OCR 已通过代码级本地、无网络边界检查，但最终 APK、真实推理、签名和目标真机仍待验证。它不能证明支付来源，未经你的确认绝不正式记账。</string>
     <string name="local_only_open_tutorial">查看权限教程</string>
     <string name="local_only_continue">继续在本机使用</string>
     <string name="settings_title">本地优先状态</string>
@@ -41,14 +41,14 @@
     <string name="capture_tutorial_accessibility_title">02 / 只读支付结果页</string>
     <string name="capture_tutorial_accessibility_body">暂未开放：独立观察器没有活跃目标 App，也没有读取屏幕文字的能力。只有来源规则、耗电测试和你的单独确认都齐全后才会启用；届时只会从 Android“设置 → 无障碍”单独开启。它绝不点击、滚动或截图。</string>
     <string name="capture_tutorial_screenshot_title">03 / 下拉磁贴单次截图 + 本地 OCR</string>
-    <string name="capture_tutorial_screenshot_body">实验性开放（Android 11+）：先开启下方专用无障碍服务，再把“截图记账”加入下拉栏。每次点击只截当前画面一次，在本机识别后生成待复核项；不读节点、不自动点击、不后台盯屏。当前 OCR 运行时尚未通过隐私发布审计，因此不是已支持的支付来源。安全窗口会被 Android 拒绝，此时仍可正常截图后分享 PNG。系统选图不需要相册全盘权限。</string>
+    <string name="capture_tutorial_screenshot_body">实验性开放（Android 11+）：先开启下方专用无障碍服务，再把“截图记账”加入下拉栏。每次点击只截当前画面一次并在本机识别；系统选图可逐张处理最多 5 张，不需要相册全盘权限。它不读节点、不自动点击、不后台盯屏。代码级本地、无网络边界检查已通过，但最终 APK、真实推理、签名和目标真机仍待验证，因此还不是已支持的支付来源。安全窗口会被 Android 拒绝；若系统允许手工截图，可分享该 PNG，否则请手工录入。</string>
     <string name="quick_capture_accessibility_status_ready">当前状态：单次截图服务已连接。</string>
     <string name="quick_capture_accessibility_status_off">当前状态：单次截图服务未连接。拒绝权限不影响其他记账方式。</string>
     <string name="quick_capture_open_accessibility">打开无障碍设置</string>
     <string name="quick_capture_add_tile">添加“截图记账”磁贴</string>
     <string name="quick_capture_select_images">从系统选图（最多 5 张，无相册权限）</string>
     <string name="quick_capture_accessibility_label">Bill 单次截图记账</string>
-    <string name="quick_capture_accessibility_description">只在你点击 Bill 的“截图记账”磁贴后截当前画面一次，并运行实验性 OCR。它不读取页面节点、不点击、不滚动、不持续截屏；当前 OCR 运行时仍在隐私发布审计中，不能作为已支持的支付来源。</string>
+    <string name="quick_capture_accessibility_description">只在你点击 Bill 的“截图记账”磁贴后截当前画面一次，并在本机运行内置 OCR。它不读取页面节点、不点击、不滚动、不持续截屏；代码级本地、无网络边界检查已通过，但最终 APK、真实推理、签名和目标真机仍待验证，因此还不能作为已支持的支付来源。</string>
     <string name="quick_capture_tile_label">截图记账</string>
     <string name="quick_capture_tile_ready">已就绪</string>
     <string name="quick_capture_tile_setup">需开启服务</string>
@@ -64,6 +64,10 @@
     <string name="quick_capture_too_large">当前画面或识别结果超过本地安全上限，没有保存。</string>
     <string name="quick_capture_storage_full">本地证据空间已满，请先处理或清除待复核证据。</string>
     <string name="quick_capture_failed">本次截图或本地识别失败，没有正式记账。</string>
+    <string name="quick_capture_timed_out">本次单次截图等待超时，未完成的本地任务已取消；重试前请先查看待复核列表。</string>
+    <string name="quick_capture_result_unconfirmed">未能及时确认本次处理结果；它可能已保存，也可能尚未写入。重试前请先查看待复核列表。</string>
+    <string name="photo_ocr_batch_completed">图片识别完成：%1$d 条可复核，%2$d 条失败。</string>
+    <string name="photo_ocr_batch_progress">已处理 %1$d / %2$d 张…</string>
     <string name="quick_capture_tile_add_manually">请下拉两次打开快捷设置，点“编辑”，再把“截图记账”拖到已启用区域。</string>
     <string name="quick_capture_tile_request_finished">系统已处理添加请求；若磁贴未出现，请在快捷设置的“编辑”中手动添加。</string>
     <string name="payment_result_observer_description">Bill 的只读支付结果页观察器。除非你在 Bill 中单独开启经过验证的来源，否则没有活跃来源模板。</string>

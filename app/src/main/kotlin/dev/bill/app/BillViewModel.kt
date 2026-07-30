@@ -109,7 +109,18 @@ data class BillUiState(
     val operationError: OperationError? = null,
     val evidence: EvidenceSettingsUiState = EvidenceSettingsUiState(),
     val statementImport: StatementImportUiState = StatementImportUiState.Idle,
+    val photoOcrBatch: PhotoOcrBatchUiState? = null,
 )
+
+data class PhotoOcrBatchUiState(
+    val processedCount: Int,
+    val totalCount: Int,
+) {
+    init {
+        require(totalCount in 1..5)
+        require(processedCount in 0..totalCount)
+    }
+}
 
 sealed interface BillUiEvent {
     data class OperationSucceeded(
@@ -132,6 +143,21 @@ sealed interface BillUiEvent {
         val commandId: String,
         val error: SourceCaptureError,
     ) : BillUiEvent
+
+    data class PhotoOcrBatchCompleted(
+        val firstProposalId: String?,
+        val readyForReviewCount: Int,
+        val failedCount: Int,
+        val firstFailure: SourceCaptureError?,
+    ) : BillUiEvent {
+        init {
+            require(readyForReviewCount >= 0)
+            require(failedCount >= 0)
+            require(readyForReviewCount + failedCount in 1..5)
+            require((firstProposalId != null) == (readyForReviewCount > 0))
+            require((firstFailure != null) == (failedCount > 0))
+        }
+    }
 
     data class EvidenceOperationSucceeded(
         val kind: EvidenceOperationKind,
@@ -177,6 +203,7 @@ class BillViewModel(
     private var statementDocumentJob: Job? = null
     private var statementMappingJob: Job? = null
     private var statementImportJob: Job? = null
+    private var photoOcrJob: Job? = null
     private var statementDocumentGeneration = 0L
     private var statementMappingGeneration = 0L
     private var statementSession: LocalDelimitedStatementSession? = null
@@ -650,21 +677,73 @@ class BillViewModel(
 
     fun ingestSelectedPhotos(documentUris: List<String>) {
         val boundedUris = documentUris.take(MAX_SELECTED_OCR_IMAGES)
-        if (boundedUris.isEmpty()) return
-        viewModelScope.launch {
-            boundedUris.forEach { documentUri ->
-                val commandId = service.newCommandId().value
-                val result = try {
-                    selectedPhotoOcrImporter.ingest(commandId, documentUri)
-                } catch (cancellation: CancellationException) {
-                    throw cancellation
-                } catch (_: Exception) {
-                    SourceCaptureResult.Failure(
-                        error = SourceCaptureError.COMMIT_FAILED,
-                        diagnosticCode = null,
-                    )
+        if (boundedUris.isEmpty() || photoOcrJob?.isActive == true) return
+        mutableUiState.update { state ->
+            state.copy(
+                photoOcrBatch = PhotoOcrBatchUiState(
+                    processedCount = 0,
+                    totalCount = boundedUris.size,
+                ),
+            )
+        }
+        photoOcrJob = viewModelScope.launch {
+            var firstProposalId: String? = null
+            var readyForReviewCount = 0
+            var failedCount = 0
+            var firstFailure: SourceCaptureError? = null
+            try {
+                boundedUris.forEachIndexed { index, documentUri ->
+                    val commandId = service.newCommandId().value
+                    val result = try {
+                        selectedPhotoOcrImporter.ingest(commandId, documentUri)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (_: Exception) {
+                        SourceCaptureResult.Failure(
+                            error = SourceCaptureError.COMMIT_FAILED,
+                            diagnosticCode = null,
+                        )
+                    }
+                    when (result) {
+                        is SourceCaptureResult.ReadyForReview -> {
+                            readyForReviewCount += 1
+                            if (firstProposalId == null) {
+                                firstProposalId = result.proposalId
+                            }
+                        }
+
+                        is SourceCaptureResult.Failure -> {
+                            failedCount += 1
+                            if (firstFailure == null) {
+                                firstFailure = result.error
+                            }
+                        }
+                    }
+                    mutableUiState.update { state ->
+                        state.copy(
+                            photoOcrBatch = PhotoOcrBatchUiState(
+                                processedCount = index + 1,
+                                totalCount = boundedUris.size,
+                            ),
+                        )
+                    }
                 }
-                publishSourceCaptureResult(commandId, result)
+                if (readyForReviewCount > 0) {
+                    loadEvidencePage(reset = true)
+                }
+                eventChannel.send(
+                    BillUiEvent.PhotoOcrBatchCompleted(
+                        firstProposalId = firstProposalId,
+                        readyForReviewCount = readyForReviewCount,
+                        failedCount = failedCount,
+                        firstFailure = firstFailure,
+                    ),
+                )
+            } finally {
+                mutableUiState.update { state ->
+                    state.copy(photoOcrBatch = null)
+                }
+                photoOcrJob = null
             }
         }
     }

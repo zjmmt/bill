@@ -51,6 +51,9 @@
 - [x] 2026-07-26 - 用 PP-OCRv6 small + ONNX Runtime/OpenCV 替换 ML Kit；随包模型、许可、哈希、两线程/batch 1/1600 像素边界、逐任务释放与 AAR 无网络组件静态审计已落库。
 - [x] 2026-07-30 - 完成全量单元、Lint、Debug/Release 和两组 AndroidTest APK 构建，以及当前未签名 Release 分包的权限、组件、ABI、模型、体积、哈希与 16 KiB ZIP 对齐审计。
 - [x] 2026-07-30 - 完成指定 `code-review` 复审；未发现 P0/P1，资源所有权、取消释放、临时数据擦除、无网络边界和币种限制已复核。
+- [x] 2026-07-30 - 为单次截图 command 增加 90 秒可取消租约，并以 `ACTIVE -> COMMITTING` CAS 在证据准入、容量清理或写入前原子交接取消权与本地提交权。取消胜出时停止 Job 且不进入有副作用的准入路径；cancellation handle 注册中的竞态不再把 `null` 当取消成功。提交前释放像素，local commit 另有 15 秒协作式截止；闸门后的超时、取消与非致命异常统一为 `COMMIT_STATUS_UNKNOWN`。提交或既成结果不可取消时只给一次 15 秒收尾宽限，仍无回调则显示“结果未确认”并释放单飞占用。opaque request identity 隔离迟到回调，旧回调不能完成后续新请求；对应超时、断连/替换、注册竞态、提交竞态、部分暂存后异常、调度失败、挂起端口、字节擦除和迟到回调回归已加入工作树。
+- [x] 2026-07-30 - 将 Photo Picker 的 1–5 张图片改为显式批次：始终逐张串行，设置页显示进度并在批次期间禁用第二次选择，完成时只发一次成功/失败汇总并导航到首个可复核项，避免逐图弹窗或导航风暴。
+- [x] 2026-07-30 - 磁贴不可用入口与无障碍服务详情页统一深链到 Bill 设置教程；启动“纯本地/不走网络”声明增加 safe drawing insets 与纵向滚动；简中/繁中 OCR 披露统一为“静态本地无网络边界已过，实际推理/签名/目标真机仍待验”。
 - [ ] 设备验收轮 - 执行真实中英/日英推理、ELF/原生库加载、目标真机耗时/峰值/空闲释放与签名发行验证；未完成前不允许发布该入口。
 - [ ] 用户明确进入真机验收时 - 在三台目标设备运行权限、磁贴、安全窗口、资源和支付宝/微信真实页面测试。
 
@@ -75,7 +78,7 @@
 - 范围：ML Kit 移除、PaddleOCR/ONNX/OpenCV 供应链与许可证、模型资产、截图/Photo Picker 生命周期、并发/资源上限、API 30/34 兼容、ABI 包体策略、用户声明和测试。
 - 已修复：OCR 从可排队互斥改为零排队单任务，避免跨磁贴/选图入口积压 Bitmap；检测和识别模型改为顺序加载，模型字节、输入 tensor 与输出概率在所有路径擦除；创建与释放在取消状态下仍安全完成；HardwareBuffer、Bitmap、Mat 和裁剪中间量具有单一所有者并在异常/取消时释放；选图、分享和 OCR 的临时字节在 prompt cancellation 前后均擦除。输入由 6 MP/2048×4096 收紧为 2.56 MP/1600×1600；TileService 的旧 API Lint 抑制移到精确方法；截图 API 30 类型只在版本门内构造；arm64-v8a 与 x86_64 使用分包，删除 32 位 ABI，避免一个 APK 携带四套原生库。
 - 静态结论：未发现截图/转录上传、运行时模型下载、常驻 OCR、节点/手势读取、自动过账或第三方传输组件。ONNX Runtime/OpenCV AAR Manifest 只有 `uses-sdk`，没有权限或组件；模型与 AAR SHA-256、上游修订和许可证已固定。
-- 静态结果：850-task 全量构建通过；arm64-v8a 未签名 Release 为 90,520,893 bytes，x86_64 为 128,342,582 bytes。两包 Manifest 一致且只请求应用自身签名级动态接收器权限，OCR 模型和目标 ABI 均在包内，`zipalign -P 16` 通过。
+- 静态结果：850-task 全量构建通过，已包含设置深链、90 秒截图租约/迟到回调隔离、handle 注册竞态、15 秒本地提交截止/提交后未知态、Photo Picker 单飞批次汇总、启动声明布局及对应回归；arm64-v8a 未签名 Release 为 90,540,713 bytes，x86_64 为 128,362,402 bytes。两包 Manifest 一致且只请求应用自身签名级动态接收器权限，OCR 模型和目标 ABI 均在包内，`zipalign -P 16` 通过。
 - 保留风险：instrumentation 尚未执行，未签名分包不是可分发发行物；`zipalign` 不证明每个 ELF LOAD 段兼容 16 KiB 页。三台设备的语言准确性、原生加载、耗时、峰值、空闲释放与电量仍待证明。因此审查没有把该入口升级为发布级支持。
 
 ## 实施步骤
@@ -84,8 +87,8 @@
 2. 已完成：在 application 新增 PHOTO_OCR capture service，复用现有租约暂存、私有 evidence store、RawEvent 和 parser registry；输入转录临时字节在所有路径擦除。
 3. 已完成代码与静态包接入：`ocr:paddle` 保存经 Apache-2.0 审查的 PaddleOCR Android 源码与静态模型；运行时显式关闭遥测，固定两条 CPU 线程、batch 1、零排队并在成功、失败和取消时释放会话、Bitmap 与临时字节。arm64-v8a/x86_64 目标 ABI 与未签名分包体积已构建测量，签名包和真机资源仍待验。
 4. 部分完成：构建任务固定模型 SHA-256 并检查中/英/日字典，instrumentation 已加入三语合成支付文本；真实推理尚未执行，不能只靠字典覆盖验收。
-5. 已完成但需复验：进程内单并发 command controller、`TileService` 和专用 AccessibilityService；断连、忙碌、API 不支持、系统拒绝、OCR/入库失败均更新磁贴/Toast 安全状态。
-6. 已完成：Photo Picker 最多返回 5 张，ViewModel 串行逐张调用同一零排队 OCR engine；每张仍受 16 MiB 文件、32 MP 来源和 2.56 MP OCR 输入上限，不取得整库权限。
+5. 已完成但需复验：进程内单并发 command controller、`TileService` 和专用 AccessibilityService；断连、忙碌、API 不支持、系统拒绝、OCR/入库失败均更新磁贴/Toast 安全状态。每个活动 command 先有 90 秒可取消阶段；本地提交自身有 15 秒协作式截止，提交/既成结果不可取消时最多增加一次 15 秒收尾宽限，随后以“结果未确认”释放并用 opaque request identity 丢弃迟到回调。设置相关入口深链到 Bill 教程。
+6. 已完成：Photo Picker 最多返回 5 张，ViewModel 以单飞批次串行逐张调用同一零排队 OCR engine；设置页显示处理进度，第二批在活动批次结束前被拒绝，结束时只汇总一次并打开首个可复核项。每张仍受 16 MiB 文件、32 MP 来源和 2.56 MP OCR 输入上限，不取得整库权限。
 7. 已完成静态构建、release APK 依赖/Manifest/组件审计和指定 `code-review`；待三台目标真机执行真实推理、资源、权限与失败矩阵，并把设备实测回写唯一事实来源。
 
 ## 具体命令
@@ -105,6 +108,8 @@ cmd.exe /d /s /c "git diff --check"
 
 - 静态调用路径审计确认：没有磁贴点击或 Photo Picker 选择时，不存在截图、OCR、前台服务、网络或主动页面读取入口；Release APK 也没有因 OCR 依赖引入遥测传输、Job、Alarm 或模型下载组件。尚未执行 24 小时 soak。
 - 每个点击最多对应一个 capture command、一个 OCR 转录 RawEvent 和一个来源建议；重复点击、进程重建和入库重试不会自动形成多笔正式账。
+- 单次截图 command 在 90 秒内没有平台/原生回调且尚未进入提交时安全取消并释放；若本地提交已开始或结果已形成，则由 15 秒 local-commit deadline 与一次 15 秒 controller 收尾宽限保证资源和单飞门有界。状态仍不明时显示“结果未确认”；任何更迟的回调都不能完成下一条 command。
+- Photo Picker 每批只处理前 5 张且最大并发为 1；批次只产生一次汇总事件，第二批不能与活动批次交错。
 - 服务配置证明 `canRetrieveWindowContent=false`、`canPerformGestures=false`；代码不访问 event text、node、package、window title 或执行 global action。
 - 图片像素、尺寸、转录字节、行数、行长、金额候选数和并发均有上限；每个失败路径释放 HardwareBuffer/Bitmap 并擦除临时字节。
 - 当前未签名 Release APK merged manifest 没有 `INTERNET`、媒体库读取、悬浮窗、前台服务或 MediaProjection 权限；OCR 模型无需首次网络下载，且依赖树/组件审计没有遥测传输或其后台调度入口。AAR 与 APK 静态检查已通过，实际断网运行、签名包和真机 instrumentation 仍待验。
@@ -119,4 +124,4 @@ command ID 贯穿 capture、暂存与 RawEvent receipt；同一进程只允许�
 
 ## 结果与复盘
 
-交互、来源链、有界多选、本地引擎替换、全量静态构建和未签名 Release 审计已实现；当前仍因实际三语推理、签名发行、ELF 页兼容和目标真机资源证据缺失而不具备发布资格。设备轮继续记录三台真机单次耗时/峰值/空闲释放、电量、失败矩阵和仍未达到 provider 支持的范围。
+交互、来源链、有界多选、本地引擎替换、全量静态构建和未签名 Release 审计已实现；设置深链、90 秒截图租约/迟到回调隔离、handle 注册竞态、15 秒本地提交截止/提交后未知态、Photo Picker 单飞批次与一次汇总，以及可滚动 safe-area 启动声明和统一中文披露均已纳入 2026-07-30 的完整构建。即使构建通过，实际三语推理、签名发行、ELF 页兼容和目标真机资源证据缺失仍使其不具备发布资格。设备轮继续记录三台真机单次耗时/峰值/空闲释放、电量、失败矩阵和仍未达到 provider 支持的范围。

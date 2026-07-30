@@ -10,6 +10,7 @@ import dev.bill.application.SelectedTextFileCapture
 import dev.bill.application.SelectedTextFileEvidence
 import dev.bill.application.SharedReceiptImageCapture
 import dev.bill.application.SharedReceiptImageEvidence
+import dev.bill.application.SourceCaptureError
 import dev.bill.application.SourceCaptureResult
 import dev.bill.application.EvidenceMaintenanceReport
 import dev.bill.application.SourceEvidenceManager
@@ -41,6 +42,7 @@ import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.model.TransactionType
 import dev.bill.core.model.TransactionId
+import dev.bill.app.quickcapture.SelectedPhotoOcrImporter
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.PayloadId
@@ -63,6 +65,7 @@ import dev.bill.source.review.SourceEvidenceStorageSummary
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -446,6 +449,89 @@ class BillViewModelTest {
         }
 
     @Test
+    fun `photo OCR processes at most five images serially and emits one batch result`() =
+        runTest(dispatcher) {
+            val importer = FakeSelectedPhotoOcrImporter(
+                listOf(
+                    readyPhotoResult("photo-proposal-1"),
+                    failedPhotoResult(SourceCaptureError.PARSE_REJECTED),
+                    readyPhotoResult("photo-proposal-3"),
+                    failedPhotoResult(SourceCaptureError.EMPTY_CONTENT),
+                    readyPhotoResult("photo-proposal-5"),
+                ),
+            )
+            val evidenceManager = FakeSourceEvidenceManager()
+            val viewModel = viewModel(
+                repository = FakeLedgerRepository(),
+                evidenceManager = evidenceManager,
+                selectedPhotoOcrImporter = importer,
+            )
+            advanceUntilIdle()
+            val initialPageCalls = evidenceManager.pageCalls
+
+            viewModel.ingestSelectedPhotos(
+                (1..6).map { index -> "content://test/photo-$index" },
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                (1..5).map { index -> "content://test/photo-$index" },
+                importer.uriStrings,
+            )
+            assertEquals(5, importer.commandIds.distinct().size)
+            assertEquals(1, importer.maxConcurrentCalls)
+            assertEquals(initialPageCalls + 1, evidenceManager.pageCalls)
+            assertNull(viewModel.uiState.value.photoOcrBatch)
+            assertEquals(
+                BillUiEvent.PhotoOcrBatchCompleted(
+                    firstProposalId = "photo-proposal-1",
+                    readyForReviewCount = 3,
+                    failedCount = 2,
+                    firstFailure = SourceCaptureError.PARSE_REJECTED,
+                ),
+                viewModel.events.first(),
+            )
+        }
+
+    @Test
+    fun `photo OCR exposes progress and ignores a second batch while the first is active`() =
+        runTest(dispatcher) {
+            val releaseFirst = CompletableDeferred<Unit>()
+            val importer = FakeSelectedPhotoOcrImporter(
+                results = listOf(readyPhotoResult("first-photo-proposal")),
+                releaseFirst = releaseFirst,
+            )
+            val viewModel = viewModel(
+                repository = FakeLedgerRepository(),
+                selectedPhotoOcrImporter = importer,
+            )
+            advanceUntilIdle()
+
+            viewModel.ingestSelectedPhotos(listOf("content://test/first-photo"))
+            assertEquals(
+                PhotoOcrBatchUiState(processedCount = 0, totalCount = 1),
+                viewModel.uiState.value.photoOcrBatch,
+            )
+            runCurrent()
+
+            viewModel.ingestSelectedPhotos(listOf("content://test/ignored-photo"))
+            releaseFirst.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://test/first-photo"), importer.uriStrings)
+            assertNull(viewModel.uiState.value.photoOcrBatch)
+            assertEquals(
+                BillUiEvent.PhotoOcrBatchCompleted(
+                    firstProposalId = "first-photo-proposal",
+                    readyForReviewCount = 1,
+                    failedCount = 0,
+                    firstFailure = null,
+                ),
+                viewModel.events.first(),
+            )
+        }
+
+    @Test
     fun `evidence manager runs maintenance loads metadata and applies retention`() =
         runTest(dispatcher) {
             val manager = FakeSourceEvidenceManager()
@@ -482,6 +568,8 @@ class BillViewModelTest {
         documentReader: SelectedTextDocumentReader = FakeSelectedTextDocumentReader(),
         receiptImageCapture: SharedReceiptImageCapture = FakeSharedReceiptImageCapture(),
         receiptImageReader: SharedReceiptImageDocumentReader = FakeSharedReceiptImageDocumentReader(),
+        selectedPhotoOcrImporter: SelectedPhotoOcrImporter =
+            SelectedPhotoOcrImporter.Unavailable,
         delimitedImport: DelimitedStatementImport = DelimitedStatementImport.Unavailable,
         delimitedReader: SelectedDelimitedStatementDocumentReader =
             SelectedDelimitedStatementDocumentReader.Unavailable,
@@ -496,6 +584,7 @@ class BillViewModelTest {
         selectedTextDocumentReader = documentReader,
         sharedReceiptImageIngestionService = receiptImageCapture,
         sharedReceiptImageDocumentReader = receiptImageReader,
+        selectedPhotoOcrImporter = selectedPhotoOcrImporter,
         delimitedStatementImport = delimitedImport,
         delimitedStatementDocumentReader = delimitedReader,
         statementImportDispatcher = dispatcher,
@@ -504,6 +593,17 @@ class BillViewModelTest {
 
 private fun BillUiEvent.successKind(): BillOperationKind =
     (this as BillUiEvent.OperationSucceeded).kind
+
+private fun readyPhotoResult(proposalId: String) = SourceCaptureResult.ReadyForReview(
+    proposalId = proposalId,
+    rawEventId = "event-$proposalId",
+    alreadyPresent = false,
+)
+
+private fun failedPhotoResult(error: SourceCaptureError) = SourceCaptureResult.Failure(
+    error = error,
+    diagnosticCode = null,
+)
 
 private class FakeLedgerRepository(
     private val observedState: Flow<LedgerState> = MutableStateFlow(emptyLedgerState()),
@@ -774,6 +874,37 @@ private class FakeSharedReceiptImageCapture(
         this.commandId = commandId
         mediaType = evidence.mediaType
         return result
+    }
+}
+
+private class FakeSelectedPhotoOcrImporter(
+    private val results: List<SourceCaptureResult>,
+    private val releaseFirst: CompletableDeferred<Unit>? = null,
+) : SelectedPhotoOcrImporter {
+    val commandIds = mutableListOf<String>()
+    val uriStrings = mutableListOf<String?>()
+    var maxConcurrentCalls = 0
+        private set
+
+    private var activeCalls = 0
+
+    override suspend fun ingest(
+        commandId: String,
+        uriString: String?,
+    ): SourceCaptureResult {
+        val index = uriStrings.size
+        commandIds += commandId
+        uriStrings += uriString
+        activeCalls += 1
+        maxConcurrentCalls = maxOf(maxConcurrentCalls, activeCalls)
+        return try {
+            if (index == 0) releaseFirst?.await()
+            results.getOrElse(index) {
+                failedPhotoResult(SourceCaptureError.COMMIT_FAILED)
+            }
+        } finally {
+            activeCalls -= 1
+        }
     }
 }
 

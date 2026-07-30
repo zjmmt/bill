@@ -10,17 +10,16 @@ import android.hardware.HardwareBuffer
 import android.os.Build
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
+import dev.bill.application.PhotoOcrCommitLease
 import dev.bill.application.PhotoOcrTranscriptEvidence
 import dev.bill.application.SourceCaptureError
 import dev.bill.application.SourceCaptureResult
 import dev.bill.app.BillApplication
 import dev.bill.source.genericphotoocr.OcrTranscript
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -30,8 +29,6 @@ import kotlinx.coroutines.launch
  * A screenshot exists only after the process-local Quick Settings command gate calls [capture].
  */
 class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreenshotGateway {
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
     override fun onServiceConnected() {
         BillQuickCaptureRuntime.controller.attach(this)
     }
@@ -39,19 +36,24 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
     override fun capture(
         commandId: String,
         completion: (QuickCaptureOutcome) -> Unit,
-    ) {
+    ): QuickCaptureCancellation {
+        val cancellation = QuickCaptureCancellationSignal()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
-            completion(
-                QuickCaptureOutcome.Failed(QuickCaptureFailure.UNSUPPORTED_DEVICE),
+            completeQuickCaptureIfActive(
+                cancellation = cancellation,
+                completion = completion,
+                outcome = QuickCaptureOutcome.Failed(QuickCaptureFailure.UNSUPPORTED_DEVICE),
             )
-            return
+            return cancellation
         }
-        captureOnAndroidR(commandId, completion)
+        captureOnAndroidR(commandId, cancellation, completion)
+        return cancellation
     }
 
     @androidx.annotation.RequiresApi(Build.VERSION_CODES.R)
     private fun captureOnAndroidR(
         commandId: String,
+        cancellation: QuickCaptureCancellationSignal,
         completion: (QuickCaptureOutcome) -> Unit,
     ) {
         try {
@@ -62,51 +64,93 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
                     override fun onSuccess(screenshot: ScreenshotResult) {
                         val hardwareBuffer = screenshot.hardwareBuffer
                         val colorSpace = screenshot.colorSpace
-                        val pendingOwnership = AtomicBoolean(true)
-                        val processing = serviceScope.launch {
-                            if (!pendingOwnership.compareAndSet(true, false)) return@launch
-                            val outcome = try {
-                                try {
-                                    screenshotProcessor().process(
+                        val bufferClosed = AtomicBoolean(false)
+                        val closeBuffer = {
+                            if (bufferClosed.compareAndSet(false, true)) {
+                                hardwareBuffer.close()
+                            }
+                        }
+                        if (!cancellation.isActive()) {
+                            closeBuffer()
+                            return
+                        }
+                        val processor = try {
+                            screenshotProcessor()
+                        } catch (_: RuntimeException) {
+                            closeBuffer()
+                            completeQuickCaptureIfActive(
+                                cancellation = cancellation,
+                                completion = completion,
+                                outcome = QuickCaptureOutcome.Failed(
+                                    QuickCaptureFailure.EVIDENCE_REJECTED,
+                                ),
+                            )
+                            return
+                        }
+                        val processing = BillQuickCaptureRuntime.processingScope.launch {
+                            try {
+                                cancellation.throwIfCancelled()
+                                val outcome = try {
+                                    processor.process(
                                         commandId,
                                         hardwareBuffer,
                                         colorSpace,
+                                        cancellation,
+                                        closeBuffer,
                                     )
-                                } catch (cancellation: CancellationException) {
-                                    throw cancellation
+                                } catch (cancellationException: CancellationException) {
+                                    throw cancellationException
                                 } catch (_: RuntimeException) {
                                     QuickCaptureOutcome.Failed(QuickCaptureFailure.OCR_FAILED)
                                 }
+                                completeQuickCaptureIfActive(cancellation, completion, outcome)
+                            } catch (_: CancellationException) {
+                                // A timed-out or detached request owns no UI callback or evidence.
                             } finally {
-                                hardwareBuffer.close()
+                                closeBuffer()
                             }
-                            completion(outcome)
                         }
+                        cancellation.attach(processing)
                         processing.invokeOnCompletion {
-                            if (pendingOwnership.compareAndSet(true, false)) {
-                                hardwareBuffer.close()
-                            }
+                            cancellation.detach(processing)
+                            closeBuffer()
                         }
                     }
 
                     override fun onFailure(errorCode: Int) {
-                        completion(
-                            QuickCaptureOutcome.Failed(mapScreenshotFailure(errorCode)),
+                        completeQuickCaptureIfActive(
+                            cancellation = cancellation,
+                            completion = completion,
+                            outcome = QuickCaptureOutcome.Failed(
+                                mapScreenshotFailure(errorCode),
+                            ),
                         )
                     }
                 },
             )
         } catch (_: SecurityException) {
-            completion(
-                QuickCaptureOutcome.Failed(QuickCaptureFailure.PERMISSION_REVOKED),
+            completeQuickCaptureIfActive(
+                cancellation = cancellation,
+                completion = completion,
+                outcome = QuickCaptureOutcome.Failed(
+                    QuickCaptureFailure.PERMISSION_REVOKED,
+                ),
             )
         } catch (_: IllegalStateException) {
-            completion(
-                QuickCaptureOutcome.Failed(QuickCaptureFailure.SERVICE_DISCONNECTED),
+            completeQuickCaptureIfActive(
+                cancellation = cancellation,
+                completion = completion,
+                outcome = QuickCaptureOutcome.Failed(
+                    QuickCaptureFailure.SERVICE_DISCONNECTED,
+                ),
             )
         } catch (_: RuntimeException) {
-            completion(
-                QuickCaptureOutcome.Failed(QuickCaptureFailure.SCREENSHOT_FAILED),
+            completeQuickCaptureIfActive(
+                cancellation = cancellation,
+                completion = completion,
+                outcome = QuickCaptureOutcome.Failed(
+                    QuickCaptureFailure.SCREENSHOT_FAILED,
+                ),
             )
         }
     }
@@ -142,8 +186,85 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
 
     override fun onDestroy() {
         BillQuickCaptureRuntime.controller.detach(this)
-        serviceScope.cancel()
         super.onDestroy()
+    }
+}
+
+private fun completeQuickCaptureIfActive(
+    cancellation: QuickCaptureCancellationSignal,
+    completion: (QuickCaptureOutcome) -> Unit,
+    outcome: QuickCaptureOutcome,
+) {
+    if (cancellation.complete()) completion(outcome)
+}
+
+internal class QuickCaptureCancellationSignal : QuickCaptureCancellation {
+    private val state = AtomicReference(State.ACTIVE)
+    private val processingJob = AtomicReference<Job?>(null)
+
+    override fun cancel(): Boolean {
+        while (true) {
+            when (state.get()) {
+                State.COMMITTING,
+                State.COMPLETED,
+                -> return false
+
+                State.CANCELLED -> return true
+                State.ACTIVE -> {
+                    if (state.compareAndSet(State.ACTIVE, State.CANCELLED)) {
+                        processingJob.getAndSet(null)?.cancel()
+                        return true
+                    }
+                }
+            }
+        }
+    }
+
+    fun isActive(): Boolean = state.get() == State.ACTIVE
+
+    fun tryBeginLocalCommit(): Boolean =
+        state.compareAndSet(State.ACTIVE, State.COMMITTING)
+
+    fun throwIfCancelled() {
+        if (!isActive()) throw CancellationException("Quick capture lease is no longer active")
+    }
+
+    fun attach(job: Job) {
+        if (!processingJob.compareAndSet(null, job)) {
+            job.cancel()
+            return
+        }
+        if (state.get() == State.CANCELLED && processingJob.compareAndSet(job, null)) {
+            job.cancel()
+        }
+    }
+
+    fun detach(job: Job) {
+        processingJob.compareAndSet(job, null)
+    }
+
+    fun complete(): Boolean {
+        while (true) {
+            when (val current = state.get()) {
+                State.CANCELLED,
+                State.COMPLETED,
+                -> return false
+
+                State.ACTIVE,
+                State.COMMITTING,
+                -> if (state.compareAndSet(current, State.COMPLETED)) {
+                    processingJob.set(null)
+                    return true
+                }
+            }
+        }
+    }
+
+    private enum class State {
+        ACTIVE,
+        COMMITTING,
+        CANCELLED,
+        COMPLETED,
     }
 }
 
@@ -157,15 +278,20 @@ private class OnDeviceScreenshotOcrProcessor(
         commandId: String,
         hardwareBuffer: HardwareBuffer,
         colorSpace: ColorSpace,
+        cancellation: QuickCaptureCancellationSignal,
+        releasePixels: () -> Unit,
     ): QuickCaptureOutcome {
         var hardwareBitmap: Bitmap? = null
         var ocrBitmap: Bitmap? = null
+        val transcriptBytes: ByteArray
         try {
+            cancellation.throwIfCancelled()
             hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
                 ?: return failed(QuickCaptureFailure.SCREENSHOT_FAILED)
             ocrBitmap = boundedSoftwareCopy(hardwareBitmap)
                 ?: return failed(QuickCaptureFailure.IMAGE_TOO_LARGE)
 
+            cancellation.throwIfCancelled()
             val lines = when (
                 val recognized = BundledLocalOcrEngine.recognize(applicationContext, ocrBitmap)
             ) {
@@ -173,33 +299,20 @@ private class OnDeviceScreenshotOcrProcessor(
                 LocalOcrResult.Empty -> return failed(QuickCaptureFailure.EMPTY_OCR)
                 LocalOcrResult.Failed -> return failed(QuickCaptureFailure.OCR_FAILED)
             }
-            val transcriptBytes = OcrTranscript.encode(lines)
+            cancellation.throwIfCancelled()
+            transcriptBytes = OcrTranscript.encode(lines)
                 ?: return failed(QuickCaptureFailure.OCR_OUTPUT_TOO_LARGE)
-            return when (
-                val result = capture.ingest(
-                    commandId = commandId,
-                    evidence = PhotoOcrTranscriptEvidence(transcriptBytes),
-                )
-            ) {
-                is SourceCaptureResult.ReadyForReview ->
-                    QuickCaptureOutcome.Saved(result.alreadyPresent)
-
-                is SourceCaptureResult.Failure -> failed(
-                    when (result.error) {
-                        SourceCaptureError.STORAGE_LIMIT_REACHED ->
-                            QuickCaptureFailure.STORAGE_LIMIT_REACHED
-
-                        SourceCaptureError.EMPTY_CONTENT ->
-                            QuickCaptureFailure.EMPTY_OCR
-
-                        else -> QuickCaptureFailure.EVIDENCE_REJECTED
-                    },
-                )
-            }
         } finally {
             ocrBitmap?.recycle()
             hardwareBitmap?.recycle()
+            releasePixels()
         }
+        return ingestQuickCaptureTranscript(
+            commandId = commandId,
+            transcriptBytes = transcriptBytes,
+            cancellation = cancellation,
+            capture = capture,
+        )
     }
 
     private fun boundedSoftwareCopy(source: Bitmap): Bitmap? {
@@ -239,4 +352,40 @@ private class OnDeviceScreenshotOcrProcessor(
         const val MAX_OCR_WIDTH = 1_600
         const val MAX_OCR_HEIGHT = 1_600
     }
+}
+
+internal suspend fun ingestQuickCaptureTranscript(
+    commandId: String,
+    transcriptBytes: ByteArray,
+    cancellation: QuickCaptureCancellationSignal,
+    capture: dev.bill.application.PhotoOcrTranscriptCapture,
+): QuickCaptureOutcome = try {
+    cancellation.throwIfCancelled()
+    when (
+        val result = capture.ingestWithCommitLease(
+            commandId = commandId,
+            evidence = PhotoOcrTranscriptEvidence(transcriptBytes),
+            commitLease = PhotoOcrCommitLease(cancellation::tryBeginLocalCommit),
+        )
+    ) {
+        is SourceCaptureResult.ReadyForReview ->
+            QuickCaptureOutcome.Saved(result.alreadyPresent)
+
+        is SourceCaptureResult.Failure -> QuickCaptureOutcome.Failed(
+            when (result.error) {
+                SourceCaptureError.STORAGE_LIMIT_REACHED ->
+                    QuickCaptureFailure.STORAGE_LIMIT_REACHED
+
+                SourceCaptureError.EMPTY_CONTENT ->
+                    QuickCaptureFailure.EMPTY_OCR
+
+                SourceCaptureError.COMMIT_STATUS_UNKNOWN ->
+                    QuickCaptureFailure.RESULT_UNCONFIRMED
+
+                else -> QuickCaptureFailure.EVIDENCE_REJECTED
+            },
+        )
+    }
+} finally {
+    transcriptBytes.fill(0)
 }

@@ -32,6 +32,7 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.zip.CRC32
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -382,6 +383,129 @@ class SharedTextIngestionServiceTest {
         assertTrue(fixture.rawEvents.events.isEmpty())
     }
 
+    @Test
+    fun `expired OCR lease is rejected and wiped before evidence staging`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encode(listOf("￥12.34"))!!
+        val admission = FixedEvidenceAdmission(
+            EvidenceAdmissionResult.Allowed(alreadyTracked = false),
+        )
+
+        val result = fixture.photoOcrService(evidenceAdmission = admission).ingestWithCommitLease(
+            commandId = "expired-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+            commitLease = PhotoOcrCommitLease { false },
+        )
+
+        assertEquals(
+            SourceCaptureError.COMMIT_FAILED,
+            (result as SourceCaptureResult.Failure).error,
+        )
+        assertTrue(bytes.all { it == 0.toByte() })
+        assertTrue(fixture.evidenceStore.payloads.isEmpty())
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.commitStore.persisted.isEmpty())
+        assertEquals(0, admission.admitCalls)
+    }
+
+    @Test
+    fun `OCR commit lease is claimed before admission and evidence staging`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encode(listOf("￥12.34"))!!
+        val admission = FixedEvidenceAdmission(
+            EvidenceAdmissionResult.Allowed(alreadyTracked = false),
+        )
+        var claims = 0
+        var evidenceWasPresentAtClaim = true
+        var rawEventWasPresentAtClaim = true
+
+        val result = fixture.photoOcrService(evidenceAdmission = admission).ingestWithCommitLease(
+            commandId = "claimed-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+            commitLease = PhotoOcrCommitLease {
+                claims += 1
+                evidenceWasPresentAtClaim = fixture.evidenceStore.payloads.isNotEmpty()
+                rawEventWasPresentAtClaim = fixture.rawEvents.events.isNotEmpty()
+                true
+            },
+        )
+
+        assertTrue(result is SourceCaptureResult.ReadyForReview)
+        assertEquals(1, claims)
+        assertEquals(1, admission.admitCalls)
+        assertFalse(evidenceWasPresentAtClaim)
+        assertFalse(rawEventWasPresentAtClaim)
+        assertTrue(bytes.all { it == 0.toByte() })
+        assertEquals(1, fixture.evidenceStore.payloads.size)
+        assertEquals(1, fixture.rawEvents.events.size)
+        assertEquals(1, fixture.commitStore.persisted.size)
+    }
+
+    @Test
+    fun `hung OCR local commit returns unknown and wipes transcript bytes`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encode(listOf("￥12.34"))!!
+        val hangingStore = object : EvidenceStagingStore {
+            override suspend fun stage(
+                payloadId: PayloadId,
+                mediaType: String,
+                bytes: ByteArray,
+                maxBytes: Long,
+            ): EvidenceStageResult = awaitCancellation()
+        }
+
+        val result = fixture.photoOcrService(
+            evidenceStoreOverride = hangingStore,
+            localCommitTimeoutMillis = 25L,
+        ).ingestWithCommitLease(
+            commandId = "hung-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+            commitLease = PhotoOcrCommitLease { true },
+        )
+
+        assertEquals(
+            SourceCaptureError.COMMIT_STATUS_UNKNOWN,
+            (result as SourceCaptureResult.Failure).error,
+        )
+        assertTrue(bytes.all { it == 0.toByte() })
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.commitStore.persisted.isEmpty())
+    }
+
+    @Test
+    fun `local commit exception after staging is reported as unknown and wiped`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encode(listOf("￥12.34"))!!
+        val sideEffectingStore = object : EvidenceStagingStore {
+            override suspend fun stage(
+                payloadId: PayloadId,
+                mediaType: String,
+                bytes: ByteArray,
+                maxBytes: Long,
+            ): EvidenceStageResult {
+                fixture.evidenceStore.stage(payloadId, mediaType, bytes, maxBytes)
+                throw IllegalStateException("simulated failure after staging")
+            }
+        }
+
+        val result = fixture.photoOcrService(
+            evidenceStoreOverride = sideEffectingStore,
+        ).ingestWithCommitLease(
+            commandId = "partial-stage-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+            commitLease = PhotoOcrCommitLease { true },
+        )
+
+        assertEquals(
+            SourceCaptureError.COMMIT_STATUS_UNKNOWN,
+            (result as SourceCaptureResult.Failure).error,
+        )
+        assertTrue(bytes.all { it == 0.toByte() })
+        assertEquals(1, fixture.evidenceStore.payloads.size)
+        assertTrue(fixture.rawEvents.events.isEmpty())
+        assertTrue(fixture.commitStore.persisted.isEmpty())
+    }
+
     private class Fixture {
         val rawEvents = InMemoryRawEventRepository()
         val evidenceStore = InMemoryEvidenceStore()
@@ -455,11 +579,13 @@ class SharedTextIngestionServiceTest {
         fun photoOcrService(
             instant: String = "2026-07-19T12:00:00Z",
             evidenceAdmission: EvidenceStorageAdmission = EvidenceStorageAdmission.AllowAll,
+            evidenceStoreOverride: EvidenceStagingStore = evidenceStore,
+            localCommitTimeoutMillis: Long = 15_000L,
         ): PhotoOcrTranscriptIngestionService {
             val clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC)
             return PhotoOcrTranscriptIngestionService(
                 rawEventRepository = rawEvents,
-                evidenceStore = evidenceStore,
+                evidenceStore = evidenceStoreOverride,
                 sourceIngestionService = SourceIngestionService(
                     rawEventRepository = rawEvents,
                     evidenceReader = evidenceStore,
@@ -470,6 +596,7 @@ class SharedTextIngestionServiceTest {
                 ),
                 evidenceAdmission = evidenceAdmission,
                 clock = clock,
+                localCommitTimeoutMillis = localCommitTimeoutMillis,
             )
         }
     }
@@ -518,13 +645,18 @@ private class FixedEvidenceAdmission(
     )
 
     val discards = mutableListOf<Discard>()
+    var admitCalls = 0
+        private set
 
     override suspend fun admit(
         rawEventId: RawEventId,
         payloadId: PayloadId,
         contentHash: EvidenceHash,
         payloadSizeBytes: Long,
-    ): EvidenceAdmissionResult = result
+    ): EvidenceAdmissionResult {
+        admitCalls += 1
+        return result
+    }
 
     override suspend fun discardUncommitted(
         payloadId: PayloadId,

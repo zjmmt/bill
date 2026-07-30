@@ -33,7 +33,7 @@
 - 现有入口 `SelectedTextFileIngestionService` 只把整份小文本作为一条不透明 `GENERIC/STATEMENT_IMPORT` 证据，不能逐行导入；不要把它改造成隐式批量解析。
 - 来源管线是 `Capture -> RawEvent -> ParseAttempt -> SourceDraftProposal -> user-completed Draft`。当前一条 `RawEvent` 对应一份可清除载荷；多行导入必须定义行级载荷、批次级幂等和中断恢复，不能复用一个 payload ID 伪造多条独立证据。
 - 相关模块：`source:contract`、`source:pipeline`、`source:review-contract`、新增的纯 Kotlin delimited-statement 模块、`application`、`data:local`、`feature:review` 和 `app`。
-- 当前来源复核 UI 已显示候选金额/对手方，但尚未将候选方向/时间完整预填；该缺口要在导入前一起补齐。
+- 实施前的来源复核 UI 只显示候选金额/对手方，尚未完整预填方向/时间；该缺口已随本计划的逐行来源建议一并补齐。
 
 ## 进度
 
@@ -49,7 +49,7 @@
 ## 意外发现
 
 - 当前 `SourceEvidencePayloadEntity` 以 `rawEventId` 为主键且 `payloadId` 唯一，因此原始文件不能未经迁移就直接供多条 RawEvent 共用；简单循环调用现有服务会造成证据生命周期错误或无意义的整份文件复制。
-- 当前来源复核 UI 只预填金额和对手方。若不先透传 `moneyDirection` 与 `occurredAt`，即使导入器正确解析，也仍会让用户逐条重填关键事实。
+- 实施前发现来源复核 UI 只预填金额和对手方；本计划因此先透传 `moneyDirection` 与 `occurredAt`，避免导入器正确解析后仍要求用户逐条重填关键事实。
 - 初版 Room 行写入在每一行前执行三项全局完整性扫描，并重新统计整个批次；5000 行会接近 O(n²)。现改为行插入与计数/终态的同事务 O(1) 增量更新，全局扫描仅在打开、恢复读取和最终刷新执行。
 
 ## 决策日志

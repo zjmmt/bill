@@ -2,7 +2,7 @@
 
 - 状态：已确认
 - 所有者：项目维护者
-- 最后核验：2026-07-26
+- 最后核验：2026-07-30
 - 事实来源：本仓库文档体系
 
 本目录是项目的记录系统。根目录 [AGENTS.md](../AGENTS.md) 只负责把贡献者带到这里；产品与工程事实应在下列唯一事实来源中维护。
@@ -25,7 +25,7 @@
 | 账户、负债、投资怎样表示 | [账户/负债/投资规格](product-specs/accounts-liabilities-investments.md) | [领域模型](design-docs/domain-model.md) |
 | 哪些权限和数据处理允许 | [SECURITY.md](SECURITY.md) | [来源覆盖矩阵](product-specs/source-coverage.md) |
 | 失败后如何恢复、怎样测试 | [RELIABILITY.md](RELIABILITY.md) | [QUALITY_SCORE.md](QUALITY_SCORE.md) |
-| 接下来做什么 | [活跃执行计划](exec-plans/active/0002-local-three-track-capture.md) | [PLANS.md](PLANS.md) |
+| 接下来做什么 | [执行计划索引](exec-plans/index.md) | [PLANS.md](PLANS.md) |
 | 为什么做出某项长期决定 | [决策索引](decisions/index.md) | 对应 ADR |
 
 ## 文档分区

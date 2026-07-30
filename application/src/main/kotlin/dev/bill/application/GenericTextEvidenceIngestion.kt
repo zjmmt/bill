@@ -21,8 +21,12 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 internal data class UserEvidenceCaptureDescriptor(
     val idPrefix: String,
@@ -53,15 +57,27 @@ internal class UserEvidenceIngestion(
         commandId: String,
         mediaType: String,
         bytes: ByteArray,
+        tryBeginLocalCommit: (() -> Boolean)? = null,
+        localCommitTimeoutMillis: Long? = null,
     ): SourceCaptureResult = ingestMutex.withLock {
-        ingestLocked(commandId, mediaType, bytes)
+        ingestLocked(
+            commandId,
+            mediaType,
+            bytes,
+            tryBeginLocalCommit,
+            localCommitTimeoutMillis,
+        )
     }
 
     private suspend fun ingestLocked(
         commandId: String,
         mediaType: String,
         bytes: ByteArray,
+        tryBeginLocalCommit: (() -> Boolean)?,
+        localCommitTimeoutMillis: Long?,
     ): SourceCaptureResult {
+        require((tryBeginLocalCommit == null) == (localCommitTimeoutMillis == null))
+        require(localCommitTimeoutMillis == null || localCommitTimeoutMillis > 0L)
         if (bytes.isEmpty()) return failure(SharedTextCaptureError.EMPTY_CONTENT)
         if (bytes.size.toLong() > descriptor.maxEvidenceBytes) {
             return failure(SharedTextCaptureError.CONTENT_TOO_LARGE)
@@ -119,6 +135,79 @@ internal class UserEvidenceIngestion(
             )
         }
 
+        val rawEvent = existing ?: RawEvent(
+            id = rawEventId,
+            sourceFamily = SourceFamily.GENERIC,
+            connectorId = descriptor.connectorId,
+            captureMethod = descriptor.captureMethod,
+            captureScope = LOCAL_CAPTURE_SCOPE,
+            contentHash = contentHash,
+            capturedAt = clock.instant(),
+            payloadId = payloadId,
+            payloadSizeBytes = bytes.size.toLong(),
+        )
+
+        if (tryBeginLocalCommit != null) {
+            val commitClaimed = try {
+                tryBeginLocalCommit()
+            } catch (_: RuntimeException) {
+                false
+            }
+            if (!commitClaimed) {
+                return failure(SharedTextCaptureError.COMMIT_FAILED)
+            }
+            /*
+             * This lease hand-off is the linearization point. Cancellation either wins before any
+             * lifecycle admission/capacity mutation or payload write, or the size-bounded local
+             * admission/stage/parse/Room path finishes and reports its result. There is no network
+             * work inside this boundary.
+             */
+            return try {
+                withContext(NonCancellable) {
+                    withTimeout(requireNotNull(localCommitTimeoutMillis)) {
+                        admitStageAndIngest(
+                            rawEventId = rawEventId,
+                            rawEvent = rawEvent,
+                            payloadId = payloadId,
+                            contentHash = contentHash,
+                            mediaType = mediaType,
+                            bytes = bytes,
+                        )
+                    }
+                }
+            } catch (_: TimeoutCancellationException) {
+                failure(SharedTextCaptureError.COMMIT_STATUS_UNKNOWN)
+            } catch (_: CancellationException) {
+                failure(SharedTextCaptureError.COMMIT_STATUS_UNKNOWN)
+            } catch (_: RuntimeException) {
+                /*
+                 * The lease has already crossed its irreversible boundary. Admission, staging, or
+                 * the Room transaction may have produced a recoverable side effect before an
+                 * unexpected local failure, so reporting an ordinary parse/OCR failure would make
+                 * a retry unsafe. Recovery and idempotency resolve the durable state.
+                 */
+                failure(SharedTextCaptureError.COMMIT_STATUS_UNKNOWN)
+            }
+        }
+
+        return admitStageAndIngest(
+            rawEventId = rawEventId,
+            rawEvent = rawEvent,
+            payloadId = payloadId,
+            contentHash = contentHash,
+            mediaType = mediaType,
+            bytes = bytes,
+        )
+    }
+
+    private suspend fun admitStageAndIngest(
+        rawEventId: RawEventId,
+        rawEvent: RawEvent,
+        payloadId: PayloadId,
+        contentHash: EvidenceHash,
+        mediaType: String,
+        bytes: ByteArray,
+    ): SourceCaptureResult {
         val admission = evidenceAdmission.admit(
             rawEventId = rawEventId,
             payloadId = payloadId,
@@ -173,17 +262,6 @@ internal class UserEvidenceIngestion(
             }
         }
 
-        val rawEvent = existing ?: RawEvent(
-            id = rawEventId,
-            sourceFamily = SourceFamily.GENERIC,
-            connectorId = descriptor.connectorId,
-            captureMethod = descriptor.captureMethod,
-            captureScope = LOCAL_CAPTURE_SCOPE,
-            contentHash = contentHash,
-            capturedAt = clock.instant(),
-            payloadId = payloadId,
-            payloadSizeBytes = bytes.size.toLong(),
-        )
         val ingestionResult = sourceIngestionService.ingest(rawEvent)
         if (ingestionResult is IngestionResult.Failed) {
             discardBestEffort(payloadId, stagingReservation)

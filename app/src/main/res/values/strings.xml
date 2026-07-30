@@ -41,7 +41,7 @@
     <string name="capture_tutorial_accessibility_title">02 / Read-only payment-result pages</string>
     <string name="capture_tutorial_accessibility_body">Not available yet: the separate observer has no active target app and no screen-text access. A verified source rule, energy test, and a separate opt-in are required before it can observe a result page. When available, Android Settings &gt; Accessibility is the only place to enable it. It never clicks, scrolls, or screenshots.</string>
     <string name="capture_tutorial_screenshot_title">03 / Quick tile screenshot + local OCR</string>
-    <string name="capture_tutorial_screenshot_body">Experimental on Android 11+: enable the dedicated accessibility service below, then add “Capture receipt” to Quick Settings. Each tap captures the current screen once and runs the bundled model locally; the picker can process up to five images one by one without whole-library permission. It reads no nodes, performs no clicks, and never watches in the background. Final APK and target-device validation is still in progress, so this is not a supported payment source. Android blocks secure windows; normal PNG sharing remains the fallback.</string>
+    <string name="capture_tutorial_screenshot_body">Experimental on Android 11+: enable the dedicated accessibility service below, then add “Capture receipt” to Quick Settings. Each tap captures the current screen once and runs the bundled model locally; the picker can process up to five images one by one without whole-library permission. It reads no nodes, performs no clicks, and never watches in the background. Final APK and target-device validation is still in progress, so this is not a supported payment source. Android blocks secure windows; if the system permits a manual screenshot, share that PNG, otherwise enter the record manually.</string>
     <string name="quick_capture_accessibility_status_ready">Current status: the one-shot screenshot service is connected.</string>
     <string name="quick_capture_accessibility_status_off">Current status: the one-shot screenshot service is not connected. Other entry methods still work.</string>
     <string name="quick_capture_open_accessibility">Open Accessibility settings</string>
@@ -64,6 +64,10 @@
     <string name="quick_capture_too_large">The screen or OCR output exceeded the local safety limit and was not saved.</string>
     <string name="quick_capture_storage_full">Local evidence storage is full. Review or clear existing evidence first.</string>
     <string name="quick_capture_failed">Screenshot or on-device OCR failed. Nothing was posted.</string>
+    <string name="quick_capture_timed_out">The one-shot capture timed out and unfinished local work was cancelled. Check the review list before retrying.</string>
+    <string name="quick_capture_result_unconfirmed">The result could not be confirmed in time; it may be saved or may not have been written. Check the review list before retrying.</string>
+    <string name="photo_ocr_batch_completed">Photo OCR finished: %1$d ready for review, %2$d failed.</string>
+    <string name="photo_ocr_batch_progress">Processed %1$d of %2$d…</string>
     <string name="quick_capture_tile_add_manually">Open Quick Settings twice, tap Edit, then drag “Capture receipt” into the active area.</string>
     <string name="quick_capture_tile_request_finished">Android handled the add request. If the tile is absent, add it manually from Quick Settings Edit.</string>
     <string name="payment_result_observer_description">Bill’s read-only payment-result observer. It has no active source template until you separately enable a verified source in Bill.</string>

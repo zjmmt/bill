@@ -57,7 +57,8 @@
 2026-07-30 的可重复结果：
 
 - 完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest --console=plain` 成功（850 个 actionable tasks：8 executed、842 up-to-date）。全部 JVM 测试、Lint、Debug、两个 ABI 的未签名 Release 分包，以及 Room/OCR AndroidTest APK 均完成构建；AndroidTest APK 没有连接设备执行。
-- 当前工作树的 `app-arm64-v8a-release-unsigned.apk` 为 90,520,893 bytes，SHA-256 为 `a4f6664a7ff64a38c85fa465de58b0aa3c8b278895f12efd19ba27210e007f69`；`app-x86_64-release-unsigned.apk` 为 128,342,582 bytes，SHA-256 为 `10a669917f1c9d02883750bb2f9c39cb4b60ef668326c606b6110f35b667a114`。两包 Manifest 一致，只请求应用自身签名级动态接收器权限；没有网络、短信、媒体库或广泛存储权限，且均通过 `zipalign -c -P 16 -v 4`。该检查证明 APK ZIP 内原生库对齐，不替代 ELF LOAD 段页兼容或真机加载验证。
+- 该 850-task 结果已包含本轮设置深链、90 秒截图租约/迟到回调隔离、handle 注册竞态、15 秒本地提交截止/提交后未知态、Photo Picker 单飞批次汇总和启动声明布局加固，以及相关 JVM/路由/挂起端口/部分暂存后异常回归。
+- 当前工作树的 `app-arm64-v8a-release-unsigned.apk` 为 90,540,713 bytes，SHA-256 为 `db3837758a3c700dfeb74b6f87a2d26f139e0adb2a105080b25e83dec123a9c5`；`app-x86_64-release-unsigned.apk` 为 128,362,402 bytes，SHA-256 为 `6d0488131fe1dd55b9348870584afc6f89f872a553297d5749414d04d4607583`。两包 Manifest 一致，只请求应用自身签名级动态接收器权限；没有网络、短信、媒体库或广泛存储权限，且均通过 `zipalign -c -P 16 4`。该检查证明 APK ZIP 内原生库对齐，不替代 ELF LOAD 段页兼容或真机加载验证。
 - `code-review` 未发现 P0/P1；资源生命周期、币种边界、对账事务和依赖方向复核通过。发现的导入 O(n²) P2 已修复并复审关闭；对账 ViewModel 确认路由增加单元回归。仍开放的 P2 发布门是实际中英日 OCR、Room v6→v7/导入/对账 instrumentation、峰值内存/耗时/电量和三台目标设备。
 
 质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力，不证明 provider 覆盖。大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
@@ -111,7 +112,7 @@
 - 单条通知只在系统回调后工作；未命中元数据时正文读取数、落盘数和解析数必须均为 0。禁止历史扫描、周期 Job/Alarm、前台服务、partial wakelock 与自动 OCR。命中候选最多进入容量 16 的内存队列，满队列必须丢弃而不是无界排队。
 - 命中通知的信封上限为 8 KiB，通知入口由单个 IO consumer 串行提交；每条未来真实模板都要验证更新/重启不重复建待复核项，并记录队列丢弃/失败健康状态。当前空目录不产生任何正文证据。
 - 结果页读取若以后实现，每个候选窗口必须有去抖、有限节点数/文本量和最大树读取次数；目标 App 不在前台时节点读取数必须为 0。
-- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发，一次处理一帧或最多 5 张串行图片；运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量；峰值内存、耗时、电量、ELF 页兼容与三语真机回归未通过前保持发布禁止。
+- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发：截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入前以 CAS 线性化取消与本地提交，取消胜出时 Job 停止且不进入有副作用的准入路径。cancellation handle 注册期间的超时会先登记待取消；handle 返回后取消成功才报告超时，否则进入收尾未知态。提交胜出时先释放像素，再在独立 15 秒协作式截止内运行有界、无网络的 admit/stage/parse/Room 路径；挂起端口、内部取消或非致命异常都会返回“结果未确认”，由幂等与 staging recovery 处理可能的中间态。该截止依赖协程取消，不宣称能强杀不响应取消的底层阻塞 I/O；输入上限、像素预释放和暂存恢复共同限制其影响。断连、替换 service 或 90 秒到期若发现提交/既成结果不可取消，只启动一次 15 秒收尾宽限；仍无回调则显示“结果未确认”、释放单飞门并用 opaque request identity 隔离迟到回调。Photo Picker 每批只处理前 1–5 张，最大并发为 1，活动批次拒绝第二批，并只发布一次汇总。运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量；峰值内存、耗时、电量、ELF 页兼容与三语真机回归未通过前保持发布禁止。
 - 结构化 CSV/TSV 当前硬拒绝超过 2 MiB、5000 数据行、64 列、1024 字符/单元格或 16 KiB/记录的输入；预览不阻塞主线程，导入可停止并按同一文件+映射继续。更大文件不进入当前版本，而不是无界加载。
 - 账本分页、按月汇总和草稿箱查询需有索引与基准测试。
 

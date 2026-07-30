@@ -38,9 +38,9 @@
 - 可靠性与设备矩阵：[../../RELIABILITY.md](../../RELIABILITY.md)、[../../design-docs/android-device-compatibility.md](../../design-docs/android-device-compatibility.md)
 - 既有通知/凭证决定：[../../decisions/0010-notification-first-capture-and-single-receipt-fallback.md](../../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)
 - 本计划的资源约束：[../../decisions/0011-local-resource-budget-first-capture.md](../../decisions/0011-local-resource-budget-first-capture.md)
-- 当前实现主干：`source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-receipt-image`、`application`、`data:local` 和 `app`。
+- 当前实现主干：`source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-delimited-statement`、`source:generic-receipt-image`、`source:generic-notification`、`source:generic-photo-ocr`、`ocr:paddle`、`application`、`data:local` 和 `app`。
 
-现有 `CaptureMethod.NOTIFICATION`、通知字段 locator 与来源证据暂存已存在，但没有真实 provider 模板。`SourceIngestionService` 会先保存 RawEvent，因此 listener 不得在未知模板时调用它。Room v6 现在额外保存通知观察摘要：它只含安装范围 HMAC 摘要、opaque command/lease 和状态，不含 Android notification key、包名、频道或正文；过期租约会复用原 command，避免进程死亡后重复创建 RawEvent。
+现有 `CaptureMethod.NOTIFICATION`、通知字段 locator 与来源证据暂存已存在，但没有真实 provider 模板。`SourceIngestionService` 会先保存 RawEvent，因此 listener 不得在未知模板时调用它。当前 Room schema 为 v7，并保留 v6 引入的通知观察摘要：它只含安装范围 HMAC 摘要、opaque command/lease 和状态，不含 Android notification key、包名、频道或正文；过期租约会复用原 command，避免进程死亡后重复创建 RawEvent。
 
 ## 进度
 
@@ -58,7 +58,7 @@
 - [ ] 首个非空 route catalog 前 - 在设置页接通只显示安全标签的 route 选择器与“目录存在但尚未开启”健康状态；不得把 app-private enablement 基础类误称为当前用户可启用的真实来源能力。
 - [ ] 2026-07-26 - 补真实系统 callback 更新回放、容量和敏感日志回归；没有这组设备验证时不得开放真实 provider 模板或把 listener 声称为完整账单覆盖。
 - [ ] 待项目负责人明确授权真实内容范围后 - 在 S24U-HK、国行 S24U、已建档小米执行通知资源基线；记录 OEM 回调存活与可选省电设置，不能用模拟器替代。
-- [ ] 待通知基线、商店政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 形成开发原型，但替换引擎、生命周期与真机峰值门未完成前仍不得发布。
+- [ ] 待通知基线、商店政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 换成静态随包 PP-OCRv6 small，并通过代码/AAR/未签名 Release 的本地无网络静态检查；实际三语推理、签名发行、ELF 页兼容与目标真机资源门未完成前仍不得发布。
 
 ## 意外发现
 
@@ -158,4 +158,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付空模板通知证据基础、v6 持久观察去重、有界回调队列、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退；没有真实 provider 模板、读屏或真机资源数据。另有磁贴/Photo Picker OCR 开发原型，但它由 ExecPlan 0004 管理且尚未达到发布资格。完成时在此记录实际模块、迁移、合成/真机证据、测得的资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付空模板通知证据基础、Room v7 中保留的 v6 持久观察去重、有界回调队列、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退；没有真实 provider 模板、读屏或真机资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录真实模板、设备回放、测得资源结果、未开放能力和对来源支持标签的影响。

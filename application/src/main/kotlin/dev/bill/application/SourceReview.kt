@@ -27,6 +27,7 @@ enum class SourceCaptureError {
     PARSER_UNAVAILABLE,
     PARSE_REJECTED,
     COMMIT_FAILED,
+    COMMIT_STATUS_UNKNOWN,
 }
 
 sealed interface SourceCaptureResult {

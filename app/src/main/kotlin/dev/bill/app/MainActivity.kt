@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,9 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -83,6 +86,7 @@ import dev.bill.app.notification.NotificationCaptureHealth
 import dev.bill.app.notification.NotificationCaptureHealthSnapshot
 import dev.bill.app.notification.NotificationCaptureHealthState
 import dev.bill.app.quickcapture.BillQuickCaptureRuntime
+import dev.bill.app.quickcapture.BillQuickCaptureTileService
 import dev.bill.app.quickcapture.ContentResolverSelectedPhotoOcrImporter
 import dev.bill.app.quickcapture.QuickCaptureConnectionState
 import dev.bill.app.quickcapture.openQuickCaptureAccessibilitySettings
@@ -116,6 +120,7 @@ private const val MAX_SELECTED_OCR_IMAGES = 5
 
 class MainActivity : ComponentActivity() {
     private var activeShareCommandId: String? = null
+    private var requestedDestination by mutableStateOf<AppDestination?>(null)
 
     private val billViewModel: BillViewModel by viewModels {
         val application = application as BillApplication
@@ -153,9 +158,16 @@ class MainActivity : ComponentActivity() {
                     notificationCaptureHealth = (application as BillApplication)
                         .container
                         .notificationCaptureHealth,
+                    requestedDestination = requestedDestination,
+                    onRequestedDestinationHandled = { handled ->
+                        if (requestedDestination == handled) {
+                            requestedDestination = null
+                        }
+                    },
                 )
             }
         }
+        handleNavigationIntent(intent)
         handleIncomingShareIntent(
             incomingIntent = intent,
             restoredCommandId = savedInstanceState?.getString(STATE_SHARE_COMMAND_ID),
@@ -165,6 +177,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        handleNavigationIntent(intent)
         handleIncomingShareIntent(intent, restoredCommandId = null)
     }
 
@@ -192,7 +205,6 @@ class MainActivity : ComponentActivity() {
         restoredCommandId: String?,
     ) {
         if (incomingIntent?.action != Intent.ACTION_SEND) {
-            activeShareCommandId = null
             return
         }
         val commandId = restoredCommandId ?: billViewModel.newCommandId()
@@ -229,6 +241,12 @@ class MainActivity : ComponentActivity() {
         null
     }
 
+    private fun handleNavigationIntent(incomingIntent: Intent?) {
+        val destination = destinationForIntentAction(incomingIntent?.action) ?: return
+        requestedDestination = destination
+        incomingIntent?.action = null
+    }
+
     private fun clearIncomingShareIntent(commandId: String): Boolean {
         if (activeShareCommandId != commandId) return false
         activeShareCommandId = null
@@ -247,7 +265,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class AppDestination(
+internal enum class AppDestination(
     val labelRes: Int,
     val icon: ImageVector,
 ) {
@@ -256,6 +274,11 @@ private enum class AppDestination(
     LEDGER(R.string.nav_ledger, Icons.AutoMirrored.Outlined.ReceiptLong),
     ACCOUNTS(R.string.nav_accounts, Icons.Outlined.AccountBalanceWallet),
     SETTINGS(R.string.settings, Icons.Outlined.Settings),
+}
+
+internal fun destinationForIntentAction(action: String?): AppDestination? = when (action) {
+    BillQuickCaptureTileService.ACTION_OPEN_QUICK_CAPTURE_SETUP -> AppDestination.SETTINGS
+    else -> null
 }
 
 private val primaryDestinations = listOf(
@@ -271,6 +294,8 @@ private fun BillApp(
     viewModel: BillViewModel,
     onSourceCaptureHandled: (String) -> Boolean,
     notificationCaptureHealth: NotificationCaptureHealth,
+    requestedDestination: AppDestination?,
+    onRequestedDestinationHandled: (AppDestination) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val notificationHealth by notificationCaptureHealth.state.collectAsStateWithLifecycle()
@@ -288,9 +313,12 @@ private fun BillApp(
     var selectedReconciliationCaseId by rememberSaveable { mutableStateOf<String?>(null) }
     var reconciliationCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var sourceDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
-    var selectedTextFileCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedTextFilePickerCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activeSelectedTextFileCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var isSelectedTextFilePickerOpen by remember { mutableStateOf(false) }
     var showImportMethod by rememberSaveable { mutableStateOf(false) }
     var pendingStatementDelimiter by rememberSaveable { mutableStateOf<String?>(null) }
+    var isStatementPickerOpen by remember { mutableStateOf(false) }
     var showLocalOnlyDeclaration by remember(application) {
         mutableStateOf(application?.localOnlyDeclarationState?.shouldShow() != false)
     }
@@ -311,16 +339,18 @@ private fun BillApp(
     val selectedTextFileLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
-        val commandId = selectedTextFileCommandId
-        if (uri == null || commandId == null) {
-            selectedTextFileCommandId = null
-        } else {
+        isSelectedTextFilePickerOpen = false
+        val commandId = selectedTextFilePickerCommandId
+        selectedTextFilePickerCommandId = null
+        if (uri != null && commandId != null) {
+            activeSelectedTextFileCommandId = commandId
             viewModel.ingestSelectedTextFile(commandId, uri.toString())
         }
     }
     val selectedStatementLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
+        isStatementPickerOpen = false
         val delimiter = pendingStatementDelimiter
             ?.let { name -> runCatching { DelimitedDelimiter.valueOf(name) }.getOrNull() }
         pendingStatementDelimiter = null
@@ -338,13 +368,15 @@ private fun BillApp(
     }
 
     fun openSelectedTextFile() {
-        if (selectedTextFileCommandId != null) return
-        selectedTextFileCommandId = viewModel.newCommandId()
+        if (isSelectedTextFilePickerOpen || activeSelectedTextFileCommandId != null) return
+        isSelectedTextFilePickerOpen = true
+        selectedTextFilePickerCommandId = viewModel.newCommandId()
         selectedTextFileLauncher.launch(TextEvidenceMediaTypes.USER_SELECTED_TEXT_FILE.toTypedArray())
     }
 
     fun openStructuredStatement(delimiter: DelimitedDelimiter) {
-        if (pendingStatementDelimiter != null) return
+        if (isStatementPickerOpen) return
+        isStatementPickerOpen = true
         pendingStatementDelimiter = delimiter.name
         val mediaTypes = when (delimiter) {
             DelimitedDelimiter.COMMA -> arrayOf(
@@ -363,9 +395,15 @@ private fun BillApp(
 
     fun consumeSourceCapture(commandId: String): Boolean {
         if (onSourceCaptureHandled(commandId)) return true
-        if (selectedTextFileCommandId != commandId) return false
-        selectedTextFileCommandId = null
+        if (activeSelectedTextFileCommandId != commandId) return false
+        activeSelectedTextFileCommandId = null
         return true
+    }
+
+    LaunchedEffect(requestedDestination) {
+        val requested = requestedDestination ?: return@LaunchedEffect
+        destination = requested
+        onRequestedDestinationHandled(requested)
     }
 
     LaunchedEffect(showCreateAccount) {
@@ -446,6 +484,30 @@ private fun BillApp(
                             resources.getString(event.error.messageRes()),
                         )
                     }
+                }
+
+                is BillUiEvent.PhotoOcrBatchCompleted -> {
+                    if (event.firstProposalId != null) {
+                        selectedDraftId = null
+                        selectedReconciliationCaseId = null
+                        reconciliationCommandId = null
+                        selectedSourceReviewId = event.firstProposalId
+                        sourceDraftCommandId = viewModel.newCommandId()
+                        destination = AppDestination.DRAFTS
+                    }
+                    val message = if (
+                        event.readyForReviewCount == 0 &&
+                        event.firstFailure != null
+                    ) {
+                        resources.getString(event.firstFailure.messageRes())
+                    } else {
+                        resources.getString(
+                            R.string.photo_ocr_batch_completed,
+                            event.readyForReviewCount,
+                            event.failedCount,
+                        )
+                    }
+                    snackbarHostState.showSnackbar(message)
                 }
 
                 is BillUiEvent.EvidenceOperationSucceeded -> {
@@ -694,6 +756,7 @@ private fun BillApp(
 
                 AppDestination.SETTINGS -> EvidenceSettingsScreen(
                     state = state.evidence,
+                    photoOcrBatch = state.photoOcrBatch,
                     notificationHealth = notificationHealth,
                     contentPadding = innerPadding,
                     onRetentionSelected = viewModel::updateEvidenceRetention,
@@ -967,13 +1030,16 @@ private fun LocalOnlyStartupDeclaration(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .widthIn(max = 520.dp),
+                    .widthIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(vertical = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
@@ -1033,6 +1099,7 @@ private fun LocalOnlyStartupDeclaration(
 @Composable
 private fun EvidenceSettingsScreen(
     state: EvidenceSettingsUiState,
+    photoOcrBatch: PhotoOcrBatchUiState?,
     notificationHealth: NotificationCaptureHealthSnapshot,
     contentPadding: PaddingValues,
     onRetentionSelected: (Int?) -> Unit,
@@ -1080,6 +1147,7 @@ private fun EvidenceSettingsScreen(
         item {
             CapturePermissionTutorialPanel(
                 notificationHealth = notificationHealth,
+                photoOcrBatch = photoOcrBatch,
                 onSelectPhotos = onSelectPhotos,
             )
         }
@@ -1205,6 +1273,7 @@ private fun EvidenceSettingsScreen(
 @Composable
 private fun CapturePermissionTutorialPanel(
     notificationHealth: NotificationCaptureHealthSnapshot,
+    photoOcrBatch: PhotoOcrBatchUiState?,
     onSelectPhotos: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1313,8 +1382,19 @@ private fun CapturePermissionTutorialPanel(
             OutlinedButton(
                 onClick = onSelectPhotos,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = photoOcrBatch == null,
             ) {
-                Text(stringResource(R.string.quick_capture_select_images))
+                Text(
+                    if (photoOcrBatch == null) {
+                        stringResource(R.string.quick_capture_select_images)
+                    } else {
+                        stringResource(
+                            R.string.photo_ocr_batch_progress,
+                            photoOcrBatch.processedCount,
+                            photoOcrBatch.totalCount,
+                        )
+                    },
+                )
             }
         }
     }
@@ -1539,6 +1619,9 @@ private fun SourceCaptureError.messageRes(): Int = when (this) {
 
     SourceCaptureError.COMMIT_FAILED ->
         R.string.source_capture_commit_failed
+
+    SourceCaptureError.COMMIT_STATUS_UNKNOWN ->
+        R.string.quick_capture_result_unconfirmed
 }
 
 @Composable

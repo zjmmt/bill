@@ -47,6 +47,13 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Bill.QuickCaptureRelay" />
+        <activity
+            android:name=".quickcapture.QuickCaptureSetupRelayActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bill.QuickCaptureRelay" />
         <service
             android:name=".notification.BillNotificationListenerService"
             android:exported="false"
@@ -57,7 +64,7 @@
         </service>
         <service
             android:name=".quickcapture.BillScreenshotAccessibilityService"
-            android:exported="false"
+            android:exported="true"
             android:label="@string/quick_capture_accessibility_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

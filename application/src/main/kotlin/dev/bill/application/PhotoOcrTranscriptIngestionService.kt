@@ -18,10 +18,27 @@ data class PhotoOcrTranscriptEvidence(
     val bytes: ByteArray,
 )
 
+/**
+ * Atomically transfers a one-shot capture from its cancellable phase into local persistence.
+ *
+ * A false result means cancellation won and no evidence may be staged. A true result means the
+ * caller must finish the bounded local commit and report its outcome even if the UI lease expires.
+ */
+fun interface PhotoOcrCommitLease {
+    fun tryBeginLocalCommit(): Boolean
+}
+
 interface PhotoOcrTranscriptCapture {
     suspend fun ingest(
         commandId: String,
         evidence: PhotoOcrTranscriptEvidence,
+    ): SourceCaptureResult
+
+    /** Claims a caller-owned lease immediately before bounded local staging and commit. */
+    suspend fun ingestWithCommitLease(
+        commandId: String,
+        evidence: PhotoOcrTranscriptEvidence,
+        commitLease: PhotoOcrCommitLease,
     ): SourceCaptureResult
 
     data object Unavailable : PhotoOcrTranscriptCapture {
@@ -35,6 +52,12 @@ interface PhotoOcrTranscriptCapture {
                 diagnosticCode = null,
             )
         }
+
+        override suspend fun ingestWithCommitLease(
+            commandId: String,
+            evidence: PhotoOcrTranscriptEvidence,
+            commitLease: PhotoOcrCommitLease,
+        ): SourceCaptureResult = ingest(commandId, evidence)
     }
 }
 
@@ -49,7 +72,12 @@ class PhotoOcrTranscriptIngestionService(
     sourceIngestionService: SourceIngestionService,
     evidenceAdmission: EvidenceStorageAdmission = EvidenceStorageAdmission.AllowAll,
     clock: Clock = Clock.systemUTC(),
+    private val localCommitTimeoutMillis: Long = DEFAULT_LOCAL_COMMIT_TIMEOUT_MILLIS,
 ) : PhotoOcrTranscriptCapture {
+    init {
+        require(localCommitTimeoutMillis > 0L)
+    }
+
     private val intakeMutex = Mutex()
     private val evidenceIngestion = UserEvidenceIngestion(
         descriptor = UserEvidenceCaptureDescriptor(
@@ -70,6 +98,22 @@ class PhotoOcrTranscriptIngestionService(
     override suspend fun ingest(
         commandId: String,
         evidence: PhotoOcrTranscriptEvidence,
+    ): SourceCaptureResult = ingestBounded(
+        commandId = commandId,
+        evidence = evidence,
+        commitLease = null,
+    )
+
+    override suspend fun ingestWithCommitLease(
+        commandId: String,
+        evidence: PhotoOcrTranscriptEvidence,
+        commitLease: PhotoOcrCommitLease,
+    ): SourceCaptureResult = ingestBounded(commandId, evidence, commitLease)
+
+    private suspend fun ingestBounded(
+        commandId: String,
+        evidence: PhotoOcrTranscriptEvidence,
+        commitLease: PhotoOcrCommitLease?,
     ): SourceCaptureResult = try {
         withContext(Dispatchers.Default) {
             intakeMutex.withLock {
@@ -95,10 +139,18 @@ class PhotoOcrTranscriptIngestionService(
                     commandId = commandId,
                     mediaType = OcrTranscript.MEDIA_TYPE,
                     bytes = evidence.bytes,
+                    tryBeginLocalCommit = commitLease?.let { it::tryBeginLocalCommit },
+                    localCommitTimeoutMillis = commitLease?.let {
+                        localCommitTimeoutMillis
+                    },
                 )
             }
         }
     } finally {
         evidence.bytes.fill(0)
+    }
+
+    private companion object {
+        const val DEFAULT_LOCAL_COMMIT_TIMEOUT_MILLIS = 15_000L
     }
 }

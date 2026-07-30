@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-25
+- 最后核验：2026-07-30
 - 事实来源：MVP、架构、当前 Gradle 工程、构建与测试结果
 
 ## 目的与用户可见结果
@@ -70,14 +70,15 @@
 - [x] 2026-07-25 - 在 MuMu 覆盖安装保留旧数据，手工验证 v3→v4 升级、竖屏设置、无原文回显、即时历史刷新、7/30 天策略切换、待复核二次确认清除和 `CLEARED` 结构化历史展示；测试后恢复默认 30 天。
 - [x] 2026-07-25 - 接受 ADR-0008 并关闭 TD-013 的核心窗口：Room v5 在文件写入前登记 5 分钟租约，RawEvent/生命周期事务原子消费登记；启动维护 CAS 接管到期租约，并以 10 分钟年龄门、4096 项检查/512 项认领上限回收旧版无登记孤儿。陈旧租约、文件碰撞、`CLEARED` 残留和磁盘数据库关闭/重开均有回归。
 - [x] 2026-07-25 - 在 `S24U-HK` 真机以 Debug APK 完成受限应用级冒烟：安装、两次冷启动、繁中竖屏静态 UI、合成 `ACTION_SEND text/plain` 的 provider-unverified 覆核与二次确认忽略；未读取支付 App 内容，未将此结果计为任何真实来源或完整真机用例通过。
-- [ ] 2026-07-25 - 实现 provider-neutral 的 SAF 文本文件入口：仅用户显式选择、立即有界复制到现有 app-private 证据链、以 `GENERIC/STATEMENT_IMPORT` 进入人工覆核；不持久化 URI、不猜 provider/交易字段，也不提升任何来源支持状态。
+- [x] 2026-07-26 - 实现 provider-neutral 的 SAF 文本文件入口：仅用户显式选择、立即有界复制到现有 app-private 证据链、以 `GENERIC/STATEMENT_IMPORT` 进入人工复核；不持久化 URI、不猜 provider/交易字段，也不提升任何来源支持状态。用户显式映射 CSV/TSV 的多行路径由 ExecPlan 0003 独立管理。
 - [ ] 补大量/恶意 Intent、自动化 Compose 清除确认，以及真实 Android 系统强杀切点/新旧 command 乱序恢复测试。
 - [ ] 确认国行小米具体型号和系统构建，为三台设备完成清单；若均为高端设备，再补一台低内存中端设备。
 - [ ] 在港版 S24 Ultra、国行 S24 Ultra 和已建档国行小米上执行兼容文档的首批必测用例并保存脱敏证据。
 - [ ] 获取并脱敏三类来源样本；确定首批具体银行名单。
 - [ ] 将现有 RawEvent 表与来源契约接入真实 Capture/Parse/Normalize → Draft 流水线；在此之前三类来源保持 `FALLBACK_REQUIRED`。
 - [ ] 建立适配器测试工具，分别跑通支付宝、微信和一个银行样本的解析到草稿。
-- [ ] 建立文档/架构/敏感日志 CI 并更新生成事实。
+- [x] 2026-07-30 - 建立 GitHub Actions 文档 CI，在 push/PR 上运行 `scripts/check-docs.ps1`。
+- [ ] 建立架构依赖/敏感日志 CI，并由生成器更新数据库、Manifest 和测试事实；不得手工伪造 `docs/generated/`。
 
 ## 意外发现
 
@@ -195,6 +196,6 @@ cmd.exe /d /s /c git diff --check
 
 ## 结果与复盘
 
-截至 2026-07-25，UI、工具链、CNY 手工账户/期初余额、Draft、平衡确认、Room v5 审计/幂等/暂存租约、数据库驱动页面、void 恢复、`ACTION_SEND -> RawEvent -> ParseAttempt -> 来源建议 -> 外部 Draft`，以及来源载荷保留/清除/容量/分页/孤儿恢复已实现。本轮组合 `test lint assembleDebug` 的 516 个任务成功，Lint 0 error；MuMu API 32 的 32 个设备测试通过，覆盖 v4→v5、租约 CAS、磁盘数据库重开和防误删回归。港版 S24 Ultra 另有一次不触碰支付内容的合成应用级冒烟；其受限范围和未完成用例记录在设备兼容文档中。
+截至 2026-07-30，基础已扩展为 Room v7 的受限 CNY/USD 账本、通用分享/SAF 文本证据、显式映射 CSV/TSV 行、单张 PNG 收据、空目录通知安全底座、用户确认的转账/还款/退款对账，以及实验性随包 OCR。最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest` 成功（850 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和 AndroidTest APK 编译；AndroidTest 编译不等于设备执行。MuMu API 32 的 32 个设备测试仍只覆盖 v1→v5 的迁移/证据/租约/恢复，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。港版 S24 Ultra 另有一次不触碰支付内容的合成应用级冒烟；其受限范围和未完成用例记录在设备兼容文档中。
 
-计划仍保持进行中：支付宝、微信支付和银行真实适配器/脱敏样本、`TxRelation` 对账、大量/恶意 Intent、自动化 Compose/真实系统强杀和三台完整真实设备证据均未完成。通用分享入口只能作为 provider-unverified 的部分实现，不能替代三类来源的发布支持。
+计划仍保持进行中：支付宝、微信支付和银行真实适配器/脱敏样本、一般重复与跨 provider 自动关联、投资、大量/恶意 Intent、自动化 Compose/真实系统强杀和三台完整真实设备证据均未完成。已实现的用户确认对账与通用证据入口只能作为 provider-unverified 的部分实现，不能替代三类来源的发布支持。

@@ -1,6 +1,6 @@
 # 系统架构地图
 
-- 状态：部分实现；本地账本、通用显式文本/CSV/TSV 证据、用户确认对账、空模板通知边界与持久观察去重已实现，provider 适配待验证
+- 状态：部分实现；本地账本、通用显式文本/CSV/TSV 证据、用户确认对账、空模板通知边界、持久观察去重与实验性随包 OCR 已实现，provider 适配和 OCR 真机发布门待验证
 - 所有者：项目维护者
 - 最后核验：2026-07-30
 - 事实来源：当前 Gradle/Room 工程、项目负责人范围修正、`docs/design-docs/` 下的细化文档、[ADR-0005](docs/decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](docs/decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](docs/decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](docs/decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0009](docs/decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0010](docs/decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0011](docs/decisions/0011-local-resource-budget-first-capture.md)
@@ -65,9 +65,9 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 
 账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
 
-来源断面先在 Room 登记 5 分钟暂存租约，再把证据写入 `noBackupFilesDir`；文本载荷限制为 64 KiB 并严格校验 UTF-8，用户显式分享的单张 PNG 收据限制为 4 MiB 并只校验有界 PNG 结构/CRC、不解码像素。两类载荷均校验长度和 SHA-256。RawEvent/生命周期事务原子消费租约；到期租约和旧版孤儿由 CAS 接管与有界扫描恢复。`RawEvent` ID 碰撞、解析/建议/证据链接/载荷生命周期跨表不一致以及损坏载荷均失败关闭。重复哈希只产生用户可见提示，不自动合并；忽略追加审计并保留证据。原始载荷使用两阶段清除、7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算和 keyset 分页；自动保留/容量清理不删除待复核载荷，清除后结构化事实链继续保留。
+来源断面先在 Room 登记 5 分钟暂存租约，再把证据写入 `noBackupFilesDir`；文本载荷限制为 64 KiB 并严格校验 UTF-8，用户显式分享的单张 PNG 收据限制为 4 MiB 并只校验有界 PNG 结构/CRC、不解码像素。两类载荷均校验长度和 SHA-256。独立的 Quick Settings/Photo Picker OCR 只在用户动作后处理一帧或每批前 1–5 张图片，持久化有界转录而非原始像素；Photo Picker 单飞串行并只汇总一次。截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入之前，以 CAS 将 `ACTIVE` 原子转为 `COMMITTING`。CAS 前取消会终止 Job 且不进入任何有副作用的准入路径；cancellation handle 注册中的中间态不会被误判为已取消。CAS 后先释放像素，再在 15 秒协作式截止内运行有界、无网络的本地 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常都返回 `COMMIT_STATUS_UNKNOWN`，交由幂等与暂存恢复确认。提交中或结果已形成但回调缺失时另有一次 15 秒收尾宽限，随后以“结果未确认”释放单飞门；opaque request identity 隔离迟到回调。磁贴/无障碍设置入口深链到 Bill 教程，启动本地声明使用 safe drawing insets 与可滚动布局；这些交互加固不改变 OCR 的 Experimental 状态。RawEvent/生命周期事务原子消费租约；到期租约和旧版孤儿由 CAS 接管与有界扫描恢复。`RawEvent` ID 碰撞、解析/建议/证据链接/载荷生命周期跨表不一致以及损坏载荷均失败关闭。重复哈希只产生用户可见提示，不自动合并；忽略追加审计并保留证据。原始载荷使用两阶段清除、7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算和 keyset 分页；自动保留/容量清理不删除待复核载荷，清除后结构化事实链继续保留。
 
-以上是代码实现状态，不是发布支持结论。既有组合 `test lint assembleDebug :data:local:assembleDebugAndroidTest` 曾成功，当前 CSV/TSV、来源时间/方向预填和用户确认对账又通过目标 JVM/应用测试与 Android 测试 APK 编译；本轮最终全量 Lint/APK 仍须重新完成。Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过；v5→v6→v7 的 Android 测试尚未在设备执行。投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
+以上是代码实现状态，不是发布支持结论。2026-07-30 最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest` 成功（850 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和两组 AndroidTest APK 编译，已包含设置深链、90 秒截图租约/迟到回调隔离、handle 注册竞态、15 秒本地提交截止/提交后未知态、Photo Picker 单飞批次汇总和启动声明布局加固；arm64-v8a/x86_64 分包的权限、组件、模型、目标 ABI、体积与 16 KiB ZIP 对齐也已静态核验。AndroidTest APK 编译不是设备执行；Room v1→v2→v3→v4→v5 迁移、租约、磁盘数据库重开与孤儿恢复包含在 MuMu API 32 的 32 个来源/仓储测试中并全部通过，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。实际三语 OCR、签名发行、ELF 页兼容、投资、真实 provider 接入、自动化 UI/系统强杀和完整真机矩阵不在已验证断面内。
 
 ## 建议模块边界
 

@@ -8,4 +8,4 @@
     android:canTakeScreenshot="true"
     android:packageNames="dev.bill.disabled"
     android:description="@string/quick_capture_accessibility_description"
-    android:settingsActivity="dev.bill.app.MainActivity" />
+    android:settingsActivity="dev.bill.app.quickcapture.QuickCaptureSetupRelayActivity" />

@@ -1,6 +1,6 @@
 # 统一领域模型
 
-- 状态：部分实现；受限 CNY/USD 账本与单证据来源链已有自动化验证，真机与来源适配仍待完成
+- 状态：部分实现；受限 CNY/USD 账本、来源中立证据链与用户确认对账已有自动化验证，真机与真实 provider 适配仍待完成
 - 所有者：项目维护者
 - 最后核验：2026-07-30
 - 事实来源：当前 `core:model`、`core:domain`、`core:ledger`、来源模块与 Room v7 schema；[ADR-0005](../decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](../decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0010](../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0013](../decisions/0013-bank-card-only-usd-without-fx.md)
@@ -14,9 +14,9 @@
 
 ## 当前已实现的首片
 
-当前代码落地受限的 CNY/USD 手工账本，以及 `GENERIC/SHARE_TEXT` 单证据来源链：用户创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。期初余额以同币种平衡的 `ADJUSTMENT` 交易表示；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v7 保存 Account、Draft、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、结构化账单导入批次、对账 Draft 链接、交易关系、AuditEvent 与全局 command receipt，Overview/账户/草稿/流水从仓储状态投影。
+当前代码落地受限的 CNY/USD 账本，以及手工录入、`GENERIC/SHARE_TEXT`、不透明文本文件、用户显式映射的 CSV/TSV 行、单张 PNG 收据、生产空目录下的受控通知底座和实验性 `GENERIC/PHOTO_OCR` 转录链。用户可创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。期初余额以同币种平衡的 `ADJUSTMENT` 交易表示；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v7 保存 Account、Draft、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、结构化账单导入批次、对账 Draft 链接、交易关系、AuditEvent 与全局 command receipt，Overview/账户/草稿/流水从仓储状态投影。
 
-手工输入属于 `ManualIntent -> Draft`，不创建假的 `RawEvent`。分享文本属于 `RawEvent -> ParseAttempt -> SourceDraftProposal -> DraftSourceEvidence -> Draft`，但通用解析器不推断 provider 或交易事实，且一条 Draft 当前只链接该来源建议的单条证据。`RawEvent` 结构化事实保持不可变；其文件载荷通过独立生命周期在 `AVAILABLE -> CLEAR_PENDING -> CLEARED` 间转换，清除后仍保留来源链、完成的 Draft provenance 与追加式审计。支付宝、微信支付和银行的真实适配器尚未实现；下面的完整多证据关系、投资与期间实体仍是目标模型，不能从 schema 推断为已有功能。
+手工输入属于 `ManualIntent -> Draft`，不创建假的 `RawEvent`。上述外部入口都沿 `RawEvent -> ParseAttempt -> SourceDraftProposal -> DraftSourceEvidence -> Draft` 运行；通用解析器不推断 provider，一条来源 Draft 当前仍只链接该来源建议的单条证据。用户确认对账已能在金额、币种、方向、账户角色与时间窗满足硬门时，把一至两条 Draft 原子替换为平衡的 `TRANSFER`、`LIABILITY_REPAY` 或 `REFUND`，同时保存 Draft 链接、交易关系、审计和幂等回执；撤销会恢复相关 Draft。`RawEvent` 结构化事实保持不可变；其文件载荷通过独立生命周期在 `AVAILABLE -> CLEAR_PENDING -> CLEARED` 间转换，清除后仍保留来源链、完成的 Draft provenance 与追加式审计。支付宝、微信支付和银行的真实适配器尚未实现；通用多证据自动合并、一般重复关系、投资与期间实体仍是目标模型，不能从 schema 推断为已有功能。
 
 ## 核心关系
 
