@@ -137,13 +137,13 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 
 ## 可机械执行的约束
 
-实现阶段至少加入：
+当前已机械执行：
 
-- Gradle 模块依赖测试，阻止越层依赖。
-- Room schema 导出和迁移测试。
-- 每个来源的脱敏黄金样本回放。
-- 分录平衡性质测试与去重幂等测试。
-- 敏感日志静态检查。
-- 文档结构、元数据和链接检查。
+- `scripts/check-architecture.ps1` 以显式允许表检查 Gradle 直接项目依赖、未知模块、逆向依赖、循环，以及 JVM-only 模块的 Android 插件/API 泄漏。
+- `scripts/check-sensitive-boundaries.ps1` 检查生产 Kotlin/Java 的直接日志/控制台输出、直接遥测依赖，以及源 Manifest 新增的网络、短信、广泛存储等高风险权限；`tools:node="remove"` 作为显式移除处理。
+- `scripts/check-docs.ps1` 检查文档结构、元数据、相对链接、孤儿文档和三类同级来源约束。
+- `scripts/generate-repository-facts.ps1 -Check` 校验 [仓库生成事实](docs/generated/repository-facts.md) 未陈旧；正反例和字节稳定性由 `scripts/test-repository-checks.ps1` 验证。
 
-当前从 CMD 运行文档检查的命令为 `cmd.exe /d /s /c powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-docs.ps1`。
+Room schema 导出/迁移、分录平衡和去重幂等仍由 Gradle 测试承担。每个真实来源的脱敏黄金样本回放必须随 provider 适配器加入；当前没有样本，不得用生成事实或守卫结果替代。
+
+从仓库根目录经 CMD 运行全部仓库守卫：`cmd.exe /d /s /c scripts\check-repository.cmd`。

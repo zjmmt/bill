@@ -69,7 +69,7 @@
 - 这组设备结果没有授予通知使用权、没有运行真实 `NotificationListenerService` callback、没有读取支付宝/微信/银行或任何真实通知，也没有验证 OEM 后台存活、通知更新语义或 provider parser。它不把 `NLS-01` 标为通过。
 - 在 listener 授权刷新和测试夹具写盘断言修复后，对当前源码再次执行同一设备命令并 3/3 通过（237 个 actionable tasks：1 executed、236 up-to-date，15 秒）。这仍只证明 route 偏好源码边界，不扩大到通知 callback 或 provider。
 - 独立 `code-review` 未发现当前空 catalog 切片的 P0–P2。审查修复了测试误清生产偏好的风险、损坏偏好冷启动崩溃、撤权入口消失、设置入口静默失败、TalkBack 无标签开关、写盘失败覆盖重试、重复同值写盘，以及把“已授权”误报为 listener 已连接的问题。
-- Debug 模板采样切片的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest --console=plain` 最终成功（879 个 actionable tasks：22 executed、857 up-to-date）。S24U-HK/API 36 的 `:app:connectedDebugAndroidTest` 随后运行 13 个合成用例并全部通过，其中 10 个覆盖只接收开始后的精确包名、跨进程及一年后仍活动、重复开始不覆盖、停止拒绝已排队工作、显式清除、无效重启失败关闭、截断文件拒绝恢复、最新优先分页、完整预览投影和空 NDJSON 记录失败关闭；另外 3 个是既有 route 偏好隔离。测试没有打开来源 App、读取历史通知或导出真实样本。最终 arm64-v8a Release 为 90,581,257 bytes、SHA-256 `cd1a1cf8f0d70894523a0843c5724167309dc4b21698cfcdd1e8f20e50a99eb4`；x86_64 Release 为 128,402,946 bytes、SHA-256 `7a45e6355820cfaa3024a24fb5a75ffdb7366b16162a0d1761d21cbd3b0d71c2`，两包通过 16 KiB ZIP 对齐。以 Debug 包命中作为正对照后，两份 Release 的 Manifest、DEX 与资源扫描均未发现采样 Activity、原始样本文件名或支付宝/微信/招商银行/三星研究包名。
+- Debug 模板采样及仓库守卫复核后的最新完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest --console=plain` 成功（879 个 actionable tasks：13 executed、866 up-to-date）。此前 S24U-HK/API 36 的 `:app:connectedDebugAndroidTest` 运行过 13 个合成用例并全部通过，其中 10 个覆盖只接收开始后的精确包名、跨进程及一年后仍活动、重复开始不覆盖、停止拒绝已排队工作、显式清除、无效重启失败关闭、截断文件拒绝恢复、最新优先分页、完整预览投影和空 NDJSON 记录失败关闭；另外 3 个是既有 route 偏好隔离。最新构建没有连接设备；既有测试也没有打开来源 App、读取历史通知或导出真实样本。当前 arm64-v8a Release 为 90,581,257 bytes、SHA-256 `e6a7184ce35ad456261e8d812782da3e752a9ec551f5ab278f53f712664d2f20`；x86_64 Release 为 128,402,946 bytes、SHA-256 `0b64784d27ee05cccf0703a04d5130a5ee67f92191d24532ea62372afa23cb59`。两包通过 16 KiB ZIP 对齐，Manifest 二进制一致且只含应用自身签名级动态接收器权限；以 Debug 包命中作为正对照后，两份 Release 全量解包扫描均未发现采样 Activity、原始样本文件名或支付宝/微信/招商银行/三星研究包名。
 - listener 断连以及用户点击 Debug“开始”时会向 Android 请求一次重新绑定，采样页分别显示系统授权与 listener 实际连接状态，活动采样状态则由 app-private 偏好跨进程恢复。设备内预览以固定 64 KiB 单行缓冲从文件末尾读取，每页最多解码 10 条；合成测试覆盖最新优先分页、完整元数据/正文投影以及空 NDJSON 记录失败关闭。页面显示跨进程写入数、本进程队列丢弃/正文不可读计数，并明确说明系统未交付的 callback 无法反推。它不使用轮询、前台服务、Alarm、WorkManager 或唤醒锁，也不承诺绕过用户强行停止、撤权、卸载或 OEM 平台拒绝重绑。Debug 原始文件没有自动时间、条数或文件大小限制；单条字段与队列仍有界，磁盘写入失败会关闭运行时门。
 - `code-review` 随后发现并修复三个问题：重开/恢复不再全文件扫描计数，而是从有界尾部记录恢复最后序号；清除原始样本增加不可撤销确认并使过期预览请求失效；页面明确要求停止前先确认队列项目已经显示。修复后的离线 `:app:testDebugUnitTest :app:compileDebugKotlin :app:compileReleaseKotlin :app:assembleDebugAndroidTest :app:lintDebug` 成功（489 个 actionable tasks：17 executed、472 up-to-date）。该轮发生在用户断开 S24U-HK 之后，因此新的测试 APK只完成编译，新增尾部恢复断言和清除交互尚未在设备上执行；此前 13/13 设备结果不能冒充最终工作树的再次运行。
 
@@ -94,6 +94,8 @@
 - Android 集成测试：权限撤销、进程重建、NotificationListener 系统回调/更新语义、SAF 文件访问失效。通知路径不使用 WorkManager 重试。
 - UI 测试：账户/期初余额、手工/来源草稿确认、进程重建、重复解释、忽略、撤销、无障碍和敏感信息遮罩。首片与分享文本已完成 MuMu 手工端到端验收，ViewModel 覆盖后台整页保护、错误后清除陈旧快照和按 command 消费分享结果；自动化 Compose/进程死亡仍待完成。
 - 端到端样例：同一绑卡消费同时出现支付渠道和银行证据，最终只产生一次支出。
+
+仓库级离线回归由 `cmd.exe /d /s /c scripts\check-repository.cmd` 聚合：文档结构、架构依赖方向、生产日志/直接遥测/高风险源权限、生成事实新鲜度，以及守卫的正反例自测。生成事实中的测试文件和 `@Test` 数量只证明源码存在，不证明 Gradle 或设备执行；实际通过结果仍以上述测试分层和构建记录为准。
 
 ## 地区与 OEM 真机验证
 

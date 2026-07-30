@@ -78,7 +78,7 @@
 - [ ] 将现有 RawEvent 表与来源契约接入真实 Capture/Parse/Normalize → Draft 流水线；在此之前三类来源保持 `FALLBACK_REQUIRED`。
 - [ ] 建立适配器测试工具，分别跑通支付宝、微信和一个银行样本的解析到草稿。
 - [x] 2026-07-30 - 建立 GitHub Actions 文档 CI，在 push/PR 上运行 `scripts/check-docs.ps1`。
-- [ ] 建立架构依赖/敏感日志 CI，并由生成器更新数据库、Manifest 和测试事实；不得手工伪造 `docs/generated/`。
+- [x] 2026-07-31 - 建立架构依赖/敏感边界 CI、本地 CMD 聚合门和正反例；生成器维护 Gradle 依赖、Room schema 版本、源 Manifest 与测试源码事实。真实 provider 支持矩阵仍须由注册表和脱敏回放证据另行生成，不得手工伪造。
 
 ## 意外发现
 
@@ -196,6 +196,6 @@ cmd.exe /d /s /c git diff --check
 
 ## 结果与复盘
 
-截至 2026-07-30，基础已扩展为 Room v7 的受限 CNY/USD 账本、通用分享/SAF 文本证据、显式映射 CSV/TSV 行、单张 PNG 收据、空目录通知安全底座、用户确认的转账/还款/退款对账，以及实验性随包 OCR。最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest` 成功（850 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和 AndroidTest APK 编译；AndroidTest 编译不等于设备执行。MuMu API 32 的 32 个设备测试仍只覆盖 v1→v5 的迁移/证据/租约/恢复，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。港版 S24 Ultra 另有一次不触碰支付内容的合成应用级冒烟；其受限范围和未完成用例记录在设备兼容文档中。
+截至 2026-07-31，基础已扩展为 Room v7 的受限 CNY/USD 账本、通用分享/SAF 文本证据、显式映射 CSV/TSV 行、单张 PNG 收据、空目录通知安全底座、用户确认的转账/还款/退款对账，以及实验性随包 OCR。最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（879 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和三组 AndroidTest APK 编译；AndroidTest 编译不等于设备执行。MuMu API 32 的 32 个设备测试仍只覆盖 v1→v5 的迁移/证据/租约/恢复，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。港版 S24 Ultra 另有一次不触碰支付内容的合成应用级冒烟和通知控制/采样合成用例；其受限范围和未完成用例记录在设备兼容文档中。
 
 计划仍保持进行中：支付宝、微信支付和银行真实适配器/脱敏样本、一般重复与跨 provider 自动关联、投资、大量/恶意 Intent、自动化 Compose/真实系统强杀和三台完整真实设备证据均未完成。已实现的用户确认对账与通用证据入口只能作为 provider-unverified 的部分实现，不能替代三类来源的发布支持。

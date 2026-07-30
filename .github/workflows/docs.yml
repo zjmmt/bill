@@ -1,4 +1,4 @@
-name: Documentation checks
+name: Repository checks
 
 on:
   pull_request:
@@ -7,11 +7,11 @@ on:
       - main
 
 jobs:
-  docs:
+  repository:
     runs-on: windows-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-      - name: Validate repository documentation
-        shell: powershell
-        run: ./scripts/check-docs.ps1
+      - name: Validate documentation, architecture, security boundaries, and generated facts
+        shell: cmd
+        run: call scripts\check-repository.cmd

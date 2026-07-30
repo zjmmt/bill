@@ -40,6 +40,7 @@ Bill 是一款 Android 原生、离线可用、无自有服务端的个人财务
 - 产品判断原则：[docs/PRODUCT_SENSE.md](docs/PRODUCT_SENSE.md)
 - 安全与隐私：[docs/SECURITY.md](docs/SECURITY.md)
 - 当前执行计划与状态：[docs/exec-plans/index.md](docs/exec-plans/index.md)
+- 机械生成的仓库事实：[docs/generated/repository-facts.md](docs/generated/repository-facts.md)
 
 ## 当前状态
 
@@ -56,7 +57,7 @@ Bill 是一款 Android 原生、离线可用、无自有服务端的个人财务
 - Debug 模板研究入口：开发包另有独立桌面入口，由用户选择精确包名并手动开始、停止和清除。它只追加开始之后的新 callback 到 app-private no-backup 文件，跨进程保持活动，不设自动时间、条数或文件大小限制；不读历史通知、notification key、actions、RemoteViews，也不创建账本记录。页面每次倒序读取最多 10 条，逐项展示来源、时间、channel/category 与五个允许正文域，明确标出未提供字段，并显示当前 listener 状态及本进程可确认的队列/正文漏记；系统从未交付的通知无法反推出内容或精确数量。S24U-HK/API 36 的 10 个合成采样器用例已通过，但本轮尚未读取真实样本。Release 包没有该页面、原始文件名、研究包名或研究文案；因此这仍只是取得脱敏模板的研究工具，不是三类 provider 支持。
 - 用户确认对账切片：待复核 Draft 只在金额、币种、方向、账户角色与时间窗满足硬门时产生有限的转账、信用卡还款或退款建议；永不按相同金额自动合并。用户在竖屏底部面板查看影响与证据后确认，应用原子生成一笔平衡的 `TRANSFER`、`LIABILITY_REPAY` 或 `REFUND`，并把被吸收 Draft 标为可撤销的 `LINKED`；撤销交易会恢复 Draft。一般重复、多来源自动合并和投资语义仍未实现。
 - Room 与界面：schema v7 保存账本、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等回执；跨表不一致失败关闭。总览、账户、草稿、流水、分享复核、导入映射、对账和证据设置均由本地状态驱动。
-- 验证：2026-07-31 最终完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（879 个 actionable tasks：22 executed、857 up-to-date），覆盖全部 JVM 测试、Lint、Debug/未签名 Release 分包和三组 AndroidTest APK 编译。arm64-v8a Release 为 90,581,257 bytes（SHA-256 `cd1a1cf8f0d70894523a0843c5724167309dc4b21698cfcdd1e8f20e50a99eb4`），x86_64 Release 为 128,402,946 bytes（SHA-256 `7a45e6355820cfaa3024a24fb5a75ffdb7366b16162a0d1761d21cbd3b0d71c2`）；两包通过 16 KiB ZIP 对齐，并在以 Debug 包为正对照的隔离扫描中确认没有采样 Activity、原始样本文件名或支付宝/微信/招商银行/三星研究包名。MuMu API 32 仍只有此前 32 个 v1→v5 Room/证据 instrumentation 结果；港版 S24 Ultra 于 Android 16/API 36 上最终运行 13 个通知控制/采样合成 instrumentation 并全部通过，其中 10 个覆盖 Debug 采样持久化、停止边界和设备内分页预览，3 个覆盖 route 偏好隔离。这些用例没有打开来源 App、读取历史通知或导出真实内容，不构成 `NLS-01`、OEM 后台或 provider 证据。完整构建证据见 [可靠性](docs/RELIABILITY.md)，设备结果与未测项见 [Android 设备兼容与真机验收](docs/design-docs/android-device-compatibility.md)。
+- 验证：2026-07-31 最新完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（879 个 actionable tasks：13 executed、866 up-to-date），覆盖全部 JVM 测试、Lint、Debug/未签名 Release 分包和三组 AndroidTest APK 编译。arm64-v8a Release 为 90,581,257 bytes（SHA-256 `e6a7184ce35ad456261e8d812782da3e752a9ec551f5ab278f53f712664d2f20`），x86_64 Release 为 128,402,946 bytes（SHA-256 `0b64784d27ee05cccf0703a04d5130a5ee67f92191d24532ea62372afa23cb59`）；两包通过 16 KiB ZIP 对齐，Manifest 二进制一致且只含应用自身签名级动态接收器权限，并在以 Debug 包为正对照的隔离扫描中确认没有采样 Activity、原始样本文件名或支付宝/微信/招商银行/三星研究包名。MuMu API 32 仍只有此前 32 个 v1→v5 Room/证据 instrumentation 结果；港版 S24 Ultra 于 Android 16/API 36 上运行过 13 个通知控制/采样合成 instrumentation 并全部通过，其中 10 个覆盖 Debug 采样持久化、停止边界和设备内分页预览，3 个覆盖 route 偏好隔离。本次最新完整构建没有连接设备；这些既有用例也没有打开来源 App、读取历史通知或导出真实内容，不构成 `NLS-01`、OEM 后台或 provider 证据。完整构建证据见 [可靠性](docs/RELIABILITY.md)，设备结果与未测项见 [Android 设备兼容与真机验收](docs/design-docs/android-device-compatibility.md)。
 - 外部来源：支付宝、微信支付和具体银行真实通知/专属文件适配器仍未实现，也没有可用于发布声明的脱敏样本；三类来源当前状态统一为 `FALLBACK_REQUIRED`。通用文本/CSV/TSV 入口只证明 Bill 能处理用户明确选择并映射的不可信文件，不证明来源 App，也不能声称三类来源“已支持”。银行卡只覆盖银行卡/信用卡资金腿，不能替代微信零钱或支付宝余额内部流水。
 - 发布缺口：尚无大量/恶意 Intent 压力、自动化 Compose 与真实系统强杀切点测试、完整跨来源对账，或完整港版/国行 Samsung 与国行小米真机证据。
 
@@ -68,7 +69,7 @@ Bill 是一款 Android 原生、离线可用、无自有服务端的个人财务
 
 ```bat
 cmd.exe /d /s /c "scripts\android.cmd test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest --console=plain"
-cmd.exe /d /s /c "powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-docs.ps1"
+cmd.exe /d /s /c "scripts\check-repository.cmd"
 ```
 
 真实支付页面、真实通知或真机 ADB 验收需要数据所有者明确同意后单独进行；仓库不收录真实支付截图、通知正文、账号、金额或设备序列号。

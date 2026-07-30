@@ -72,6 +72,8 @@ Room v5 在文件写入前登记不含原文的 5 分钟租约，RawEvent 事务
 
 用户导出的诊断包必须先预览，默认只含结构信息，并通过自动敏感模式扫描。
 
+仓库门 `scripts/check-sensitive-boundaries.ps1` 当前会拒绝生产源码中的直接 Android/Java 日志、控制台输出和常见直接遥测依赖，并拒绝源 Manifest 新增网络、短信、广泛存储等高风险权限；应用主 Manifest 中 `INTERNET` 与 `ACCESS_NETWORK_STATE` 的 `tools:node="remove"` 不按新增处理。该词法守卫有正反例自测，但不替代最终 APK/AAB Manifest、依赖字节码、原生库、签名包和断网运行审计，也不证明任意间接 SDK 没有传输能力。
+
 ## 删除与导出
 
 - 设置页已实现单个来源原始载荷清除和保留期限；它不会删除 RawEvent、ParseAttempt、已完成 Draft provenance、审计或正式账本。若证据仍在待复核区，清除请求会同时 dismiss 对应建议。
