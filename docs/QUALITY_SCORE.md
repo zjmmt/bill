@@ -34,7 +34,7 @@
 | 来源草稿复核 UI | 2 | 3 | 2 | 2 | 1 | 分享复核、重复警告、忽略和 Intent 消费已手工验证且 ViewModel 有单测；自动化 Compose/进程死亡未完成 |
 | 跨来源对账 UI | 2 | 3 | 3 | 2 | 1 | 竖屏候选列表、影响解释、用户确认/撤销已接入；application、Room 测试源码与 ViewModel 确认路由回归覆盖合成 Draft，但没有真实来源 Draft、Compose 自动化或真机关系验收 |
 | 备份、导出、删除 | 1 | 2 | 2 | 2 | 1 | 来源原始载荷逐项两阶段清除已实现并有 Room/MuMu 测试；全部账本删除、加密格式与密钥恢复未决 |
-| 文档与仓库守卫 | 2 | 3 | 3 | 2 | 1 | 文档、架构方向、直接日志/遥测、高风险源权限、生成事实陈旧检查及正反例自测已由 CMD 聚合并接入 GitHub Actions；本地通过，但尚无可核验的远程成功运行、provider 支持矩阵或定期 gardening |
+| 文档与仓库守卫 | 2 | 3 | 3 | 2 | 2 | 文档、架构方向、直接日志/遥测、高风险源权限、生成事实陈旧检查及正反例自测已由 CMD 聚合；本地与 GitHub Actions run 30576542889 均通过，provider 支持矩阵和定期 gardening 尚未实现 |
 
 表中的 `1` 只表示存在可检查的实现或测试工件且验收尚不完整，不等于发布支持。测试证据可以因自动化提升到 `3`，但实际支持不会随之自动提升：真机、真实脱敏 provider 样本、安全删除/保留和发布证据仍是独立门。
 
@@ -43,7 +43,7 @@
 - `core:model`、`core:domain` 与 `core:ledger` 定义金额、受限 CNY/USD 领域状态、仓储端口、逐币种平衡校验和过账构造；`application` 提供账户/同币种 Draft/确认/void 用例与数据库状态投影，不提供汇率或跨币种加法。
 - `source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-delimited-statement` 与 `source:generic-notification` 已接通有界证据、不可变 RawEvent、追加 ParseAttempt、待补全建议、显式行映射和 Draft 证据链；未知 CSV 表头和通用文本都不猜 provider。通知生产目录为空，空目录/未命中 metadata 不读取正文；route 设置只显示安全标签，写盘失败关闭、最小权限授权/撤权入口和 listener 连接健康已有回归。
 - `data:local` 导出 Room schema v1/v2/v3/v4/v5/v6/v7，并为账户、Draft、Transaction、Entry、RawEvent、ParseAttempt、来源建议、Draft evidence、载荷生命周期/策略、暂存租约、通知观察摘要、导入批次/行、对账链接/关系、AuditEvent 和 command receipt 提供事务仓储；账本和来源跨表损坏均失败关闭。
-- [仓库生成事实](generated/repository-facts.md) 由脚本从 20 个 Gradle 模块、Room schema、9 份源 Manifest 和测试源码机械生成，并由输入/生成器摘要检测陈旧；架构、敏感边界与生成器的合成正反例已在本地聚合门通过。这里的测试源码计数不是测试执行结果，GitHub Actions 远程成功也尚未核验。
+- [仓库生成事实](generated/repository-facts.md) 由脚本从 20 个 Gradle 模块、Room schema、9 份源 Manifest 和测试源码机械生成，并由输入/生成器摘要检测陈旧；架构、敏感边界与生成器的合成正反例已在本地聚合门和 [GitHub Actions run 30576542889](https://github.com/zjmmt/bill/actions/runs/30576542889) 通过。这里的测试源码计数不是测试执行结果，也不构成 provider 支持证据。
 - Android 界面面向本地状态展示总览、账户、草稿、流水、分享复核、CSV/TSV 映射、对账和证据设置；结构化导入与对账的针对性 JVM/ViewModel/编译测试已通过，Room v5→v6→v7 迁移及新增仓储 Android 测试已编译。2026-07-31 的 879-task 全量 JVM/Lint/Debug/Release 与三组 AndroidTest APK 构建已通过；此前 MuMu API 32 的 32 个 v5 设备测试和覆盖升级/竖屏设置页手工验收均已通过。`S24U-HK` 另有受限应用级冒烟和同日的 3 个 route 偏好 instrumentation，但没有通知授权或 callback。自动化 Compose、真实系统强杀、v6→v7 设备 migration、OCR instrumentation 与完整设备回归仍待完成。
 - 支付宝、微信支付和银行没有真实适配器或脱敏样本，实际支持仍为 `0`。UI 的 `FALLBACK_REQUIRED` 只表示可以转到共同的手工回退路径，不表示该来源已接入。
 - 分享证据已有用户逐项清除、保留期限、已提交/暂存共同容量、租约/孤儿恢复和 keyset 分页，但 exported share Activity 不能证明发送 App，压力、真实系统强杀和完整真机门仍未完成。这些限制把通用分享文本的实际支持保持在 `1`。

@@ -1,6 +1,6 @@
 # ExecPlan 0008：仓库边界守卫与生成事实
 
-- 状态：进行中
+- 状态：已完成
 - 所有者：项目维护者
 - 最后核验：2026-07-31
 - 事实来源：ARCHITECTURE.md 的依赖方向、SECURITY.md 的无敏感日志/最小权限边界、QUALITY_SCORE.md 与 TD-007
@@ -34,7 +34,7 @@
 - [x] 2026-07-31 - 接入 GitHub Actions，并在本地运行 CMD 聚合检查；远程结果须在推送后核验。
 - [x] 2026-07-31 - 使用 `code-review` 复核并修复命名参数 `project()` 绕过、自定义 source set 漏扫、注释/字符串误报、遥测坐标误报和跨平台换行不稳定；新增对应反例。
 - [x] 2026-07-31 - 完整 JVM/Lint/Debug/Release/三组 AndroidTest APK 离线构建通过；双 ABI Release 重新核验体积、SHA-256、16 KiB ZIP 对齐、Manifest 一致性和 Debug-only 采样隔离。
-- [ ] 提交并推送，核验远程 GitHub Actions；成功后归档本计划。
+- [x] 2026-07-31 - 提交 `0f3d62a` 并推送 `main`；远程 [Repository checks run 30576542889](https://github.com/zjmmt/bill/actions/runs/30576542889) 完成且结论为 `success`，随后归档本计划。
 
 ## 验收
 
