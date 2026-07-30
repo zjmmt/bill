@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.asStateFlow
 internal data class NotificationCaptureHealthSnapshot(
     val state: NotificationCaptureHealthState,
     val hasSystemAccess: Boolean,
+    val hasListenerConnection: Boolean,
     val droppedInThisProcess: Long,
     val failuresInThisProcess: Long,
 ) {
@@ -96,6 +97,7 @@ internal class NotificationCaptureHealth(
             else -> NotificationCaptureHealthState.READY
         },
         hasSystemAccess = hasSystemAccess,
+        hasListenerConnection = hasListenerConnection,
         droppedInThisProcess = dropped,
         failuresInThisProcess = failures,
     )

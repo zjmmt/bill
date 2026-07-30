@@ -34,6 +34,7 @@ import dev.bill.app.notification.AndroidNotificationListenerAccess
 import dev.bill.app.notification.NotificationCaptureHealth
 import dev.bill.app.notification.NotificationRouteSettings
 import dev.bill.app.notification.SharedPreferencesNotificationRouteEnablement
+import dev.bill.app.notification.BuildVariantNotificationTemplateSamplingController
 import dev.bill.source.contract.NotificationObservationRepository
 import dev.bill.source.contract.NotificationObservationReservation
 import dev.bill.source.contract.NotificationObservationReserveResult
@@ -64,6 +65,9 @@ internal class ProcessLocalOnlyDeclarationState {
 }
 
 class AppContainer(context: Context) {
+    internal val notificationTemplateSamplingController =
+        BuildVariantNotificationTemplateSamplingController(context)
+
     private val database by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         BillDatabaseFactory.create(context)
     }

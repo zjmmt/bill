@@ -138,8 +138,9 @@ internal class NotificationCaptureCoordinator(
 }
 
 /**
- * This is only invoked after [NotificationCaptureCoordinator.acceptsMetadata] succeeds.
- * RemoteViews, actions, messages, URIs and notification keys are deliberately never inspected.
+ * This is only invoked after the production coordinator or the debug-only package/time sampling
+ * gate succeeds. RemoteViews, actions, messages, URIs and notification keys are deliberately never
+ * inspected by the extractor.
  */
 internal object AndroidNotificationContentExtractor {
     fun extract(notification: Notification): NotificationContent? = try {

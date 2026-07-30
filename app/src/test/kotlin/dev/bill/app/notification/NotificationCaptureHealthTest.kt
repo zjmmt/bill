@@ -70,12 +70,14 @@ class NotificationCaptureHealthTest {
         health.onListenerConnectionChanged(connected = true)
         assertEquals(NotificationCaptureHealthState.READY, health.state.value.state)
         assertEquals(true, health.state.value.hasSystemAccess)
+        assertEquals(true, health.state.value.hasListenerConnection)
 
         health.onListenerConnectionChanged(connected = false)
         assertEquals(
             NotificationCaptureHealthState.LISTENER_CONNECTION_PENDING,
             health.state.value.state,
         )
+        assertEquals(false, health.state.value.hasListenerConnection)
 
         health.onListenerConnectionChanged(connected = true)
         health.onConfigurationChanged(

@@ -1,6 +1,6 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界/控制面、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟和 3 个 route 偏好 instrumentation；真实通知 callback、完整设备 instrumentation 与发布门待完成
+- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界/控制面、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟和 13 个通知控制/采样 instrumentation；真实 provider callback、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
 - 最后核验：2026-07-31
 - 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
@@ -69,6 +69,9 @@
 - 这组设备结果没有授予通知使用权、没有运行真实 `NotificationListenerService` callback、没有读取支付宝/微信/银行或任何真实通知，也没有验证 OEM 后台存活、通知更新语义或 provider parser。它不把 `NLS-01` 标为通过。
 - 在 listener 授权刷新和测试夹具写盘断言修复后，对当前源码再次执行同一设备命令并 3/3 通过（237 个 actionable tasks：1 executed、236 up-to-date，15 秒）。这仍只证明 route 偏好源码边界，不扩大到通知 callback 或 provider。
 - 独立 `code-review` 未发现当前空 catalog 切片的 P0–P2。审查修复了测试误清生产偏好的风险、损坏偏好冷启动崩溃、撤权入口消失、设置入口静默失败、TalkBack 无标签开关、写盘失败覆盖重试、重复同值写盘，以及把“已授权”误报为 listener 已连接的问题。
+- Debug 模板采样切片的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest --console=plain` 最终成功（879 个 actionable tasks：22 executed、857 up-to-date）。S24U-HK/API 36 的 `:app:connectedDebugAndroidTest` 随后运行 13 个合成用例并全部通过，其中 10 个覆盖只接收开始后的精确包名、跨进程及一年后仍活动、重复开始不覆盖、停止拒绝已排队工作、显式清除、无效重启失败关闭、截断文件拒绝恢复、最新优先分页、完整预览投影和空 NDJSON 记录失败关闭；另外 3 个是既有 route 偏好隔离。测试没有打开来源 App、读取历史通知或导出真实样本。最终 arm64-v8a Release 为 90,581,257 bytes、SHA-256 `cd1a1cf8f0d70894523a0843c5724167309dc4b21698cfcdd1e8f20e50a99eb4`；x86_64 Release 为 128,402,946 bytes、SHA-256 `7a45e6355820cfaa3024a24fb5a75ffdb7366b16162a0d1761d21cbd3b0d71c2`，两包通过 16 KiB ZIP 对齐。以 Debug 包命中作为正对照后，两份 Release 的 Manifest、DEX 与资源扫描均未发现采样 Activity、原始样本文件名或支付宝/微信/招商银行/三星研究包名。
+- listener 断连以及用户点击 Debug“开始”时会向 Android 请求一次重新绑定，采样页分别显示系统授权与 listener 实际连接状态，活动采样状态则由 app-private 偏好跨进程恢复。设备内预览以固定 64 KiB 单行缓冲从文件末尾读取，每页最多解码 10 条；合成测试覆盖最新优先分页、完整元数据/正文投影以及空 NDJSON 记录失败关闭。页面显示跨进程写入数、本进程队列丢弃/正文不可读计数，并明确说明系统未交付的 callback 无法反推。它不使用轮询、前台服务、Alarm、WorkManager 或唤醒锁，也不承诺绕过用户强行停止、撤权、卸载或 OEM 平台拒绝重绑。Debug 原始文件没有自动时间、条数或文件大小限制；单条字段与队列仍有界，磁盘写入失败会关闭运行时门。
+- `code-review` 随后发现并修复三个问题：重开/恢复不再全文件扫描计数，而是从有界尾部记录恢复最后序号；清除原始样本增加不可撤销确认并使过期预览请求失效；页面明确要求停止前先确认队列项目已经显示。修复后的离线 `:app:testDebugUnitTest :app:compileDebugKotlin :app:compileReleaseKotlin :app:assembleDebugAndroidTest :app:lintDebug` 成功（489 个 actionable tasks：17 executed、472 up-to-date）。该轮发生在用户断开 S24U-HK 之后，因此新的测试 APK只完成编译，新增尾部恢复断言和清除交互尚未在设备上执行；此前 13/13 设备结果不能冒充最终工作树的再次运行。
 
 质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力，不证明 provider 覆盖。大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
 
@@ -118,7 +121,7 @@
 ## 性能预算（初始目标）
 
 - 冷启动不因历史账单全量解析而阻塞首屏。
-- 单条通知只在系统回调后工作；未命中元数据时正文读取数、落盘数和解析数必须均为 0。禁止历史扫描、周期 Job/Alarm、前台服务、partial wakelock 与自动 OCR。命中候选最多进入容量 16 的内存队列，满队列必须丢弃而不是无界排队。
+- 单条通知只在系统回调后工作；生产未命中元数据且 Debug 采样未由用户开启时，正文读取数、落盘数和解析数必须均为 0。禁止历史扫描、周期 Job/Alarm、前台服务、partial wakelock 与自动 OCR。命中候选最多进入容量 16 的内存队列，满队列必须丢弃而不是无界排队。Debug 研究文件允许用户自行决定保留时长和总量，但每条仍只有五个最多 1024 字符的字段；该例外不得进入 Release 或正式来源证据预算。
 - 命中通知的信封上限为 8 KiB，通知入口由单个 IO consumer 串行提交；每条未来真实模板都要验证更新/重启不重复建待复核项，并记录队列丢弃/失败健康状态。当前空目录不产生任何正文证据。
 - 结果页读取若以后实现，每个候选窗口必须有去抖、有限节点数/文本量和最大树读取次数；目标 App 不在前台时节点读取数必须为 0。
 - 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发：截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入前以 CAS 线性化取消与本地提交，取消胜出时 Job 停止且不进入有副作用的准入路径。cancellation handle 注册期间的超时会先登记待取消；handle 返回后取消成功才报告超时，否则进入收尾未知态。提交胜出时先释放像素，再在独立 15 秒协作式截止内运行有界、无网络的 admit/stage/parse/Room 路径；挂起端口、内部取消或非致命异常都会返回“结果未确认”，由幂等与 staging recovery 处理可能的中间态。该截止依赖协程取消，不宣称能强杀不响应取消的底层阻塞 I/O；输入上限、像素预释放和暂存恢复共同限制其影响。断连、替换 service 或 90 秒到期若发现提交/既成结果不可取消，只启动一次 15 秒收尾宽限；仍无回调则显示“结果未确认”、释放单飞门并用 opaque request identity 隔离迟到回调。Photo Picker 每批只处理前 1–5 张，最大并发为 1，活动批次拒绝第二批，并只发布一次汇总。运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量；峰值内存、耗时、电量、ELF 页兼容与三语真机回归未通过前保持发布禁止。
