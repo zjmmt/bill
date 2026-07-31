@@ -1,6 +1,6 @@
 # ADR-0010：通知优先自动草稿与单次收款凭证补充
 
-- 状态：已接受；通知管线、4 条默认关闭的 provider 实验 route、持久更新去重、有界队列、单次 PNG 收据分享与本地 OCR 候选已实现，通知/OCR 真机发布门仍待完成
+- 状态：已接受；通知管线、5 条默认关闭的 provider 实验 route、持久更新去重、有界队列、单次 PNG 收据分享与本地 OCR 候选已实现，通知/OCR 真机发布门仍待完成；第 5 条基金 route 受 ADR-0014 约束
 - 所有者：项目维护者
 - 最后核验：2026-07-31
 - 事实来源：项目负责人 2026-07-25 明确需求、Android NotificationListenerService 官方文档、ADR-0003、ADR-0009、ADR-0011
@@ -13,7 +13,7 @@
 
 ## 决定
 
-本决定当前交付受控通知边界、4 条默认关闭的 provider 实验 route 和单次 PNG 收据回退。未知 metadata、关闭 route 或正文不匹配时不持久化；命中信封只生成单一 CNY 金额与方向的来源建议，不能自动写入正式账本。用户也可通过 Sharesheet 明确提供一张 PNG，走有界结构校验、私有证据暂存与手工复核；独立的磁贴/Photo Picker OCR 候选仍受真机发布门约束。支付宝、微信和银行继续显示 `FALLBACK_REQUIRED`，窄范围实验 route 不等于完整来源支持。资源与授权预算由 [ADR-0011](0011-local-resource-budget-first-capture.md) 补充约束。
+本决定首批交付受控通知边界、4 条默认关闭的 provider 实验 route 和单次 PNG 收据回退；后续 [ADR-0014](0014-investment-position-snapshots-and-confirmed-events.md) 在相同边界内新增第 5 条基金申购确认 route。未知 metadata、关闭 route 或正文不匹配时不持久化；命中信封只生成可证明的 CNY 金额、方向和有限事件提示，不能自动写入正式账本。用户也可通过 Sharesheet 明确提供一张 PNG，走有界结构校验、私有证据暂存与手工复核；独立的磁贴/Photo Picker OCR 候选仍受真机发布门约束。支付宝、微信和银行继续显示 `FALLBACK_REQUIRED`，窄范围实验 route 不等于完整来源支持。资源与授权预算由 [ADR-0011](0011-local-resource-budget-first-capture.md) 补充约束。
 
 ### 自动通知路径
 

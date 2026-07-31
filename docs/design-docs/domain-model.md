@@ -1,9 +1,9 @@
 # 统一领域模型
 
-- 状态：部分实现；受限 CNY/USD 账本、来源中立证据链与用户确认对账已有自动化验证，真机与真实 provider 适配仍待完成
+- 状态：部分实现；受限 CNY/USD 账本、CNY 投资持仓快照、来源中立证据链与用户确认对账已有自动化验证，真机与完整 provider 适配仍待完成
 - 所有者：项目维护者
-- 最后核验：2026-07-30
-- 事实来源：当前 `core:model`、`core:domain`、`core:ledger`、来源模块与 Room v7 schema；[ADR-0005](../decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](../decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0010](../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0013](../decisions/0013-bank-card-only-usd-without-fx.md)
+- 最后核验：2026-08-01
+- 事实来源：当前 `core:model`、`core:domain`、`core:ledger`、来源模块与 Room v9 schema；[ADR-0005](../decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](../decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0010](../decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0013](../decisions/0013-bank-card-only-usd-without-fx.md)、[ADR-0014](../decisions/0014-investment-position-snapshots-and-confirmed-events.md)
 
 ## 建模目标
 
@@ -14,9 +14,9 @@
 
 ## 当前已实现的首片
 
-当前代码落地受限的 CNY/USD 账本，以及手工录入、`GENERIC/SHARE_TEXT`、不透明文本文件、用户显式映射的 CSV/TSV 行、单张 PNG 收据、生产空目录下的受控通知底座和实验性 `GENERIC/PHOTO_OCR` 转录链。用户可创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。期初余额以同币种平衡的 `ADJUSTMENT` 交易表示；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v7 保存 Account、Draft、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、结构化账单导入批次、对账 Draft 链接、交易关系、AuditEvent 与全局 command receipt，Overview/账户/草稿/流水从仓储状态投影。
+当前代码落地受限的 CNY/USD 账本、CNY 投资持仓快照，以及手工录入、`GENERIC/SHARE_TEXT`、不透明文本文件、用户显式映射的 CSV/TSV 行、单张 PNG 收据、受控通知 route 和实验性 `GENERIC/PHOTO_OCR` 转录链。用户可创建现金、银行卡、电子钱包余额或信用卡账户；现金和电子钱包余额只允许 CNY，银行卡和信用卡允许 CNY/USD。用户还可手填名称和当前金额，或用单张本地 OCR 预填后确认一个 `InvestmentPosition`；代码、份额、成本可空，每个持仓一对一对应独立 CNY `INVESTMENT_SECURITY` 账户。普通期初余额和持仓当前金额都以同币种平衡的 `ADJUSTMENT` 交易纳入账本；手工或来源收入/支出 Draft 选择同币种真实资金账户后再确认成平衡 Entries，基金申购 Draft 还必须引用真实既有持仓，确认后以 `INVEST_BUY` 在资金账户和投资账户间平衡移动资产，不计普通支出。每个已支持币种有一套隐藏系统收入、支出和期初权益账户，它们不供用户创建、显示或选择。Room schema v9 保存 Account、InvestmentPosition、Draft 及其投资目标、Transaction、Entry、RawEvent、ParseAttempt、SourceDraftProposal、DraftSourceEvidence、证据载荷生命周期/保留策略、暂存租约、通知观察摘要、结构化账单导入批次、对账 Draft 链接、交易关系、AuditEvent 与全局 command receipt，Overview/账户/持仓/草稿/流水从仓储状态投影。
 
-手工输入属于 `ManualIntent -> Draft`，不创建假的 `RawEvent`。上述外部入口都沿 `RawEvent -> ParseAttempt -> SourceDraftProposal -> DraftSourceEvidence -> Draft` 运行；通用解析器不推断 provider，一条来源 Draft 当前仍只链接该来源建议的单条证据。用户确认对账已能在金额、币种、方向、账户角色与时间窗满足硬门时，把一至两条 Draft 原子替换为平衡的 `TRANSFER`、`LIABILITY_REPAY` 或 `REFUND`，同时保存 Draft 链接、交易关系、审计和幂等回执；撤销会恢复相关 Draft。`RawEvent` 结构化事实保持不可变；其文件载荷通过独立生命周期在 `AVAILABLE -> CLEAR_PENDING -> CLEARED` 间转换，清除后仍保留来源链、完成的 Draft provenance 与追加式审计。支付宝、微信支付和银行的真实适配器尚未实现；通用多证据自动合并、一般重复关系、投资与期间实体仍是目标模型，不能从 schema 推断为已有功能。
+手工输入属于 `ManualIntent -> Draft`，不创建假的 `RawEvent`；持仓创建是另一条用户确认命令，也不冒充外部证据。上述外部入口都沿 `RawEvent -> ParseAttempt -> SourceDraftProposal -> DraftSourceEvidence -> Draft` 运行；通用解析器不推断 provider，一条来源 Draft 当前仍只链接该来源建议的单条证据。用户确认对账已能在金额、币种、方向、账户角色与时间窗满足硬门时，把一至两条 Draft 原子替换为平衡的 `TRANSFER`、`LIABILITY_REPAY` 或 `REFUND`，同时保存 Draft 链接、交易关系、审计和幂等回执；撤销会恢复相关 Draft。严格支付宝基金确认候选可提出 `INVEST_BUY`，但不能从通知推断或创建标的。`RawEvent` 结构化事实保持不可变；其文件载荷通过独立生命周期在 `AVAILABLE -> CLEAR_PENDING -> CLEARED` 间转换，清除后仍保留来源链、完成的 Draft provenance 与追加式审计。支付宝、微信支付和招商银行只有窄范围实验通知适配器；通用多证据自动合并、一般重复关系、投资赎回/价格/成本批次与期间实体仍是目标模型，不能从 schema 推断为已有功能。
 
 ## 核心关系
 
@@ -32,6 +32,7 @@ erDiagram
     DRAFT }o--o| TRANSACTION : confirms_or_links
     TRANSACTION ||--|{ ENTRY : contains
     ACCOUNT ||--o{ ENTRY : affected_by
+    ACCOUNT ||--o| INVESTMENT_POSITION : describes
     TRANSACTION ||--o{ EXTERNAL_REF : evidenced_by
     TRANSACTION ||--o{ TX_RELATION : from
     TRANSACTION ||--o{ TX_RELATION : to
@@ -57,6 +58,7 @@ erDiagram
 | `Transaction` | 经确认经济事件 | txType、occurredAt、postedAt、reviewStatus、sourceMode、note |
 | `Entry` | 对账户的金额影响 | transactionId、accountId、signedMinorUnits、currency、entryRole |
 | `Account` | 资产/负债/投资容器 | accountType、provider、parentId、isOwn、archived |
+| `InvestmentPosition` | 用户确认的持仓估值快照；当前一对一绑定投资账户 | accountId、instrumentCode、name、currentValue、units?、costBasis?、asOf、sourceMode |
 | `AccountAlias` | 来源文本到真实账户的映射 | providerId、maskedIdentifier、normalizedLabel、confidence |
 | `ExternalRef` | 多来源外部引用 | transactionId、providerId、refType、refValueHash、displayMask |
 | `TxRelation` | 交易/证据关系 | fromId、toId、relationType、score、evidence、decision |
@@ -103,6 +105,7 @@ erDiagram
 - 信用卡欠款在账本内部为负，UI 的“欠款”数值按用户视角显示其绝对值。
 - 手工支出：未分类费用为正，资产资金腿或信用卡负债增加为负。
 - 手工收入：资产资金腿为正，未分类收入为负；信用卡不能作为收入资金账户。
+- 投资买入：现金/银行/电子钱包资金腿为负，既有 `INVESTMENT_SECURITY` 持仓账户为正；同币种内归零且不经过费用账户。
 - 三个隐藏系统账户分别承载未分类费用、未分类收入与期初权益；它们不供用户选择，也不进入用户账户列表或净资产账户集合。
 - 当前账本只接受 CNY/USD。总览在应用层按已确认分录逐币种聚合，不执行跨币种 SQL 求和，也不显示虚假的汇率合计。
 
@@ -124,9 +127,11 @@ erDiagram
 14. 文件载荷只允许 `AVAILABLE -> CLEAR_PENDING -> CLEARED`；删除文件成功前不得写成 `CLEARED`，失败保持 `CLEAR_PENDING` 并允许按同一工作项恢复。
 15. 自动保留/容量清理只选择没有 `WAITING_USER` 来源建议的最旧载荷；用户主动清除会先原子 dismiss 待复核建议，并保留结构化链和审计。
 16. 新分享文件写入前必须有 `ACTIVE` staging 租约；RawEvent/生命周期事务原子消费租约。恢复只能 CAS 接管到期租约，陈旧回滚不得删除新租约或已提交载荷。
+17. `InvestmentPosition` 必须是一对一的非系统、未归档 CNY `INVESTMENT_SECURITY` 账户；当前金额为正，未知代码/份额/成本保持 null，不伪造成零。
+18. `INVEST_BUY` Draft 必须引用真实既有持仓账户，资金账户与投资账户不同；普通收入/支出不得携带投资目标。通知只能提出事件，不能自动创建持仓。
 
 ## Room 落地门
 
-Room schema v1/v2/v3/v4/v5/v6/v7 与 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7` 正式迁移已经导出，且仓储把账户创建、来源建议提交/忽略、草稿确认、证据链接、生命周期请求、暂存消费、结构化账单批次、对账确认、交易关系、审计、命令回执和 void 放在 Room 事务内；运行时没有 destructive fallback。迁移、重放/碰撞、证据存储、两阶段清除、租约/孤儿恢复、磁盘数据库重开、keyset 分页和来源/生命周期跨表损坏测试已在 MuMu API 32 执行通过；v5→v6 通知观察迁移与 v6→v7 结构化账单/对账迁移当前只完成编译验证，仍待真机执行。
+Room schema v1/v2/v3/v4/v5/v6/v7/v8/v9 与 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9` 正式迁移已经导出，且仓储把账户/持仓创建、来源建议提交/忽略、草稿确认、证据链接、生命周期请求、暂存消费、结构化账单批次、对账确认、交易关系、审计、命令回执和 void 放在 Room 事务内；运行时没有 destructive fallback。迁移、重放/碰撞、证据存储、两阶段清除、租约/孤儿恢复、磁盘数据库重开、keyset 分页和来源/生命周期跨表损坏有自动化测试；此前 MuMu/API 32 与 S24U-HK 的设备套件只执行到 v7，v7→v8 持仓和 v8→v9 投资草稿目标迁移仍待真机执行。
 
 复杂关系查询、10 万级导入、已清除历史增长下的完整性查询基准、多适配器并发压力、应用层加密、FTS/搜索、真实系统强杀矩阵和备份恢复仍是后续落地门。未来数据库事实生成器建立后，应由构建生成 `docs/generated/database-schema.md`；本文件不复制列级 schema。

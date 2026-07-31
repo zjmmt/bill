@@ -14,9 +14,9 @@
 |---|---:|
 | Gradle 模块 | 23 |
 | 源 Manifest | 9 |
-| 测试源码文件 | 64 |
-| 生成输入文件 | 104 |
-| 输入 SHA-256 | `abaebf402e6fea623deea6a233fddeff1eeda6087896b8e2f845319ceb681b92` |
+| 测试源码文件 | 65 |
+| 生成输入文件 | 107 |
+| 输入 SHA-256 | `d669bbc1db060fc2d0c9a529ad26702d0cfbd18529716390f1fdfedfedc098fd` |
 
 输入摘要按 UTF-8/LF 规范化后包含生成器及共享解析库的 SHA-256；生成逻辑、源码事实或输入文件任一变化，都要求重新生成。
 
@@ -52,7 +52,7 @@
 
 | 数据库 | 已提交版本 | 最新版本 |
 |---|---|---:|
-| `dev.bill.data.local.BillDatabase` | `1`, `2`, `3`, `4`, `5`, `6`, `7` | 7 |
+| `dev.bill.data.local.BillDatabase` | `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9` | 9 |
 
 ## 源 Manifest 权限声明
 
@@ -79,15 +79,15 @@
 |---|---|---:|---:|
 | `:app` | Android | 4 | 16 |
 | `:app` | JVM | 13 | 72 |
-| `:application` | JVM | 5 | 76 |
-| `:core:ledger` | JVM | 2 | 23 |
+| `:application` | JVM | 6 | 86 |
+| `:core:ledger` | JVM | 2 | 24 |
 | `:core:model` | JVM | 2 | 4 |
-| `:data:local` | Android | 9 | 47 |
-| `:data:local` | JVM | 5 | 16 |
+| `:data:local` | Android | 9 | 48 |
+| `:data:local` | JVM | 5 | 17 |
 | `:feature:overview` | JVM | 1 | 4 |
-| `:feature:review` | JVM | 1 | 2 |
+| `:feature:review` | JVM | 1 | 3 |
 | `:ocr:paddle` | Android | 1 | 1 |
-| `:source:alipay` | JVM | 1 | 4 |
+| `:source:alipay` | JVM | 1 | 7 |
 | `:source:bank:cmb` | JVM | 1 | 4 |
 | `:source:contract` | JVM | 5 | 22 |
 | `:source:generic-delimited-statement` | JVM | 3 | 18 |
@@ -97,6 +97,6 @@
 | `:source:generic-share-text` | JVM | 2 | 9 |
 | `:source:pipeline` | JVM | 2 | 22 |
 | `:source:wechat` | JVM | 1 | 6 |
-| 合计 | — | 64 | 399 |
+| 合计 | — | 65 | 416 |
 
 计数口径：仅扫描各模块的 `src/test` 与 `src/androidTest` 下 `.kt`/`.java` 文件，并统计 `@Test` 或完全限定的 JUnit `@Test` 注解；参数化测试等其他注解不计入。

@@ -106,7 +106,7 @@ MuMu 上报 `SM-S9280` 只是设备属性仿真；API 32、`x86_64` 镜像既不
 | 仪器测试 | `:app:connectedDebugAndroidTest` 共运行 3 个用例，3/3 通过：启停状态跨新实例保留且只保存 opaque route ID；旧/已移除 route ID 不会打开运行时门；损坏为错误类型的偏好默认全关而不崩溃。 |
 | 测试数据隔离 | One UI 上 test APK context 没有可写 app data 目录，因此改用 target app context 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件；Before/After 只删除该测试文件，不触碰生产 `bill.notification-route-enablement`。测试中断最多遗留无功能 fixture ID。 |
 | 启动冒烟 | 测试包安装后从 Bill 的设置深链冷启动进入 `MainActivity`，Activity 正常启动且进程保持；没有打开系统通知设置或真实来源 App。 |
-| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。执行这 3 个用例时生产 catalog 为空；当前 4 条实验 route 后续只补了默认关闭/opaque opt-in 的设备测试，仍未运行系统 callback。 |
+| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。执行这 3 个用例时生产 catalog 为空；当时的 4 条实验 route 后续只补了默认关闭/opaque opt-in 的设备测试，第 5 条基金 route 尚未重跑，仍未运行系统 callback。 |
 
 因此本轮只把“route 偏好控制面在这台 One UI 设备可持久化并失败关闭”记为局部证据；通知、后台、省电和真实来源用例仍是未执行。
 
@@ -116,7 +116,7 @@ MuMu 上报 `SM-S9280` 只是设备属性仿真；API 32、`x86_64` 镜像既不
 
 | 范围 | 执行结果 | 能证明 | 不能证明 |
 | --- | --- | --- | --- |
-| App instrumentation | `:app:connectedDebugAndroidTest` 14/14 通过：10 条 Debug 采样持久化/停止/分页、3 条隔离 route 偏好、1 条当前 4-route catalog 默认关闭与 opaque opt-in | 当前工作树的研究文件和偏好隔离边界在 One UI/API 36 上可执行；生产 route 默认关闭 | 系统 callback、真实模板、通知更新/重启、OEM 后台、资源或 provider 支持 |
+| App instrumentation | `:app:connectedDebugAndroidTest` 14/14 通过：10 条 Debug 采样持久化/停止/分页、3 条隔离 route 偏好、1 条当时 4-route catalog 默认关闭与 opaque opt-in；第 5 条基金 route 尚未重跑 | 当时工作树的研究文件和偏好隔离边界在 One UI/API 36 上可执行；生产 route 默认关闭 | 系统 callback、真实模板、通知更新/重启、OEM 后台、资源或 provider 支持 |
 | Room instrumentation | `:data:local:connectedDebugAndroidTest` 47/47 通过 | v1→v7 migration、导入批次/行、对账确认/撤销、通知观察、证据生命周期、暂存与账本仓储在该设备通过合成回归 | SAF 文件选择器、5000 行基准、真实系统强杀、真实来源 Draft 或 UI 完整链 |
 | 随包 OCR instrumentation | `:ocr:paddle:connectedDebugAndroidTest` 1/1 通过 | OpenCV、ONNX Runtime、PP-OCRv6 检测/统一识别模型可在 arm64/API 36 加载，识别合成中/英/日支付文本并释放 | 真实页面准确率、主金额选择、耗时/峰值/电量、ELF 16 KiB 页兼容、签名发行或三台设备 |
 | 空间 OCR App instrumentation | 定向 `:app:connectedDebugAndroidTest` 1/1 通过 | 程序绘制多金额图像可经随包 OCR 框、v2 转录进入保守主金额建议 | 未经过系统截图/Photo Picker UI、真实支付页面、证据入库、资源测量或 provider 识别 |

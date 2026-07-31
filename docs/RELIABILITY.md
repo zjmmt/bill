@@ -1,6 +1,6 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、4 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、14 个 app、47 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，新 route 的真实 callback、真实简中页面、完整设备矩阵与发布门待完成
+- 状态：部分实现；账本、CNY 投资持仓、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、5 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、14 个 app、47 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，新增持仓/基金 route 的真机验收、真实 callback、真实简中页面、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
 - 最后核验：2026-08-01
 - 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
@@ -25,15 +25,15 @@
 
 当前受限 CNY/USD 手工账本切片已有以下防线代码：现金和电子钱包余额只接受 CNY，银行卡和信用卡才可接受 USD；领域过账前执行金额、币种、账户角色与逐币种平衡校验；Room 仓储以事务提交账户/期初分录、Draft 状态、正式交易、审计和 command receipt；数据库 Flow 驱动总览、账户、草稿和流水，且总览绝不跨币种合计，避免 UI 维护另一份合成余额。
 
-通用分享文本切片又加入 64 KiB/严格 UTF-8 输入门、应用私有证据与哈希校验、不可变 RawEvent、安全 ParseAttempt、待补全来源建议、重复提示、忽略审计和 Intent command 生命周期。当前 Room schema v7 的跨表查询验证 accepted/rejected 解析结果、建议数量/状态、证据链接、载荷生命周期和 Draft 语义；写路径检查目标链，观察状态对全局损坏失败关闭。
+通用分享文本切片又加入 64 KiB/严格 UTF-8 输入门、应用私有证据与哈希校验、不可变 RawEvent、安全 ParseAttempt、待补全来源建议、重复提示、忽略审计和 Intent command 生命周期。当前 Room schema v9 的跨表查询验证 accepted/rejected 解析结果、建议数量/状态、证据链接、载荷生命周期、Draft/投资目标和持仓语义；写路径检查目标链，观察状态对全局损坏失败关闭。
 
-证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。当前 Room v7 延续 v5 引入的 5 分钟租约，在写入前登记预提交文件，由 RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
+证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。当前 Room v9 延续 v5 引入的 5 分钟租约，在写入前登记预提交文件，由 RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
 
-受控通知路径包含 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。生产 catalog 由 `:source:alipay`、`:source:wechat` 和 `:source:bank:cmb` 提供 4 条默认关闭 route。测试证明空目录、未知 metadata 和关闭 runtime 均不会调用正文读取器；provider 单测覆盖脱敏成功、缺字段、漂移、敏感反例、竞争金额、错误频道/类别和 transport 后复核，application 测试覆盖一条 `RawEvent -> proposal` 纵向路径。信封严格有界，parser identity 与 route 强绑定，单一 CNY 金额解析拒绝符号金额、竞争金额和超限输入。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；listener 使用容量 16 的单消费者 IO 队列。route 控制面以安全标签展示 catalog，开启先持久化、关闭先收紧本进程门禁。provider parser 只生成金额与方向的来源建议，不猜商户/账户或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
+受控通知路径包含 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v9 中由 v6 引入的持久观察租约，以及最薄 Android listener。生产 catalog 由 `:source:alipay`、`:source:wechat` 和 `:source:bank:cmb` 提供 5 条默认关闭 route。测试证明空目录、未知 metadata 和关闭 runtime 均不会调用正文读取器；provider 单测覆盖脱敏成功、缺字段、漂移、敏感反例、竞争金额、错误频道/类别和 transport 后复核，application 测试覆盖来源建议到草稿的纵向路径。信封严格有界，parser identity 与 route 强绑定，单一 CNY 金额解析拒绝符号金额、竞争金额和超限输入；支付宝基金 route 还要求唯一确认金额与零手续费，申请受理、收益提醒、多金额和非零手续费失败关闭。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；listener 使用容量 16 的单消费者 IO 队列。route 控制面以安全标签展示 catalog，开启先持久化、关闭先收紧本进程门禁。provider parser 只生成可证明的金额、方向和有限经济事件提示，不猜商户、资金账户、基金标的或自动过账；投资草稿必须绑定真实持仓。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
 
-结构化 CSV/TSV 路径把当次 SAF 输入限制在 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 KiB/记录；严格 UTF-8 与语法校验发生在持久化前。未知表头不自动猜列或 provider，用户必须显式映射日期、金额、方向、对方与可选参考号。预览在后台 dispatcher 上以 250 ms 去抖执行；确认按行建立独立证据、来源建议和安全结果码，停止后以文件摘要和映射摘要继续尚未完成的行。Room v7 只保存批次/行身份、计数、RawEvent ID 或封闭错误码，不保存 URI、文件名、表头或单元格。
+结构化 CSV/TSV 路径把当次 SAF 输入限制在 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 KiB/记录；严格 UTF-8 与语法校验发生在持久化前。未知表头不自动猜列或 provider，用户必须显式映射日期、金额、方向、对方与可选参考号。预览在后台 dispatcher 上以 250 ms 去抖执行；确认按行建立独立证据、来源建议和安全结果码，停止后以文件摘要和映射摘要继续尚未完成的行。Room v9 仍只保存批次/行身份、计数、RawEvent ID 或封闭错误码，不保存 URI、文件名、表头或单元格。
 
-用户确认对账只在最多 500 条候选 Draft 与 50 笔近期退款来源交易的有界窗口中查找，并把每条 Draft 的建议限制为 3 条、全局限制为 50 条。金额、币种、方向、账户角色、时间窗和退款累计上限是硬门；相同金额本身不会触发合并。确认与撤销均由 Room v7 事务提交，失败不留下半笔交易或孤立链接。当前只有合成领域/仓储样本，没有真实 provider Draft，因此不能把它宣传为跨来源自动去重。
+用户确认对账只在最多 500 条候选 Draft 与 50 笔近期退款来源交易的有界窗口中查找，并把每条 Draft 的建议限制为 3 条、全局限制为 50 条。金额、币种、方向、账户角色、时间窗和退款累计上限是硬门；相同金额本身不会触发合并。确认与撤销均由 Room v9 事务提交，失败不留下半笔交易或孤立链接。当前只有合成领域/仓储样本，没有真实 provider Draft，因此不能把它宣传为跨来源自动去重。
 
 2026-07-25 的可重复结果：
 
@@ -83,7 +83,7 @@
 
 2026-07-31 的 Room 与 OCR 真机合成结果：
 
-- 在港版 `S24U-HK`（Android 16/API 36、arm64-v8a）上，最终 app instrumentation 14/14 通过：10 条 Debug 采样持久化/停止/分页、3 条隔离 route 偏好、1 条当前 4-route catalog 默认关闭和 opaque opt-in。它不读取真实通知或运行系统 callback。
+- 在港版 `S24U-HK`（Android 16/API 36、arm64-v8a）上，最终 app instrumentation 14/14 通过：10 条 Debug 采样持久化/停止/分页、3 条隔离 route 偏好、1 条当时 4-route catalog 默认关闭和 opaque opt-in。新增第 5 条基金 route 后尚未重跑；这些用例也不读取真实通知或运行系统 callback。
 - `:ocr:paddle:connectedDebugAndroidTest` 1/1 通过：随包 OpenCV、ONNX Runtime、PP-OCRv6 检测/统一识别模型成功加载，识别程序绘制的中/英/日支付文本并释放。它不代表真实支付截图准确率、主金额选择、峰值资源、电量或签名发行。
 - `:data:local:connectedDebugAndroidTest` 首次运行 45/47；失败的 2 条旧导入夹具直接追加 `STATEMENT_IMPORT` RawEvent，绕过了生产所需 staging reservation，因此仓储按设计返回冲突。夹具改为先建立活动暂存租约后，完整 47/47 通过，覆盖 v1→v7 migration、导入批次/行、对账、通知观察、证据生命周期/暂存与账本仓储；生产不变量没有放宽。
 - 空间 OCR v2 现在保留每行归一化整数边界、兼容 v1，并仅在独立金额相对正文中位高度及第二候选都明确占优时预填。指定 `code-review` 修复空 OCR 框令整次识别失败和值对象字符串泄露转录的风险，并阻止失败/拒绝/取消页提出金额，补英语退款/红包大小写阻断与遮罩回归；强制重跑 `generic-photo-ocr`、application 与 app 单测的 167 个任务全部通过。
@@ -99,7 +99,13 @@
 - 最终完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：71 executed、820 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `6595051668d9d9fd2d9186a12b79cd6214c48b9ea001d176abf772c71a47ecab`；x86_64 Release 为 128,419,330 bytes、SHA-256 `b61385b015b36c395015c368ac63730715f7e75cdd356a8fd9e1650a67e62b6f`。两包通过 `zipalign -c -P 16 4`。
 - 当前源码随后完成 891-task 全量 JVM/Lint/Debug/双 ABI Release/三组 AndroidTest APK 构建（71 executed、820 up-to-date）。arm64-v8a 未签名 Release 为 90,597,641 bytes、SHA-256 `5c6e58f02a38aef142130fc723983a7ce445020334a0aee04392e8b3d9a2bae1`；x86_64 为 128,419,330 bytes、SHA-256 `881ddc76dcebf7725d003a54fe3813ad2ff9a6d651dee302882327696b63ef0c`；两包通过 16 KiB ZIP 对齐。
 
-质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 4 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
+2026-08-01 的投资持仓离线构建结果：
+
+- `test lint` 成功（569 个 actionable tasks：30 executed、539 up-to-date）；生产 catalog 的陈旧 4-route 数量断言已改为 5，并额外固定支付宝 3 条 route。
+- `assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（711 个 actionable tasks：77 executed、1 from cache、633 up-to-date）。本轮只编译 AndroidTest APK，没有连接设备；Room v7→v9、持仓 OCR UI 和第 5 条通知 route 的真机验收仍开放。
+- `code-review` 修复了投资草稿只校验账户类型、却未证明存在对应持仓的完整性缺口；application 与 Room 现在都要求目标账户能关联到真实 `InvestmentPosition`。文档结构检查和 `git diff --check` 同步通过。
+
+质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
 ## 来源漂移
 
