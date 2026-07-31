@@ -88,6 +88,10 @@
     <string name="shared_text_possible_duplicate">可能重複：此前已擷取過相同證據。</string>
     <string name="expense">支出</string>
     <string name="income">收入</string>
+    <string name="investment_buy">基金申購</string>
+    <string name="investment_position_target">已有基金持倉</string>
+    <string name="investment_position_target_hint">請選擇這筆申購進入的、已由你確認的持倉。通知不會替你建立持倉，也不會推算持倉市值。</string>
+    <string name="investment_position_required">請先建立並核對基金持倉，再回來處理這則通知。</string>
     <string name="amount">金額</string>
     <string name="amount_hint">請輸入大於零的金額，最多兩位小數；本應用不做匯率換算。</string>
     <string name="counterparty">交易對象或說明</string>
@@ -103,6 +107,7 @@
     <string name="error_source_currency_not_allowed">此來源不能以所選幣種儲存。</string>
     <string name="source_currency_restricted">此來源只能以人民幣覆核，請核對金額後再儲存。</string>
     <string name="source_currency_unavailable">此來源缺少已驗證的幣種金額，暫不能儲存為交易。</string>
+    <string name="source_kind_unavailable">這項證據沒有目前支援的經濟事件，無法建立草稿。</string>
 
     <string name="review_marker">05 / 覆核</string>
     <string name="review_title">覆核草稿</string>
@@ -111,6 +116,7 @@
     <string name="shared_text_channel">用戶提供的證據；未驗證來源平台</string>
     <string name="review_reason_heading">為甚麼需要確認</string>
     <string name="review_reason_account_missing">請選擇實際付款或收款的帳戶。</string>
+    <string name="review_reason_investment_position_missing">所選基金持倉已不存在。請先重新建立並核對持倉，再確認入帳。</string>
     <string name="review_reason_ready">金額、類型和資金帳戶已可生成平衡分錄。</string>
     <string name="review_details_heading">帳務明細</string>
     <string name="review_evidence_heading">證據</string>
@@ -119,6 +125,7 @@
     <string name="payment_channel">支付渠道</string>
     <string name="manual_channel">手動輸入不適用</string>
     <string name="funding_account">實際資金帳戶</string>
+    <string name="investment_position_missing">持倉不可用</string>
     <string name="no_eligible_accounts">尚未有可用帳戶。請先建立帳戶，再回來覆核這筆草稿。</string>
     <string name="asset_account">可用資產帳戶</string>
     <string name="credit_account">信用負債帳戶</string>
@@ -126,6 +133,7 @@
     <string name="shared_text_evidence">已連結用戶提供給 Bill 的不可變文字證據。來源平台未經驗證，原文預設不會在這裡顯示。</string>
     <string name="expense_impact">生成一筆支出，並等額減少所選資產；若選擇信用卡，則等額增加信用卡欠款。</string>
     <string name="income_impact">生成一筆收入，並等額增加所選資產帳戶。</string>
+    <string name="investment_buy_impact">把已確認金額從所選資金帳戶轉入指定基金持倉。這是資產轉換，不算支出，也不會自動改寫持倉市值快照。</string>
     <string name="confirm_posting">確認入帳</string>
     <string name="save_for_later">稍後覆核</string>
     <string name="ignore_draft">忽略這筆草稿</string>

@@ -25,6 +25,10 @@ interface LedgerRepository {
 
     suspend fun findAccount(id: AccountId): LedgerAccount?
 
+    suspend fun findInvestmentPositionByAccountId(
+        accountId: AccountId,
+    ): InvestmentPosition? = null
+
     suspend fun findDraft(id: DraftId): ReviewDraft?
 
     suspend fun findTransaction(id: TransactionId): PostedTransaction?
@@ -34,6 +38,15 @@ interface LedgerRepository {
         openingTransaction: PostedTransaction?,
         auditRecords: List<AuditRecord>,
     ): RepositoryWriteResult
+
+    suspend fun createInvestmentPosition(
+        position: InvestmentPosition,
+        account: LedgerAccount,
+        openingTransaction: PostedTransaction,
+        auditRecords: List<AuditRecord>,
+    ): RepositoryWriteResult = RepositoryWriteResult(
+        status = RepositoryWriteStatus.INVALID_STATE,
+    )
 
     suspend fun createManualDraft(
         draft: ReviewDraft,

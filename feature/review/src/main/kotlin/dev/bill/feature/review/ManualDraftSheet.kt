@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.bill.application.DraftSummaryKind
+import dev.bill.application.InvestmentPositionSummary
 import dev.bill.application.OperationError
 import dev.bill.application.SourceReviewSummary
 import dev.bill.application.SourceReviewKind
@@ -61,6 +62,7 @@ fun ManualDraftSheet(
         title = stringResource(R.string.manual_draft_title),
         explanation = stringResource(R.string.manual_draft_explanation),
         initialKind = DraftSummaryKind.EXPENSE,
+        allowedKinds = listOf(DraftSummaryKind.EXPENSE, DraftSummaryKind.INCOME),
         initialCurrency = CurrencyCode.CNY,
         availableCurrencies = listOf(CurrencyCode.CNY, CurrencyCode.USD),
         initialAmount = "",
@@ -77,6 +79,7 @@ fun ManualDraftSheet(
 @Composable
 fun SourceDraftSheet(
     sourceReview: SourceReviewSummary,
+    investmentPositions: List<InvestmentPositionSummary>,
     isSubmitting: Boolean,
     operationError: OperationError?,
     onDismiss: () -> Unit,
@@ -124,6 +127,8 @@ fun SourceDraftSheet(
     val hasDisallowedSuggestedCurrency = suggestedCurrency != null &&
         suggestedCurrency !in allowedCurrencies
     val hasNoAllowedCurrency = allowedCurrencies.isEmpty()
+    val allowedKinds = sourceReview.allowedDraftKinds.toList()
+    val hasNoAllowedKind = allowedKinds.isEmpty()
     val occurredAtNotice = sourceReview.suggestedOccurredAt?.let { occurredAt ->
         stringResource(
             R.string.source_occurred_at,
@@ -140,7 +145,11 @@ fun SourceDraftSheet(
                 explanation
             },
         ),
-        initialKind = sourceReview.suggestedKind ?: DraftSummaryKind.EXPENSE,
+        initialKind = sourceReview.suggestedKind
+            ?.takeIf { kind -> kind in allowedKinds }
+            ?: allowedKinds.firstOrNull()
+            ?: DraftSummaryKind.EXPENSE,
+        allowedKinds = allowedKinds.ifEmpty { listOf(DraftSummaryKind.EXPENSE) },
         initialCurrency = sourceCurrency,
         availableCurrencies = allowedCurrencies.ifEmpty { listOf(sourceCurrency) },
         initialAmount = sourceReview.suggestedAmount
@@ -148,6 +157,7 @@ fun SourceDraftSheet(
             ?.toAmountInput()
             .orEmpty(),
         initialCounterparty = sourceReview.suggestedCounterparty.orEmpty(),
+        investmentPositions = investmentPositions,
         submitLabel = stringResource(R.string.continue_source_draft),
         submittingLabel = stringResource(R.string.saving_source_draft),
         isSubmitting = isSubmitting,
@@ -156,12 +166,13 @@ fun SourceDraftSheet(
         onSubmit = onSubmit,
         onIgnore = onIgnore,
         notice = when {
+            hasNoAllowedKind -> stringResource(R.string.source_kind_unavailable)
             hasNoAllowedCurrency -> stringResource(R.string.source_currency_unavailable)
             hasDisallowedSuggestedCurrency -> stringResource(R.string.source_currency_restricted)
             else -> null
         },
         sourceTimeNotice = occurredAtNotice,
-        canSubmit = !hasNoAllowedCurrency,
+        canSubmit = !hasNoAllowedCurrency && !hasNoAllowedKind,
     )
 }
 
@@ -172,10 +183,12 @@ private fun DraftInputSheet(
     title: String,
     explanation: String,
     initialKind: DraftSummaryKind,
+    allowedKinds: List<DraftSummaryKind>,
     initialCurrency: CurrencyCode,
     availableCurrencies: List<CurrencyCode>,
     initialAmount: String,
     initialCounterparty: String,
+    investmentPositions: List<InvestmentPositionSummary> = emptyList(),
     submitLabel: String,
     submittingLabel: String,
     isSubmitting: Boolean,
@@ -196,9 +209,15 @@ private fun DraftInputSheet(
     var amount by rememberSaveable(formKey) { mutableStateOf(initialAmount) }
     var counterparty by rememberSaveable(formKey) { mutableStateOf(initialCounterparty) }
     var note by rememberSaveable(formKey) { mutableStateOf("") }
+    var selectedInvestmentAccountId by rememberSaveable(formKey) {
+        mutableStateOf(investmentPositions.singleOrNull()?.accountId)
+    }
     var showIgnoreConfirmation by rememberSaveable(formKey) { mutableStateOf(false) }
     val selectedKind = DraftSummaryKind.valueOf(selectedKindName)
     val selectedCurrency = CurrencyCode(selectedCurrencyCode)
+    val selectedInvestmentPosition = investmentPositions.firstOrNull { position ->
+        position.accountId == selectedInvestmentAccountId
+    }
 
     ModalBottomSheet(
         onDismissRequest = { if (!isSubmitting) onDismiss() },
@@ -244,14 +263,14 @@ private fun DraftInputSheet(
                     .selectableGroup(),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                DraftSummaryKind.entries.forEach { kind ->
+                allowedKinds.forEach { kind ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
                             .selectable(
                                 selected = selectedKind == kind,
-                                enabled = !isSubmitting,
+                                enabled = !isSubmitting && allowedKinds.size > 1,
                                 onClick = { selectedKindName = kind.name },
                             )
                             .padding(horizontal = 8.dp),
@@ -261,12 +280,14 @@ private fun DraftInputSheet(
                         RadioButton(
                             selected = selectedKind == kind,
                             onClick = null,
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && allowedKinds.size > 1,
                         )
                         Text(
                             text = when (kind) {
                                 DraftSummaryKind.EXPENSE -> stringResource(R.string.expense)
                                 DraftSummaryKind.INCOME -> stringResource(R.string.income)
+                                DraftSummaryKind.INVEST_BUY ->
+                                    stringResource(R.string.investment_buy)
                             },
                             style = MaterialTheme.typography.bodyLarge,
                         )
@@ -325,16 +346,80 @@ private fun DraftInputSheet(
                     imeAction = ImeAction.Next,
                 ),
             )
-            OutlinedTextField(
-                value = counterparty,
-                onValueChange = { counterparty = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.counterparty)) },
-                supportingText = { Text(stringResource(R.string.counterparty_hint)) },
-                singleLine = true,
-                enabled = !isSubmitting,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            )
+            if (selectedKind == DraftSummaryKind.INVEST_BUY) {
+                Text(
+                    text = stringResource(R.string.investment_position_target),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.investment_position_target_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (investmentPositions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.investment_position_required),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .selectableGroup(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        investmentPositions.forEach { position ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 52.dp)
+                                    .selectable(
+                                        selected = selectedInvestmentAccountId == position.accountId,
+                                        enabled = !isSubmitting,
+                                        onClick = {
+                                            selectedInvestmentAccountId = position.accountId
+                                        },
+                                    )
+                                    .padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = selectedInvestmentAccountId == position.accountId,
+                                    onClick = null,
+                                    enabled = !isSubmitting,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = position.name,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                    )
+                                    position.instrumentCode?.let { code ->
+                                        Text(
+                                            text = code,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = counterparty,
+                    onValueChange = { counterparty = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.counterparty)) },
+                    supportingText = { Text(stringResource(R.string.counterparty_hint)) },
+                    singleLine = true,
+                    enabled = !isSubmitting,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                )
+            }
             OutlinedTextField(
                 value = note,
                 onValueChange = { note = it },
@@ -362,16 +447,24 @@ private fun DraftInputSheet(
                         ManualDraftInput(
                             kind = selectedKind,
                             amount = amount,
-                            counterparty = counterparty,
+                            counterparty = selectedInvestmentPosition?.name ?: counterparty,
                             note = note,
                             currency = selectedCurrency,
+                            investmentAccountId = selectedInvestmentPosition?.accountId,
                         ),
                     )
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 56.dp),
-                enabled = canSubmit && !isSubmitting && amount.isNotBlank() && counterparty.isNotBlank(),
+                enabled = canSubmit &&
+                    !isSubmitting &&
+                    amount.isNotBlank() &&
+                    if (selectedKind == DraftSummaryKind.INVEST_BUY) {
+                        selectedInvestmentPosition != null
+                    } else {
+                        counterparty.isNotBlank()
+                    },
                 shape = MaterialTheme.shapes.small,
             ) {
                 if (isSubmitting) {

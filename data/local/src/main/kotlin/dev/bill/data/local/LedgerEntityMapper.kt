@@ -6,6 +6,9 @@ import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
+import dev.bill.core.domain.InvestmentPosition
+import dev.bill.core.domain.InvestmentPositionId
+import dev.bill.core.domain.InvestmentPositionSourceMode
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.TransactionSourceMode
@@ -19,6 +22,7 @@ import dev.bill.core.model.Money
 import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
 import java.time.Instant
+import java.math.BigDecimal
 
 enum class MappingIssueKind {
     BLANK_REQUIRED_VALUE,
@@ -87,6 +91,9 @@ internal object LedgerEntityMapper {
         val fundingAccountId = entity.fundingAccountId?.let {
             accountId(it, "drafts", diagnostics) ?: return null
         }
+        val investmentAccountId = entity.investmentAccountId?.let {
+            accountId(it, "drafts", diagnostics) ?: return null
+        }
         return constructOrNull("drafts", diagnostics) {
             ManualDraft(
                 id = id,
@@ -97,6 +104,7 @@ internal object LedgerEntityMapper {
                 counterparty = entity.counterparty,
                 note = entity.note,
                 fundingAccountId = fundingAccountId,
+                investmentAccountId = investmentAccountId,
                 createdAt = Instant.ofEpochMilli(entity.createdAtEpochMillis),
                 updatedAt = Instant.ofEpochMilli(entity.updatedAtEpochMillis),
                 creationCommandId = commandId,
@@ -174,6 +182,86 @@ internal object LedgerEntityMapper {
         )
     }
 
+    fun investmentPositionToDomain(
+        entity: InvestmentPositionEntity,
+        diagnostics: MappingDiagnostics,
+    ): InvestmentPosition? {
+        val id = constructIdOrNull(
+            entity.id,
+            "investment_positions",
+            "id",
+            diagnostics,
+            ::InvestmentPositionId,
+        ) ?: return null
+        val accountId = accountId(entity.accountId, "investment_positions", diagnostics)
+            ?: return null
+        val currency = currencyOrNull(entity.currency, "investment_positions", diagnostics)
+            ?: return null
+        val sourceMode = enumOrNull<InvestmentPositionSourceMode>(
+            entity.sourceMode,
+            "investment_positions",
+            "sourceMode",
+            diagnostics,
+        ) ?: return null
+        val commandId = commandId(
+            entity.creationCommandId,
+            "investment_positions",
+            diagnostics,
+        ) ?: return null
+        val units = entity.unitsDecimal?.let { raw ->
+            try {
+                BigDecimal(raw)
+            } catch (_: NumberFormatException) {
+                diagnostics.reportSafely(
+                    MappingIssue(
+                        "investment_positions",
+                        "unitsDecimal",
+                        MappingIssueKind.INVALID_DOMAIN_RECORD,
+                    ),
+                )
+                return null
+            }
+        }
+        val costBasis = when {
+            entity.costBasisMinorUnits == null && entity.costBasisCurrency == null -> null
+            entity.costBasisMinorUnits != null && entity.costBasisCurrency != null -> {
+                val costCurrency = currencyOrNull(
+                    entity.costBasisCurrency,
+                    "investment_positions",
+                    diagnostics,
+                ) ?: return null
+                Money(entity.costBasisMinorUnits, costCurrency)
+            }
+
+            else -> {
+                diagnostics.reportSafely(
+                    MappingIssue(
+                        "investment_positions",
+                        "costBasis",
+                        MappingIssueKind.INVALID_DOMAIN_RECORD,
+                    ),
+                )
+                return null
+            }
+        }
+        return constructOrNull("investment_positions", diagnostics) {
+            InvestmentPosition(
+                id = id,
+                accountId = accountId,
+                instrumentCode = entity.instrumentCode,
+                name = entity.name,
+                currentValue = Money(entity.currentValueMinorUnits, currency),
+                units = units,
+                costBasis = costBasis,
+                asOf = Instant.ofEpochMilli(entity.asOfEpochMillis),
+                sourceMode = sourceMode,
+                createdAt = Instant.ofEpochMilli(entity.createdAtEpochMillis),
+                updatedAt = Instant.ofEpochMilli(entity.updatedAtEpochMillis),
+                creationCommandId = commandId,
+            )
+        }
+    }
+
     fun accountToEntity(account: LedgerAccount): AccountEntity = AccountEntity(
         id = account.id.value,
         name = account.name,
@@ -186,6 +274,25 @@ internal object LedgerEntityMapper {
         creationCommandId = account.creationCommandId.value,
     )
 
+    fun investmentPositionToEntity(
+        position: InvestmentPosition,
+    ): InvestmentPositionEntity = InvestmentPositionEntity(
+        id = position.id.value,
+        accountId = position.accountId.value,
+        instrumentCode = position.instrumentCode,
+        name = position.name,
+        currentValueMinorUnits = position.currentValue.minorUnits,
+        currency = position.currentValue.currency.value,
+        unitsDecimal = position.units?.toPlainString(),
+        costBasisMinorUnits = position.costBasis?.minorUnits,
+        costBasisCurrency = position.costBasis?.currency?.value,
+        asOfEpochMillis = position.asOf.toEpochMilli(),
+        sourceMode = position.sourceMode.name,
+        createdAtEpochMillis = position.createdAt.toEpochMilli(),
+        updatedAtEpochMillis = position.updatedAt.toEpochMilli(),
+        creationCommandId = position.creationCommandId.value,
+    )
+
     fun draftToEntity(draft: ManualDraft): DraftEntity = DraftEntity(
         id = draft.id.value,
         state = draft.state.name,
@@ -196,6 +303,7 @@ internal object LedgerEntityMapper {
         counterparty = draft.counterparty,
         note = draft.note,
         fundingAccountId = draft.fundingAccountId?.value,
+        investmentAccountId = draft.investmentAccountId?.value,
         createdAtEpochMillis = draft.createdAt.toEpochMilli(),
         updatedAtEpochMillis = draft.updatedAt.toEpochMilli(),
         creationCommandId = draft.creationCommandId.value,

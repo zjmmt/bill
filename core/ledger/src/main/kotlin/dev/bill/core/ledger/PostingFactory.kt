@@ -65,6 +65,9 @@ object PostingFactory {
             AccountType.ASSET_EWALLET_BALANCE,
             -> visibleBalance.minorUnits to EntryRole.ASSET
 
+            AccountType.INVESTMENT_SECURITY ->
+                visibleBalance.minorUnits to EntryRole.INVESTMENT
+
             AccountType.LIABILITY_CC -> -visibleBalance.minorUnits to EntryRole.LIABILITY
 
             else -> return PostingBuildResult.InvalidAccountType(account.type)
@@ -96,6 +99,7 @@ object PostingFactory {
         fundingAccount: LedgerAccount,
         transactionId: TransactionId,
         confirmedAt: Instant,
+        investmentAccount: LedgerAccount? = null,
     ): PostingBuildResult {
         if (!draft.amount.currency.isSupportedLedgerCurrency()) {
             return PostingBuildResult.UnsupportedCurrency(draft.amount.currency)
@@ -111,8 +115,21 @@ object PostingFactory {
         }
 
         val entries = when (draft.type) {
-            TransactionType.EXPENSE -> expenseEntries(draft, fundingAccount)
-            TransactionType.INCOME -> incomeEntries(draft, fundingAccount)
+            TransactionType.EXPENSE -> if (investmentAccount == null) {
+                expenseEntries(draft, fundingAccount)
+            } else {
+                null
+            }
+
+            TransactionType.INCOME -> if (investmentAccount == null) {
+                incomeEntries(draft, fundingAccount)
+            } else {
+                null
+            }
+
+            TransactionType.INVEST_BUY -> investmentAccount
+                ?.let { investmentBuyEntries(draft, fundingAccount, it) }
+
             else -> null
         } ?: return PostingBuildResult.InvalidAccountType(fundingAccount.type)
 
@@ -349,6 +366,37 @@ object PostingFactory {
                 accountId = SystemAccountIds.uncategorizedIncome(draft.amount.currency),
                 amount = draft.amount.copy(minorUnits = -draft.amount.minorUnits),
                 role = EntryRole.INCOME,
+            ),
+        )
+    }
+
+    private fun investmentBuyEntries(
+        draft: ManualDraft,
+        fundingAccount: LedgerAccount,
+        investmentAccount: LedgerAccount,
+    ): List<LedgerEntry>? {
+        if (
+            draft.fundingAccountId != fundingAccount.id ||
+            draft.investmentAccountId != investmentAccount.id ||
+            fundingAccount.id == investmentAccount.id ||
+            fundingAccount.type !in ASSET_MOVEMENT_ACCOUNT_TYPES ||
+            investmentAccount.type != AccountType.INVESTMENT_SECURITY ||
+            investmentAccount.isSystem ||
+            investmentAccount.isArchived ||
+            investmentAccount.currency != draft.amount.currency
+        ) {
+            return null
+        }
+        return listOf(
+            LedgerEntry(
+                accountId = fundingAccount.id,
+                amount = draft.amount.copy(minorUnits = -draft.amount.minorUnits),
+                role = EntryRole.FUNDING,
+            ),
+            LedgerEntry(
+                accountId = investmentAccount.id,
+                amount = draft.amount,
+                role = EntryRole.INVESTMENT,
             ),
         )
     }

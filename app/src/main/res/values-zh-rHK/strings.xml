@@ -78,6 +78,12 @@
     <string name="quick_capture_result_unconfirmed">未能及時確認本次處理結果；它可能已儲存，也可能尚未寫入。重試前請先查看待覆核清單。</string>
     <string name="photo_ocr_batch_completed">圖片識別完成：%1$d 條可覆核，%2$d 條失敗。</string>
     <string name="photo_ocr_batch_progress">已處理 %1$d / %2$d 張…</string>
+    <string name="investment_ocr_prefill_ready">已在本機預填持倉欄位，請核對後再建立。</string>
+    <string name="investment_ocr_empty">這張圖片中沒有辨識到可讀文字。</string>
+    <string name="investment_ocr_too_large">圖片過大，無法在安全限制內處理。</string>
+    <string name="investment_ocr_unreadable">本機 OCR 無法讀取所選圖片。</string>
+    <string name="investment_ocr_no_fields">沒有辨識到帶標籤的基金名稱、代碼、目前金額、份額或成本；仍可手動填寫。</string>
+    <string name="investment_ocr_ambiguous">截圖中出現互相衝突的帶標籤數值，因此沒有預填。請手動填寫或核對。</string>
     <string name="quick_capture_tile_add_manually">請下拉兩次開啟快捷設定，點「編輯」，再把「截圖記帳」拖到已啟用區域。</string>
     <string name="quick_capture_tile_request_finished">系統已處理加入要求；若磁貼未出現，請在快捷設定的「編輯」中手動加入。</string>
     <string name="payment_result_observer_description">Bill 的唯讀支付結果頁觀察器。除非你在 Bill 中獨立開啟經驗證的來源，否則沒有活躍來源模板。</string>

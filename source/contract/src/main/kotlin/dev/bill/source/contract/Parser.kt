@@ -6,6 +6,7 @@ enum class SourceCapability {
     OCCURRED_AT,
     COUNTERPARTY,
     FUNDING_HINT,
+    ECONOMIC_EVENT,
     EXTERNAL_REFERENCE,
 }
 

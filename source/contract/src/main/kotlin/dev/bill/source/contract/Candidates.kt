@@ -85,6 +85,11 @@ enum class ObservedMoneyDirection {
     OUTBOUND,
 }
 
+enum class ObservedEconomicEvent {
+    INVEST_BUY,
+    INVEST_SELL,
+}
+
 data class ScopedExternalReference(
     val providerId: ProviderId,
     val accountScopeHash: EvidenceHash,
@@ -104,6 +109,7 @@ data class NormalizedCandidate(
     val occurredAt: FieldCandidate<ObservedTime>? = null,
     val counterparty: FieldCandidate<String>? = null,
     val fundingHint: FieldCandidate<String>? = null,
+    val economicEvent: FieldCandidate<ObservedEconomicEvent>? = null,
     val externalReferences: Set<ScopedExternalReference> = emptySet(),
 ) {
     init {
@@ -116,6 +122,7 @@ data class NormalizedCandidate(
                 occurredAt != null ||
                 counterparty != null ||
                 fundingHint != null ||
+                economicEvent != null ||
                 externalReferences.isNotEmpty(),
         ) { "A normalized candidate must contain at least one observed field" }
     }

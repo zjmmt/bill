@@ -5,12 +5,12 @@ import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
+import dev.bill.app.BoundedDocumentRead
+import dev.bill.app.BoundedDocumentReader
 import dev.bill.application.PhotoOcrTranscriptCapture
 import dev.bill.application.PhotoOcrTranscriptEvidence
 import dev.bill.application.SourceCaptureError
 import dev.bill.application.SourceCaptureResult
-import dev.bill.app.BoundedDocumentRead
-import dev.bill.app.BoundedDocumentReader
 import dev.bill.source.genericphotoocr.OcrTranscript
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -29,55 +29,61 @@ interface SelectedPhotoOcrImporter {
     }
 }
 
+sealed interface SelectedImageOcrReadResult {
+    data class Lines(
+        val values: List<OcrTranscript.RecognizedLine>,
+    ) : SelectedImageOcrReadResult
+
+    data class Failure(
+        val error: SourceCaptureError,
+    ) : SelectedImageOcrReadResult
+}
+
+interface SelectedImageOcrReader {
+    suspend fun read(uriString: String?): SelectedImageOcrReadResult
+
+    data object Unavailable : SelectedImageOcrReader {
+        override suspend fun read(uriString: String?): SelectedImageOcrReadResult =
+            SelectedImageOcrReadResult.Failure(SourceCaptureError.PARSER_UNAVAILABLE)
+    }
+}
+
 /**
- * Reads only images explicitly returned by Photo Picker/SAF, one at a time.
+ * Reads and recognizes only one image explicitly returned by Photo Picker/SAF.
  *
- * No URI, filename, media-library grant, source image, or Bitmap is persisted.
+ * No URI, filename, media-library grant, source image, Bitmap, or transcript is persisted here.
  */
-class ContentResolverSelectedPhotoOcrImporter(
+class ContentResolverSelectedImageOcrReader(
     private val applicationContext: android.content.Context,
     private val contentResolver: android.content.ContentResolver,
-    private val capture: PhotoOcrTranscriptCapture,
-) : SelectedPhotoOcrImporter {
-    override suspend fun ingest(
-        commandId: String,
-        uriString: String?,
-    ): SourceCaptureResult {
+) : SelectedImageOcrReader {
+    override suspend fun read(uriString: String?): SelectedImageOcrReadResult {
         val uri = try {
             uriString?.let(Uri::parse)
         } catch (_: RuntimeException) {
             null
-        } ?: return failure(SourceCaptureError.PARSE_REJECTED)
-        if (uri.scheme != "content") return failure(SourceCaptureError.PARSE_REJECTED)
+        } ?: return rejected()
+        if (uri.scheme != "content") return rejected()
 
         val bytes = when (val read = readBoundedImage(uri)) {
             is ImageReadResult.Success -> read.bytes
-            ImageReadResult.TooLarge -> return failure(SourceCaptureError.CONTENT_TOO_LARGE)
-            ImageReadResult.Rejected -> return failure(SourceCaptureError.PARSE_REJECTED)
+            ImageReadResult.TooLarge -> return failed(SourceCaptureError.CONTENT_TOO_LARGE)
+            ImageReadResult.Rejected -> return rejected()
         }
         return try {
             withContext(Dispatchers.Default) {
                 var bitmap: Bitmap? = null
                 try {
-                    bitmap = decodeBounded(bytes)
-                        ?: return@withContext failure(SourceCaptureError.PARSE_REJECTED)
-                    val lines = when (
-                        val ocr = BundledLocalOcrEngine.recognize(applicationContext, bitmap)
-                    ) {
-                        is LocalOcrResult.Lines -> ocr.values
-                        LocalOcrResult.Empty ->
-                            return@withContext failure(SourceCaptureError.EMPTY_CONTENT)
-
-                        LocalOcrResult.Failed ->
-                            return@withContext failure(SourceCaptureError.PARSE_REJECTED)
+                    bitmap = decodeBounded(bytes) ?: return@withContext rejected()
+                    when (val ocr = BundledLocalOcrEngine.recognize(applicationContext, bitmap)) {
+                        is LocalOcrResult.Lines -> SelectedImageOcrReadResult.Lines(ocr.values)
+                        LocalOcrResult.Empty -> failed(SourceCaptureError.EMPTY_CONTENT)
+                        LocalOcrResult.Failed -> rejected()
                     }
-                    val transcript = OcrTranscript.encodeSpatial(lines)
-                        ?: return@withContext failure(SourceCaptureError.CONTENT_TOO_LARGE)
-                    capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
                 } catch (cancellation: CancellationException) {
                     throw cancellation
                 } catch (_: RuntimeException) {
-                    failure(SourceCaptureError.PARSE_REJECTED)
+                    rejected()
                 } finally {
                     bitmap?.recycle()
                 }
@@ -87,35 +93,34 @@ class ContentResolverSelectedPhotoOcrImporter(
         }
     }
 
-    private suspend fun readBoundedImage(uri: Uri): ImageReadResult =
-        withContext(Dispatchers.IO) {
-            try {
-                val mediaType = contentResolver.getType(uri)
-                    ?.substringBefore(';')
-                    ?.trim()
-                    ?.lowercase()
-                    ?: return@withContext ImageReadResult.Rejected
-                if (mediaType !in SUPPORTED_MEDIA_TYPES) {
-                    return@withContext ImageReadResult.Rejected
-                }
-                when (
-                    val read = contentResolver.openInputStream(uri)
-                        ?.use { BoundedDocumentReader.copy(it, MAX_IMAGE_BYTES) }
-                        ?: return@withContext ImageReadResult.Rejected
-                ) {
-                    is BoundedDocumentRead.Success -> ImageReadResult.Success(read.bytes)
-                    BoundedDocumentRead.TooLarge -> ImageReadResult.TooLarge
-                }
-            } catch (_: SecurityException) {
-                ImageReadResult.Rejected
-            } catch (_: IOException) {
-                ImageReadResult.Rejected
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (_: RuntimeException) {
-                ImageReadResult.Rejected
+    private suspend fun readBoundedImage(uri: Uri): ImageReadResult = withContext(Dispatchers.IO) {
+        try {
+            val mediaType = contentResolver.getType(uri)
+                ?.substringBefore(';')
+                ?.trim()
+                ?.lowercase()
+                ?: return@withContext ImageReadResult.Rejected
+            if (mediaType !in SUPPORTED_MEDIA_TYPES) {
+                return@withContext ImageReadResult.Rejected
             }
+            when (
+                val read = contentResolver.openInputStream(uri)
+                    ?.use { BoundedDocumentReader.copy(it, MAX_IMAGE_BYTES) }
+                    ?: return@withContext ImageReadResult.Rejected
+            ) {
+                is BoundedDocumentRead.Success -> ImageReadResult.Success(read.bytes)
+                BoundedDocumentRead.TooLarge -> ImageReadResult.TooLarge
+            }
+        } catch (_: SecurityException) {
+            ImageReadResult.Rejected
+        } catch (_: IOException) {
+            ImageReadResult.Rejected
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: RuntimeException) {
+            ImageReadResult.Rejected
         }
+    }
 
     private fun decodeBounded(bytes: ByteArray): Bitmap? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -168,12 +173,8 @@ class ContentResolverSelectedPhotoOcrImporter(
         if (decoded.width == target.first && decoded.height == target.second) return decoded
         var scaled: Bitmap? = null
         return try {
-            Bitmap.createScaledBitmap(
-                decoded,
-                target.first,
-                target.second,
-                true,
-            ).also { scaled = it }
+            Bitmap.createScaledBitmap(decoded, target.first, target.second, true)
+                .also { scaled = it }
         } finally {
             if (scaled !== decoded) decoded.recycle()
         }
@@ -203,9 +204,7 @@ class ContentResolverSelectedPhotoOcrImporter(
 
     private sealed interface ImageReadResult {
         data class Success(val bytes: ByteArray) : ImageReadResult
-
         data object TooLarge : ImageReadResult
-
         data object Rejected : ImageReadResult
     }
 
@@ -219,14 +218,33 @@ class ContentResolverSelectedPhotoOcrImporter(
         const val MAX_OCR_WIDTH = 1_600
         const val MAX_OCR_HEIGHT = 1_600
         val SUPPORTED_MEDIA_TYPES = setOf(
-            "image/png",
-            "image/jpeg",
-            "image/webp",
-            "image/heic",
-            "image/heif",
+            "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif",
         )
     }
 }
+
+class ContentResolverSelectedPhotoOcrImporter(
+    private val reader: SelectedImageOcrReader,
+    private val capture: PhotoOcrTranscriptCapture,
+) : SelectedPhotoOcrImporter {
+    override suspend fun ingest(
+        commandId: String,
+        uriString: String?,
+    ): SourceCaptureResult = when (val read = reader.read(uriString)) {
+        is SelectedImageOcrReadResult.Lines -> {
+            val transcript = OcrTranscript.encodeSpatial(read.values)
+                ?: return failure(SourceCaptureError.CONTENT_TOO_LARGE)
+            capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
+        }
+
+        is SelectedImageOcrReadResult.Failure -> failure(read.error)
+    }
+}
+
+private fun failed(error: SourceCaptureError): SelectedImageOcrReadResult =
+    SelectedImageOcrReadResult.Failure(error)
+
+private fun rejected(): SelectedImageOcrReadResult = failed(SourceCaptureError.PARSE_REJECTED)
 
 private fun failure(error: SourceCaptureError) = SourceCaptureResult.Failure(
     error = error,

@@ -62,6 +62,7 @@ enum class AuditAction {
     RECONCILIATION_CONFIRMED,
     DRAFT_DISMISSED,
     TRANSACTION_VOIDED,
+    INVESTMENT_POSITION_CREATED,
 }
 
 data class LedgerAccount(
@@ -101,17 +102,38 @@ data class ReviewDraft(
     val counterparty: String,
     val note: String?,
     val fundingAccountId: AccountId?,
+    val investmentAccountId: AccountId? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
     val creationCommandId: CommandId,
     val sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
 ) {
     init {
-        require(type == TransactionType.EXPENSE || type == TransactionType.INCOME) {
-            "The first review slice only accepts expense or income drafts"
+        require(
+            type == TransactionType.EXPENSE ||
+                type == TransactionType.INCOME ||
+                type == TransactionType.INVEST_BUY,
+        ) {
+            "Review drafts accept expense, income, or investment purchase events"
         }
         require(amount.minorUnits > 0L) { "Draft amount must be positive" }
         require(counterparty.isNotBlank()) { "Draft counterparty cannot be blank" }
+        when (type) {
+            TransactionType.EXPENSE,
+            TransactionType.INCOME,
+            -> require(investmentAccountId == null) {
+                "Ordinary income and expense drafts cannot target an investment account"
+            }
+
+            TransactionType.INVEST_BUY -> require(investmentAccountId != null) {
+                "An investment purchase draft must target an investment account"
+            }
+
+            else -> Unit
+        }
+        require(fundingAccountId == null || fundingAccountId != investmentAccountId) {
+            "Funding and investment accounts must differ"
+        }
     }
 }
 
@@ -159,6 +181,7 @@ data class LedgerState(
     val pendingDrafts: List<ReviewDraft>,
     val recentTransactions: List<PostedTransaction>,
     val activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
+    val investmentPositions: List<InvestmentPosition> = emptyList(),
 )
 
 object SystemAccountIds {

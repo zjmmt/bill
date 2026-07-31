@@ -6,6 +6,7 @@ import dev.bill.source.contract.DiagnosticCode
 import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.EvidenceInput
 import dev.bill.source.contract.NotificationField
+import dev.bill.source.contract.ObservedEconomicEvent
 import dev.bill.source.contract.ObservedMoneyDirection
 import dev.bill.source.contract.ParseResult
 import dev.bill.source.contract.PayloadId
@@ -62,6 +63,57 @@ class AlipayNotificationRoutesTest {
             content("交易提醒", "支出￥12.34，余额￥56.78"),
             content("示例成功收款12.34元", "请打开支付宝参加活动"),
             content("示例成功收款12.34元", "已转入余额￥56.78"),
+        )
+
+        cases.forEach { candidate ->
+            assertEquals(NotificationGateDecision.IgnoredContent, gate.evaluate(metadata()) { candidate })
+        }
+    }
+
+    @Test
+    fun `sanitized confirmed fund purchase proposes investment purchase only`() {
+        val content = content(
+            title = AlipayNotificationRoutes.CONFIRMED_FUND_BUY_TITLE,
+            text = "确认金额：12.34元 手续费：0.00元",
+        )
+
+        val route = accepted(content)
+        val parsed = parse(route, content) as ParseResult.Parsed
+
+        assertEquals(AlipayNotificationRoutes.FUND_BUY_ROUTE_ID, route.routeId)
+        assertEquals(1_234L, parsed.candidate.amount?.value?.minorUnits)
+        assertEquals(ObservedMoneyDirection.OUTBOUND, parsed.candidate.moneyDirection?.value)
+        assertEquals(ObservedEconomicEvent.INVEST_BUY, parsed.candidate.economicEvent?.value)
+    }
+
+    @Test
+    fun `traditional Chinese fund confirmation keeps the same route and amount semantics`() {
+        val content = content(
+            title = AlipayNotificationRoutes.CONFIRMED_FUND_BUY_TITLE_TRADITIONAL,
+            text = "確認金額：56.78元 手續費：0.00元",
+        )
+
+        val route = accepted(content)
+        val parsed = parse(route, content) as ParseResult.Parsed
+
+        assertEquals(AlipayNotificationRoutes.FUND_BUY_ROUTE_ID, route.routeId)
+        assertEquals(5_678L, parsed.candidate.amount?.value?.minorUnits)
+        assertEquals(ObservedEconomicEvent.INVEST_BUY, parsed.candidate.economicEvent?.value)
+    }
+
+    @Test
+    fun `accepted gain and nonzero fee fund notices stay out of the route`() {
+        val cases = listOf(
+            content("基金申购申请已受理通知", "申请金额：12.34元"),
+            content("基金收益提醒", "昨日收益：12.34元"),
+            content(
+                AlipayNotificationRoutes.CONFIRMED_FUND_BUY_TITLE,
+                "确认金额：12.34元 手续费：0.01元",
+            ),
+            content(
+                AlipayNotificationRoutes.CONFIRMED_FUND_BUY_TITLE,
+                "确认金额：12.34元 确认金额：56.78元 手续费：0.00元",
+            ),
         )
 
         cases.forEach { candidate ->

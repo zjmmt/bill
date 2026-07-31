@@ -78,6 +78,12 @@
     <string name="quick_capture_result_unconfirmed">The result could not be confirmed in time; it may be saved or may not have been written. Check the review list before retrying.</string>
     <string name="photo_ocr_batch_completed">Photo OCR finished: %1$d ready for review, %2$d failed.</string>
     <string name="photo_ocr_batch_progress">Processed %1$d of %2$d…</string>
+    <string name="investment_ocr_prefill_ready">Investment fields were prefilled locally. Check them before creating the position.</string>
+    <string name="investment_ocr_empty">No readable text was found in this image.</string>
+    <string name="investment_ocr_too_large">This image is too large to process safely.</string>
+    <string name="investment_ocr_unreadable">The selected image could not be read by the on-device OCR engine.</string>
+    <string name="investment_ocr_no_fields">No labelled fund name, code, current value, units, or cost was found. You can still enter the position manually.</string>
+    <string name="investment_ocr_ambiguous">The screenshot contains conflicting labelled values, so nothing was prefilled. Please enter or verify the position manually.</string>
     <string name="quick_capture_tile_add_manually">Open Quick Settings twice, tap Edit, then drag “Capture receipt” into the active area.</string>
     <string name="quick_capture_tile_request_finished">Android handled the add request. If the tile is absent, add it manually from Quick Settings Edit.</string>
     <string name="payment_result_observer_description">Bill’s read-only payment-result observer. It has no active source template until you separately enable a verified source in Bill.</string>

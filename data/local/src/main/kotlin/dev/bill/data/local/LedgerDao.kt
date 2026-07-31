@@ -149,6 +149,94 @@ interface LedgerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertEntries(entries: List<EntryEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertInvestmentPosition(position: InvestmentPositionEntity)
+
+    @Query("SELECT * FROM investment_positions WHERE id = :id")
+    suspend fun findInvestmentPosition(id: String): InvestmentPositionEntity?
+
+    @Query("SELECT * FROM investment_positions WHERE accountId = :accountId")
+    suspend fun findInvestmentPositionByAccountId(accountId: String): InvestmentPositionEntity?
+
+    @Query(
+        """
+        SELECT * FROM investment_positions
+        ORDER BY updatedAtEpochMillis DESC, id ASC
+        """,
+    )
+    fun observeInvestmentPositions(): Flow<List<InvestmentPositionEntity>>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM investment_positions AS position
+        LEFT JOIN accounts AS account ON account.id = position.accountId
+        LEFT JOIN command_receipts AS receipt
+            ON receipt.commandId = position.creationCommandId
+        WHERE account.id IS NULL
+           OR account.type != 'INVESTMENT_SECURITY'
+           OR account.currency != position.currency
+           OR account.isSystem != 0
+           OR account.isArchived != 0
+           OR position.currency != 'CNY'
+           OR position.currentValueMinorUnits <= 0
+           OR TRIM(position.name) = ''
+           OR (position.instrumentCode IS NOT NULL AND TRIM(position.instrumentCode) = '')
+           OR (position.unitsDecimal IS NOT NULL AND TRIM(position.unitsDecimal) = '')
+           OR (position.costBasisMinorUnits IS NULL) != (position.costBasisCurrency IS NULL)
+           OR (position.costBasisMinorUnits IS NOT NULL AND position.costBasisMinorUnits <= 0)
+           OR (position.costBasisCurrency IS NOT NULL AND position.costBasisCurrency != position.currency)
+           OR position.sourceMode NOT IN ('MANUAL', 'OCR')
+           OR position.asOfEpochMillis > position.updatedAtEpochMillis
+           OR position.createdAtEpochMillis > position.updatedAtEpochMillis
+           OR receipt.commandId IS NULL
+           OR receipt.operation != 'CREATE_INVESTMENT_POSITION'
+           OR receipt.targetId != position.id
+           OR receipt.resultEntityId != position.id
+        """,
+    )
+    fun observeInvestmentPositionIntegrityIssueCount(): Flow<Long>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM drafts AS draft
+        LEFT JOIN accounts AS investment_account
+            ON investment_account.id = draft.investmentAccountId
+        LEFT JOIN investment_positions AS investment_position
+            ON investment_position.accountId = draft.investmentAccountId
+        WHERE draft.state NOT IN ('WAITING_USER', 'EDITED', 'CONFIRMED', 'DISMISSED', 'LINKED')
+           OR draft.type NOT IN ('EXPENSE', 'INCOME', 'INVEST_BUY')
+           OR draft.amountMinorUnits <= 0
+           OR draft.currency NOT IN ('CNY', 'USD')
+           OR TRIM(draft.counterparty) = ''
+           OR draft.createdAtEpochMillis > draft.updatedAtEpochMillis
+           OR draft.occurredAtEpochMillis > draft.updatedAtEpochMillis
+           OR (
+               draft.type IN ('EXPENSE', 'INCOME')
+               AND draft.investmentAccountId IS NOT NULL
+           )
+           OR (
+               draft.type = 'INVEST_BUY'
+               AND (
+                   draft.investmentAccountId IS NULL
+                   OR investment_account.id IS NULL
+                   OR investment_position.id IS NULL
+                   OR investment_account.type != 'INVESTMENT_SECURITY'
+                   OR investment_account.currency != draft.currency
+                   OR investment_account.currency != 'CNY'
+                   OR investment_account.isSystem != 0
+                   OR investment_account.isArchived != 0
+               )
+           )
+           OR (
+               draft.fundingAccountId IS NOT NULL
+               AND draft.fundingAccountId = draft.investmentAccountId
+           )
+        """,
+    )
+    fun observeDraftIntegrityIssueCount(): Flow<Long>
+
     @Transaction
     @Query("SELECT * FROM ledger_transactions WHERE id = :id")
     suspend fun findTransactionWithEntries(id: String): TransactionWithEntries?

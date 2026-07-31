@@ -41,12 +41,12 @@ fun AccountType.allowsUserAccountCurrency(currency: CurrencyCode): Boolean = whe
 
     AccountType.ASSET_CASH,
     AccountType.ASSET_EWALLET_BALANCE,
+    AccountType.INVESTMENT_SECURITY,
     -> currency == CurrencyCode.CNY
 
     AccountType.ASSET_WRAPPER,
     AccountType.LIABILITY_LOAN,
     AccountType.INVESTMENT_CASH,
-    AccountType.INVESTMENT_SECURITY,
     AccountType.EXPENSE_CATEGORY,
     AccountType.INCOME_CATEGORY,
     AccountType.EQUITY_ADJUSTMENT,

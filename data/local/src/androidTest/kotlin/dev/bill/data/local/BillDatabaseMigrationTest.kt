@@ -480,6 +480,68 @@ class BillDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate8To9PreservesDraftsAndAddsOptionalInvestmentTarget() = runBlocking {
+        helper.createDatabase(DatabaseV8Name, 8).apply {
+            execSQL(
+                """
+                INSERT INTO drafts (
+                    id,
+                    state,
+                    type,
+                    amountMinorUnits,
+                    currency,
+                    occurredAtEpochMillis,
+                    counterparty,
+                    note,
+                    fundingAccountId,
+                    createdAtEpochMillis,
+                    updatedAtEpochMillis,
+                    creationCommandId
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?)
+                """.trimIndent(),
+                arrayOf<Any>(
+                    "fixture-v8-draft",
+                    "WAITING_USER",
+                    "EXPENSE",
+                    1_234L,
+                    "CNY",
+                    1_753_000_000_000L,
+                    "fixture merchant",
+                    1_753_000_000_000L,
+                    1_753_000_000_000L,
+                    "fixture-v8-command",
+                ),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DatabaseV8Name,
+            9,
+            true,
+            BillMigrations.Migration8To9,
+        ).use { migrated ->
+            migrated.query(
+                "SELECT id, investmentAccountId FROM drafts WHERE id = ?",
+                arrayOf("fixture-v8-draft"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("fixture-v8-draft", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+            migrated.query(
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type = 'index' AND name = 'index_drafts_investmentAccountId'
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1L, cursor.getLong(0))
+            }
+        }
+    }
+
     private companion object {
         const val DatabaseName = "bill-v1-to-v2-migration-test"
         const val DatabaseV2Name = "bill-v2-to-v3-migration-test"
@@ -487,6 +549,7 @@ class BillDatabaseMigrationTest {
         const val DatabaseV4Name = "bill-v4-to-v5-migration-test"
         const val DatabaseV5Name = "bill-v5-to-v6-migration-test"
         const val DatabaseV6Name = "bill-v6-to-v7-migration-test"
+        const val DatabaseV8Name = "bill-v8-to-v9-migration-test"
         const val ValidHash =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val ExpectedLedgerTables = setOf(

@@ -1,0 +1,1790 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 8,
+    "identityHash": "2033835d3b35795b7966a346d2e60053",
+    "entities": [
+      {
+        "tableName": "raw_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sourceFamily` TEXT NOT NULL, `connectorId` TEXT NOT NULL, `captureMethod` TEXT NOT NULL, `captureScope` TEXT NOT NULL, `contentHash` TEXT NOT NULL, `capturedAtEpochMillis` INTEGER NOT NULL, `payloadReference` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFamily",
+            "columnName": "sourceFamily",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connectorId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureMethod",
+            "columnName": "captureMethod",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureScope",
+            "columnName": "captureScope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "contentHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMillis",
+            "columnName": "capturedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadReference",
+            "columnName": "payloadReference",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_raw_events_connectorId_contentHash_captureScope",
+            "unique": false,
+            "columnNames": [
+              "connectorId",
+              "contentHash",
+              "captureScope"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_raw_events_connectorId_contentHash_captureScope` ON `${TABLE_NAME}` (`connectorId`, `contentHash`, `captureScope`)"
+          }
+        ]
+      },
+      {
+        "tableName": "accounts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, `type` TEXT NOT NULL, `currency` TEXT NOT NULL, `isSystem` INTEGER NOT NULL, `isArchived` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `creationCommandId` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "normalizedName",
+            "columnName": "normalizedName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSystem",
+            "columnName": "isSystem",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isArchived",
+            "columnName": "isArchived",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationCommandId",
+            "columnName": "creationCommandId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_accounts_normalizedName",
+            "unique": true,
+            "columnNames": [
+              "normalizedName"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_accounts_normalizedName` ON `${TABLE_NAME}` (`normalizedName`)"
+          },
+          {
+            "name": "index_accounts_isSystem",
+            "unique": false,
+            "columnNames": [
+              "isSystem"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accounts_isSystem` ON `${TABLE_NAME}` (`isSystem`)"
+          },
+          {
+            "name": "index_accounts_creationCommandId",
+            "unique": false,
+            "columnNames": [
+              "creationCommandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_accounts_creationCommandId` ON `${TABLE_NAME}` (`creationCommandId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "drafts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `state` TEXT NOT NULL, `type` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `currency` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `counterparty` TEXT NOT NULL, `note` TEXT, `fundingAccountId` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `creationCommandId` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`fundingAccountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinorUnits",
+            "columnName": "amountMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "counterparty",
+            "columnName": "counterparty",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "fundingAccountId",
+            "columnName": "fundingAccountId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationCommandId",
+            "columnName": "creationCommandId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_drafts_state_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drafts_state_updatedAtEpochMillis` ON `${TABLE_NAME}` (`state`, `updatedAtEpochMillis`)"
+          },
+          {
+            "name": "index_drafts_fundingAccountId",
+            "unique": false,
+            "columnNames": [
+              "fundingAccountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drafts_fundingAccountId` ON `${TABLE_NAME}` (`fundingAccountId`)"
+          },
+          {
+            "name": "index_drafts_creationCommandId",
+            "unique": false,
+            "columnNames": [
+              "creationCommandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_drafts_creationCommandId` ON `${TABLE_NAME}` (`creationCommandId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fundingAccountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `draftId` TEXT, `type` TEXT NOT NULL, `status` TEXT NOT NULL, `sourceMode` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, `confirmedAtEpochMillis` INTEGER NOT NULL, `title` TEXT NOT NULL, `note` TEXT, `commandId` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`draftId`) REFERENCES `drafts`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceMode",
+            "columnName": "sourceMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmedAtEpochMillis",
+            "columnName": "confirmedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "commandId",
+            "columnName": "commandId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_transactions_draftId",
+            "unique": false,
+            "columnNames": [
+              "draftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_transactions_draftId` ON `${TABLE_NAME}` (`draftId`)"
+          },
+          {
+            "name": "index_ledger_transactions_status_confirmedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "status",
+              "confirmedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_transactions_status_confirmedAtEpochMillis` ON `${TABLE_NAME}` (`status`, `confirmedAtEpochMillis`)"
+          },
+          {
+            "name": "index_ledger_transactions_commandId",
+            "unique": false,
+            "columnNames": [
+              "commandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_transactions_commandId` ON `${TABLE_NAME}` (`commandId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "drafts",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_entries",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`transactionId` TEXT NOT NULL, `position` INTEGER NOT NULL, `accountId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `currency` TEXT NOT NULL, `role` TEXT NOT NULL, PRIMARY KEY(`transactionId`, `position`), FOREIGN KEY(`transactionId`) REFERENCES `ledger_transactions`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "position",
+            "columnName": "position",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "amountMinorUnits",
+            "columnName": "amountMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "transactionId",
+            "position"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_entries_accountId",
+            "unique": false,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entries_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ledger_transactions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "transactionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "accounts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "accountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "audit_events",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `commandId` TEXT NOT NULL, `action` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` TEXT NOT NULL, `occurredAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commandId",
+            "columnName": "commandId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityType",
+            "columnName": "entityType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entityId",
+            "columnName": "entityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredAtEpochMillis",
+            "columnName": "occurredAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_audit_events_commandId",
+            "unique": false,
+            "columnNames": [
+              "commandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_commandId` ON `${TABLE_NAME}` (`commandId`)"
+          },
+          {
+            "name": "index_audit_events_entityType_entityId",
+            "unique": false,
+            "columnNames": [
+              "entityType",
+              "entityId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_entityType_entityId` ON `${TABLE_NAME}` (`entityType`, `entityId`)"
+          },
+          {
+            "name": "index_audit_events_occurredAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "occurredAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_audit_events_occurredAtEpochMillis` ON `${TABLE_NAME}` (`occurredAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "command_receipts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`commandId` TEXT NOT NULL, `operation` TEXT NOT NULL, `targetId` TEXT NOT NULL, `resultEntityId` TEXT NOT NULL, `payloadFingerprint` TEXT NOT NULL, `appliedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`commandId`))",
+        "fields": [
+          {
+            "fieldPath": "commandId",
+            "columnName": "commandId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetId",
+            "columnName": "targetId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultEntityId",
+            "columnName": "resultEntityId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadFingerprint",
+            "columnName": "payloadFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appliedAtEpochMillis",
+            "columnName": "appliedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "commandId"
+          ]
+        }
+      },
+      {
+        "tableName": "parse_attempts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `rawEventId` TEXT NOT NULL, `parserId` TEXT NOT NULL, `providerId` TEXT NOT NULL, `sourceFamily` TEXT NOT NULL, `connectorId` TEXT NOT NULL, `parserVersion` TEXT NOT NULL, `ruleVersion` TEXT NOT NULL, `attemptedAtEpochMillis` INTEGER NOT NULL, `outcome` TEXT NOT NULL, `diagnosticCode` TEXT, `diagnosticRecoverable` INTEGER, `candidatePayload` BLOB, `resultFingerprint` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`rawEventId`) REFERENCES `raw_events`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parserId",
+            "columnName": "parserId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "providerId",
+            "columnName": "providerId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceFamily",
+            "columnName": "sourceFamily",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "connectorId",
+            "columnName": "connectorId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parserVersion",
+            "columnName": "parserVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruleVersion",
+            "columnName": "ruleVersion",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptedAtEpochMillis",
+            "columnName": "attemptedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "outcome",
+            "columnName": "outcome",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "diagnosticCode",
+            "columnName": "diagnosticCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "diagnosticRecoverable",
+            "columnName": "diagnosticRecoverable",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "candidatePayload",
+            "columnName": "candidatePayload",
+            "affinity": "BLOB"
+          },
+          {
+            "fieldPath": "resultFingerprint",
+            "columnName": "resultFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_parse_attempts_rawEventId",
+            "unique": false,
+            "columnNames": [
+              "rawEventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_parse_attempts_rawEventId` ON `${TABLE_NAME}` (`rawEventId`)"
+          },
+          {
+            "name": "index_parse_attempts_rawEventId_parserId_parserVersion_ruleVersion",
+            "unique": true,
+            "columnNames": [
+              "rawEventId",
+              "parserId",
+              "parserVersion",
+              "ruleVersion"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_parse_attempts_rawEventId_parserId_parserVersion_ruleVersion` ON `${TABLE_NAME}` (`rawEventId`, `parserId`, `parserVersion`, `ruleVersion`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "raw_events",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "rawEventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "source_draft_proposals",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `parseAttemptId` TEXT NOT NULL, `rawEventId` TEXT NOT NULL, `state` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `completedDraftId` TEXT, PRIMARY KEY(`id`), FOREIGN KEY(`parseAttemptId`) REFERENCES `parse_attempts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`rawEventId`) REFERENCES `raw_events`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`completedDraftId`) REFERENCES `drafts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parseAttemptId",
+            "columnName": "parseAttemptId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedDraftId",
+            "columnName": "completedDraftId",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_source_draft_proposals_parseAttemptId",
+            "unique": true,
+            "columnNames": [
+              "parseAttemptId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_source_draft_proposals_parseAttemptId` ON `${TABLE_NAME}` (`parseAttemptId`)"
+          },
+          {
+            "name": "index_source_draft_proposals_rawEventId",
+            "unique": false,
+            "columnNames": [
+              "rawEventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_source_draft_proposals_rawEventId` ON `${TABLE_NAME}` (`rawEventId`)"
+          },
+          {
+            "name": "index_source_draft_proposals_state_createdAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "createdAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_source_draft_proposals_state_createdAtEpochMillis` ON `${TABLE_NAME}` (`state`, `createdAtEpochMillis`)"
+          },
+          {
+            "name": "index_source_draft_proposals_completedDraftId",
+            "unique": true,
+            "columnNames": [
+              "completedDraftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_source_draft_proposals_completedDraftId` ON `${TABLE_NAME}` (`completedDraftId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "parse_attempts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "parseAttemptId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "raw_events",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "rawEventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "drafts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "completedDraftId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "draft_source_evidence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`draftId` TEXT NOT NULL, `proposalId` TEXT NOT NULL, `rawEventId` TEXT NOT NULL, `parseAttemptId` TEXT NOT NULL, PRIMARY KEY(`draftId`), FOREIGN KEY(`draftId`) REFERENCES `drafts`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`proposalId`) REFERENCES `source_draft_proposals`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`rawEventId`) REFERENCES `raw_events`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`parseAttemptId`) REFERENCES `parse_attempts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "proposalId",
+            "columnName": "proposalId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parseAttemptId",
+            "columnName": "parseAttemptId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "draftId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_draft_source_evidence_proposalId",
+            "unique": true,
+            "columnNames": [
+              "proposalId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_draft_source_evidence_proposalId` ON `${TABLE_NAME}` (`proposalId`)"
+          },
+          {
+            "name": "index_draft_source_evidence_rawEventId",
+            "unique": false,
+            "columnNames": [
+              "rawEventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_draft_source_evidence_rawEventId` ON `${TABLE_NAME}` (`rawEventId`)"
+          },
+          {
+            "name": "index_draft_source_evidence_parseAttemptId",
+            "unique": false,
+            "columnNames": [
+              "parseAttemptId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_draft_source_evidence_parseAttemptId` ON `${TABLE_NAME}` (`parseAttemptId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "drafts",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "source_draft_proposals",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "proposalId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "raw_events",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "rawEventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "parse_attempts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "parseAttemptId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "source_evidence_payloads",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`rawEventId` TEXT NOT NULL, `payloadId` TEXT NOT NULL, `payloadSizeBytes` INTEGER, `state` TEXT NOT NULL, `clearCommandId` TEXT, `clearReason` TEXT, `clearRequestedAtEpochMillis` INTEGER, `clearedAtEpochMillis` INTEGER, PRIMARY KEY(`rawEventId`), FOREIGN KEY(`rawEventId`) REFERENCES `raw_events`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadId",
+            "columnName": "payloadId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadSizeBytes",
+            "columnName": "payloadSizeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "clearCommandId",
+            "columnName": "clearCommandId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "clearReason",
+            "columnName": "clearReason",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "clearRequestedAtEpochMillis",
+            "columnName": "clearRequestedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "clearedAtEpochMillis",
+            "columnName": "clearedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "rawEventId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_source_evidence_payloads_payloadId",
+            "unique": true,
+            "columnNames": [
+              "payloadId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_source_evidence_payloads_payloadId` ON `${TABLE_NAME}` (`payloadId`)"
+          },
+          {
+            "name": "index_source_evidence_payloads_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_source_evidence_payloads_state` ON `${TABLE_NAME}` (`state`)"
+          },
+          {
+            "name": "index_source_evidence_payloads_clearCommandId",
+            "unique": true,
+            "columnNames": [
+              "clearCommandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_source_evidence_payloads_clearCommandId` ON `${TABLE_NAME}` (`clearCommandId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "raw_events",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "rawEventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "source_evidence_policy",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `retentionDays` INTEGER, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "retentionDays",
+            "columnName": "retentionDays",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "source_evidence_staging",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`payloadId` TEXT NOT NULL, `rawEventId` TEXT, `contentHash` TEXT, `payloadSizeBytes` INTEGER, `state` TEXT NOT NULL, `leaseId` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `leaseExpiresAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`payloadId`))",
+        "fields": [
+          {
+            "fieldPath": "payloadId",
+            "columnName": "payloadId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "contentHash",
+            "columnName": "contentHash",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "payloadSizeBytes",
+            "columnName": "payloadSizeBytes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaseId",
+            "columnName": "leaseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaseExpiresAtEpochMillis",
+            "columnName": "leaseExpiresAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "payloadId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_source_evidence_staging_rawEventId",
+            "unique": true,
+            "columnNames": [
+              "rawEventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_source_evidence_staging_rawEventId` ON `${TABLE_NAME}` (`rawEventId`)"
+          },
+          {
+            "name": "index_source_evidence_staging_state_leaseExpiresAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "leaseExpiresAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_source_evidence_staging_state_leaseExpiresAtEpochMillis` ON `${TABLE_NAME}` (`state`, `leaseExpiresAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "notification_observations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`observationId` TEXT NOT NULL, `commandId` TEXT NOT NULL, `state` TEXT NOT NULL, `leaseId` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `leaseExpiresAtEpochMillis` INTEGER NOT NULL, `capturedAtEpochMillis` INTEGER, PRIMARY KEY(`observationId`))",
+        "fields": [
+          {
+            "fieldPath": "observationId",
+            "columnName": "observationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commandId",
+            "columnName": "commandId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaseId",
+            "columnName": "leaseId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "leaseExpiresAtEpochMillis",
+            "columnName": "leaseExpiresAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "capturedAtEpochMillis",
+            "columnName": "capturedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "observationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_notification_observations_state_leaseExpiresAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "leaseExpiresAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_observations_state_leaseExpiresAtEpochMillis` ON `${TABLE_NAME}` (`state`, `leaseExpiresAtEpochMillis`)"
+          },
+          {
+            "name": "index_notification_observations_state_capturedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "capturedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notification_observations_state_capturedAtEpochMillis` ON `${TABLE_NAME}` (`state`, `capturedAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "statement_import_batches",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `fileHash` TEXT NOT NULL, `mappingHash` TEXT NOT NULL, `totalRowCount` INTEGER NOT NULL, `processedRowCount` INTEGER NOT NULL, `readyForReviewCount` INTEGER NOT NULL, `rejectedRowCount` INTEGER NOT NULL, `state` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fileHash",
+            "columnName": "fileHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mappingHash",
+            "columnName": "mappingHash",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalRowCount",
+            "columnName": "totalRowCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "processedRowCount",
+            "columnName": "processedRowCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "readyForReviewCount",
+            "columnName": "readyForReviewCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rejectedRowCount",
+            "columnName": "rejectedRowCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_statement_import_batches_fileHash_mappingHash",
+            "unique": true,
+            "columnNames": [
+              "fileHash",
+              "mappingHash"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_statement_import_batches_fileHash_mappingHash` ON `${TABLE_NAME}` (`fileHash`, `mappingHash`)"
+          },
+          {
+            "name": "index_statement_import_batches_state_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "state",
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_statement_import_batches_state_updatedAtEpochMillis` ON `${TABLE_NAME}` (`state`, `updatedAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "statement_import_rows",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`batchId` TEXT NOT NULL, `tableRowIndex` INTEGER NOT NULL, `rowFingerprint` TEXT NOT NULL, `state` TEXT NOT NULL, `rawEventId` TEXT, `errorCode` TEXT, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`batchId`, `tableRowIndex`), FOREIGN KEY(`batchId`) REFERENCES `statement_import_batches`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`rawEventId`) REFERENCES `raw_events`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "batchId",
+            "columnName": "batchId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tableRowIndex",
+            "columnName": "tableRowIndex",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rowFingerprint",
+            "columnName": "rowFingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "rawEventId",
+            "columnName": "rawEventId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "errorCode",
+            "columnName": "errorCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "batchId",
+            "tableRowIndex"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_statement_import_rows_rawEventId",
+            "unique": true,
+            "columnNames": [
+              "rawEventId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_statement_import_rows_rawEventId` ON `${TABLE_NAME}` (`rawEventId`)"
+          },
+          {
+            "name": "index_statement_import_rows_batchId_state",
+            "unique": false,
+            "columnNames": [
+              "batchId",
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_statement_import_rows_batchId_state` ON `${TABLE_NAME}` (`batchId`, `state`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "statement_import_batches",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "batchId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "raw_events",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "rawEventId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reconciliation_draft_links",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`transactionId` TEXT NOT NULL, `draftId` TEXT NOT NULL, `role` TEXT NOT NULL, `linkedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`transactionId`, `draftId`), FOREIGN KEY(`transactionId`) REFERENCES `ledger_transactions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`draftId`) REFERENCES `drafts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "transactionId",
+            "columnName": "transactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "draftId",
+            "columnName": "draftId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "role",
+            "columnName": "role",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "linkedAtEpochMillis",
+            "columnName": "linkedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "transactionId",
+            "draftId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reconciliation_draft_links_draftId",
+            "unique": false,
+            "columnNames": [
+              "draftId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reconciliation_draft_links_draftId` ON `${TABLE_NAME}` (`draftId`)"
+          },
+          {
+            "name": "index_reconciliation_draft_links_transactionId_role",
+            "unique": false,
+            "columnNames": [
+              "transactionId",
+              "role"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reconciliation_draft_links_transactionId_role` ON `${TABLE_NAME}` (`transactionId`, `role`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ledger_transactions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "transactionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "drafts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "draftId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "transaction_relations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `fromTransactionId` TEXT NOT NULL, `toTransactionId` TEXT NOT NULL, `type` TEXT NOT NULL, `decision` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`fromTransactionId`) REFERENCES `ledger_transactions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT , FOREIGN KEY(`toTransactionId`) REFERENCES `ledger_transactions`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromTransactionId",
+            "columnName": "fromTransactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "toTransactionId",
+            "columnName": "toTransactionId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "decision",
+            "columnName": "decision",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transaction_relations_fromTransactionId",
+            "unique": false,
+            "columnNames": [
+              "fromTransactionId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transaction_relations_fromTransactionId` ON `${TABLE_NAME}` (`fromTransactionId`)"
+          },
+          {
+            "name": "index_transaction_relations_toTransactionId_type",
+            "unique": false,
+            "columnNames": [
+              "toTransactionId",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transaction_relations_toTransactionId_type` ON `${TABLE_NAME}` (`toTransactionId`, `type`)"
+          },
+          {
+            "name": "index_transaction_relations_fromTransactionId_toTransactionId_type",
+            "unique": true,
+            "columnNames": [
+              "fromTransactionId",
+              "toTransactionId",
+              "type"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_transaction_relations_fromTransactionId_toTransactionId_type` ON `${TABLE_NAME}` (`fromTransactionId`, `toTransactionId`, `type`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "ledger_transactions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "fromTransactionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "ledger_transactions",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "toTransactionId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "investment_positions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `instrumentCode` TEXT, `name` TEXT NOT NULL, `currentValueMinorUnits` INTEGER NOT NULL, `currency` TEXT NOT NULL, `unitsDecimal` TEXT, `costBasisMinorUnits` INTEGER, `costBasisCurrency` TEXT, `asOfEpochMillis` INTEGER NOT NULL, `sourceMode` TEXT NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `creationCommandId` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "accountId",
+            "columnName": "accountId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "instrumentCode",
+            "columnName": "instrumentCode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currentValueMinorUnits",
+            "columnName": "currentValueMinorUnits",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "currency",
+            "columnName": "currency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unitsDecimal",
+            "columnName": "unitsDecimal",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "costBasisMinorUnits",
+            "columnName": "costBasisMinorUnits",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "costBasisCurrency",
+            "columnName": "costBasisCurrency",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "asOfEpochMillis",
+            "columnName": "asOfEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceMode",
+            "columnName": "sourceMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "creationCommandId",
+            "columnName": "creationCommandId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_investment_positions_accountId",
+            "unique": true,
+            "columnNames": [
+              "accountId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_investment_positions_accountId` ON `${TABLE_NAME}` (`accountId`)"
+          },
+          {
+            "name": "index_investment_positions_instrumentCode",
+            "unique": false,
+            "columnNames": [
+              "instrumentCode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_investment_positions_instrumentCode` ON `${TABLE_NAME}` (`instrumentCode`)"
+          },
+          {
+            "name": "index_investment_positions_creationCommandId",
+            "unique": true,
+            "columnNames": [
+              "creationCommandId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_investment_positions_creationCommandId` ON `${TABLE_NAME}` (`creationCommandId`)"
+          },
+          {
+            "name": "index_investment_positions_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_investment_positions_updatedAtEpochMillis` ON `${TABLE_NAME}` (`updatedAtEpochMillis`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "accounts",
+            "onDelete": "RESTRICT",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "accountId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2033835d3b35795b7966a346d2e60053')"
+    ]
+  }
+}

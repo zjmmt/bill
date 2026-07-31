@@ -10,6 +10,7 @@ import dev.bill.core.model.CurrencyCode
 data class ReviewUiState(
     val draft: DraftSummary,
     val eligibleAccounts: List<AccountSummary>,
+    val investmentAccount: AccountSummary?,
     val isSaving: Boolean,
     val operationError: OperationError?,
 )
@@ -32,6 +33,7 @@ data class ManualDraftInput(
     val counterparty: String,
     val note: String,
     val currency: CurrencyCode = CurrencyCode.CNY,
+    val investmentAccountId: String? = null,
 )
 
 object ReviewPresenter {
@@ -43,6 +45,9 @@ object ReviewPresenter {
     ): ReviewUiState = ReviewUiState(
         draft = draft,
         eligibleAccounts = accounts.filter { account -> account.canFund(draft) },
+        investmentAccount = draft.investmentAccountId?.let { investmentAccountId ->
+            accounts.firstOrNull { account -> account.id == investmentAccountId }
+        },
         isSaving = isSaving,
         operationError = operationError,
     )

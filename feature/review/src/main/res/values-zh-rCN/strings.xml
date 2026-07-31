@@ -88,6 +88,10 @@
     <string name="shared_text_possible_duplicate">可能重复：此前已采集过相同证据。</string>
     <string name="expense">支出</string>
     <string name="income">收入</string>
+    <string name="investment_buy">基金申购</string>
+    <string name="investment_position_target">已有基金持仓</string>
+    <string name="investment_position_target_hint">请选择这笔申购进入的、已由你确认的持仓。通知不会替你创建持仓，也不会推算持仓市值。</string>
+    <string name="investment_position_required">请先创建并核对基金持仓，再回来处理这条通知。</string>
     <string name="amount">金额</string>
     <string name="amount_hint">请输入大于零的金额，最多两位小数；本应用不做汇率换算。</string>
     <string name="counterparty">交易对象或说明</string>
@@ -103,6 +107,7 @@
     <string name="error_source_currency_not_allowed">此来源不能以所选币种保存。</string>
     <string name="source_currency_restricted">此来源只能以人民币复核，请核对金额后再保存。</string>
     <string name="source_currency_unavailable">该来源缺少已验证的币种金额，暂不能保存为交易。</string>
+    <string name="source_kind_unavailable">这条证据没有当前支持的经济事件，无法创建草稿。</string>
 
     <string name="review_marker">05 / 复核</string>
     <string name="review_title">复核草稿</string>
@@ -111,6 +116,7 @@
     <string name="shared_text_channel">用户提供的证据；未验证来源平台</string>
     <string name="review_reason_heading">为什么需要确认</string>
     <string name="review_reason_account_missing">请选择实际支付或收款的账户。</string>
+    <string name="review_reason_investment_position_missing">所选基金持仓已不存在。请先重新创建并核对持仓，再确认入账。</string>
     <string name="review_reason_ready">金额、类型和资金账户已经可以生成平衡分录。</string>
     <string name="review_details_heading">账务明细</string>
     <string name="review_evidence_heading">证据</string>
@@ -119,6 +125,7 @@
     <string name="payment_channel">支付渠道</string>
     <string name="manual_channel">手工录入不适用</string>
     <string name="funding_account">实际资金账户</string>
+    <string name="investment_position_missing">持仓不可用</string>
     <string name="no_eligible_accounts">还没有可用账户。请先创建账户，再回来复核这笔草稿。</string>
     <string name="asset_account">可用资产账户</string>
     <string name="credit_account">信用负债账户</string>
@@ -126,6 +133,7 @@
     <string name="shared_text_evidence">已关联用户提供给 Bill 的不可变文本证据。来源平台未经验证，原文默认不会在这里展示。</string>
     <string name="expense_impact">生成一笔支出，并等额减少所选资产；若选择信用卡，则等额增加信用卡欠款。</string>
     <string name="income_impact">生成一笔收入，并等额增加所选资产账户。</string>
+    <string name="investment_buy_impact">把已确认金额从所选资金账户转入指定基金持仓。这是资产转换，不算支出，也不会自动改写持仓市值快照。</string>
     <string name="confirm_posting">确认记账</string>
     <string name="save_for_later">稍后复核</string>
     <string name="ignore_draft">忽略这笔草稿</string>

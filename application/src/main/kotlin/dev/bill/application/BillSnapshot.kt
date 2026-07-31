@@ -6,6 +6,7 @@ import dev.bill.core.model.Money
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.source.contract.SourceFamily
 import java.time.Instant
+import java.math.BigDecimal
 
 data class AccountSummary(
     val id: String,
@@ -15,9 +16,22 @@ data class AccountSummary(
     val isLiability: Boolean,
 )
 
+data class InvestmentPositionSummary(
+    val id: String,
+    val accountId: String,
+    val instrumentCode: String?,
+    val name: String,
+    val currentValue: Money,
+    val units: BigDecimal?,
+    val costBasis: Money?,
+    val asOf: Instant,
+    val wasOcrPrefilled: Boolean,
+)
+
 enum class DraftSummaryKind {
     EXPENSE,
     INCOME,
+    INVEST_BUY,
 }
 
 data class DraftSummary(
@@ -27,6 +41,7 @@ data class DraftSummary(
     val counterparty: String,
     val note: String?,
     val fundingAccountId: String?,
+    val investmentAccountId: String? = null,
     val occurredAt: Instant,
     val sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
 )
@@ -48,6 +63,10 @@ data class SourceReviewSummary(
     val suggestedAmount: Money?,
     val allowedDraftCurrencies: Set<CurrencyCode>,
     val suggestedKind: DraftSummaryKind?,
+    val allowedDraftKinds: Set<DraftSummaryKind> = setOf(
+        DraftSummaryKind.EXPENSE,
+        DraftSummaryKind.INCOME,
+    ),
     val suggestedCounterparty: String?,
     val diagnosticCode: String?,
     val isPossibleDuplicate: Boolean,
@@ -107,6 +126,7 @@ data class BillSnapshot(
     val pendingDrafts: List<DraftSummary>,
     val pendingSourceReviews: List<SourceReviewSummary> = emptyList(),
     val reconciliationCases: List<ReconciliationCaseSummary> = emptyList(),
+    val investmentPositions: List<InvestmentPositionSummary> = emptyList(),
 )
 
 fun AccountSummary.canFund(kind: DraftSummaryKind): Boolean = when (kind) {
@@ -116,6 +136,10 @@ fun AccountSummary.canFund(kind: DraftSummaryKind): Boolean = when (kind) {
         type == AccountType.LIABILITY_CC
 
     DraftSummaryKind.INCOME -> type == AccountType.ASSET_CASH ||
+        type == AccountType.ASSET_BANK ||
+        type == AccountType.ASSET_EWALLET_BALANCE
+
+    DraftSummaryKind.INVEST_BUY -> type == AccountType.ASSET_CASH ||
         type == AccountType.ASSET_BANK ||
         type == AccountType.ASSET_EWALLET_BALANCE
 }

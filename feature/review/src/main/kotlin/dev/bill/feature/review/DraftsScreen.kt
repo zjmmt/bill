@@ -357,6 +357,7 @@ private fun DraftRow(
                     text = when (draft.kind) {
                         DraftSummaryKind.EXPENSE -> stringResource(R.string.expense)
                         DraftSummaryKind.INCOME -> stringResource(R.string.income)
+                        DraftSummaryKind.INVEST_BUY -> stringResource(R.string.investment_buy)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,

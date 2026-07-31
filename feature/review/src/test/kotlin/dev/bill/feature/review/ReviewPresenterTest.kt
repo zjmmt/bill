@@ -42,6 +42,23 @@ class ReviewPresenterTest {
         assertEquals(listOf(cash, creditCard), state.eligibleAccounts)
     }
 
+    @Test
+    fun `fund purchase keeps the selected position separate from funding choices`() {
+        val bank = account("bank", AccountType.ASSET_BANK)
+        val investment = account("fund", AccountType.INVESTMENT_SECURITY)
+        val state = ReviewPresenter.present(
+            draft = draft(DraftSummaryKind.INVEST_BUY).copy(
+                investmentAccountId = investment.id,
+            ),
+            accounts = listOf(bank, investment),
+            isSaving = false,
+            operationError = null,
+        )
+
+        assertEquals(listOf(bank), state.eligibleAccounts)
+        assertEquals(investment, state.investmentAccount)
+    }
+
     private fun draft(kind: DraftSummaryKind) = DraftSummary(
         id = "draft",
         kind = kind,

@@ -4,14 +4,21 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.bill.app.quickcapture.SelectedPhotoOcrImporter
+import dev.bill.app.quickcapture.SelectedImageOcrReadResult
+import dev.bill.app.quickcapture.SelectedImageOcrReader
 import dev.bill.application.BillService
 import dev.bill.application.BillSnapshot
 import dev.bill.application.CreateAccountCommand
 import dev.bill.application.CreateExternalDraftCommand
+import dev.bill.application.CreateInvestmentPositionCommand
 import dev.bill.application.CreateManualDraftCommand
 import dev.bill.application.DelimitedStatementImport
 import dev.bill.application.DraftSummaryKind
 import dev.bill.application.LocalDelimitedStatementSession
+import dev.bill.application.InvestmentPositionOcrPrefill
+import dev.bill.application.InvestmentPositionOcrPrefillError
+import dev.bill.application.InvestmentPositionOcrPrefillParser
+import dev.bill.application.InvestmentPositionOcrPrefillResult
 import dev.bill.application.OperationError
 import dev.bill.application.OperationResult
 import dev.bill.application.ResolveReconciliationCommand
@@ -29,6 +36,7 @@ import dev.bill.application.SourceEvidenceOperationError
 import dev.bill.application.SourceEvidenceOperationResult
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
+import dev.bill.core.domain.InvestmentPositionSourceMode
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
@@ -64,6 +72,7 @@ import kotlinx.coroutines.withContext
 
 enum class BillOperationKind {
     CREATE_ACCOUNT,
+    CREATE_INVESTMENT_POSITION,
     CREATE_DRAFT,
     CREATE_EXTERNAL_DRAFT,
     DISMISS_SOURCE_REVIEW,
@@ -110,7 +119,16 @@ data class BillUiState(
     val evidence: EvidenceSettingsUiState = EvidenceSettingsUiState(),
     val statementImport: StatementImportUiState = StatementImportUiState.Idle,
     val photoOcrBatch: PhotoOcrBatchUiState? = null,
+    val isInvestmentOcrRunning: Boolean = false,
 )
+
+enum class InvestmentOcrPrefillUiError {
+    EMPTY_IMAGE,
+    IMAGE_TOO_LARGE,
+    UNREADABLE_IMAGE,
+    NO_RECOGNIZED_FIELDS,
+    AMBIGUOUS_FIELDS,
+}
 
 data class PhotoOcrBatchUiState(
     val processedCount: Int,
@@ -159,6 +177,14 @@ sealed interface BillUiEvent {
         }
     }
 
+    data class InvestmentOcrPrefillReady(
+        val prefill: InvestmentPositionOcrPrefill,
+    ) : BillUiEvent
+
+    data class InvestmentOcrPrefillFailed(
+        val error: InvestmentOcrPrefillUiError,
+    ) : BillUiEvent
+
     data class EvidenceOperationSucceeded(
         val kind: EvidenceOperationKind,
         val rawEventId: String?,
@@ -184,6 +210,7 @@ class BillViewModel(
         SharedReceiptImageDocumentReader.Unavailable,
     private val selectedPhotoOcrImporter: SelectedPhotoOcrImporter =
         SelectedPhotoOcrImporter.Unavailable,
+    private val selectedImageOcrReader: SelectedImageOcrReader = SelectedImageOcrReader.Unavailable,
     private val delimitedStatementImport: DelimitedStatementImport =
         DelimitedStatementImport.Unavailable,
     private val delimitedStatementDocumentReader: SelectedDelimitedStatementDocumentReader =
@@ -204,6 +231,7 @@ class BillViewModel(
     private var statementMappingJob: Job? = null
     private var statementImportJob: Job? = null
     private var photoOcrJob: Job? = null
+    private var investmentOcrJob: Job? = null
     private var statementDocumentGeneration = 0L
     private var statementMappingGeneration = 0L
     private var statementSession: LocalDelimitedStatementSession? = null
@@ -299,6 +327,74 @@ class BillViewModel(
         }
     }
 
+    fun createInvestmentPosition(
+        commandId: String,
+        name: String,
+        instrumentCode: String,
+        currentValue: String,
+        units: String,
+        costBasis: String,
+        wasOcrPrefilled: Boolean,
+    ) {
+        perform(BillOperationKind.CREATE_INVESTMENT_POSITION) {
+            service.createInvestmentPosition(
+                CreateInvestmentPositionCommand(
+                    commandId = CommandId(commandId),
+                    name = name,
+                    instrumentCode = instrumentCode.takeIf(String::isNotBlank),
+                    currentValueText = currentValue,
+                    unitsText = units.takeIf(String::isNotBlank),
+                    costBasisText = costBasis.takeIf(String::isNotBlank),
+                    sourceMode = if (wasOcrPrefilled) {
+                        InvestmentPositionSourceMode.OCR
+                    } else {
+                        InvestmentPositionSourceMode.MANUAL
+                    },
+                ),
+            )
+        }
+    }
+
+    fun prefillInvestmentFromScreenshot(uriString: String?) {
+        if (investmentOcrJob?.isActive == true) return
+        mutableUiState.update { state -> state.copy(isInvestmentOcrRunning = true) }
+        investmentOcrJob = viewModelScope.launch {
+            try {
+                val event = try {
+                    when (val read = selectedImageOcrReader.read(uriString)) {
+                        is SelectedImageOcrReadResult.Lines -> when (
+                            val parsed = withContext(Dispatchers.Default) {
+                                InvestmentPositionOcrPrefillParser.parse(
+                                    read.values.map { line -> line.value },
+                                )
+                            }
+                        ) {
+                            is InvestmentPositionOcrPrefillResult.Success ->
+                                BillUiEvent.InvestmentOcrPrefillReady(parsed.prefill)
+
+                            is InvestmentPositionOcrPrefillResult.Failure ->
+                                BillUiEvent.InvestmentOcrPrefillFailed(parsed.error.toUiError())
+                        }
+
+                        is SelectedImageOcrReadResult.Failure ->
+                            BillUiEvent.InvestmentOcrPrefillFailed(
+                                read.error.toInvestmentOcrUiError(),
+                            )
+                    }
+                } catch (cancellation: CancellationException) {
+                    throw cancellation
+                } catch (_: Exception) {
+                    BillUiEvent.InvestmentOcrPrefillFailed(
+                        SourceCaptureError.PARSE_REJECTED.toInvestmentOcrUiError(),
+                    )
+                }
+                eventChannel.send(event)
+            } finally {
+                mutableUiState.update { state -> state.copy(isInvestmentOcrRunning = false) }
+            }
+        }
+    }
+
     fun createManualDraft(
         commandId: String,
         kind: DraftSummaryKind,
@@ -314,6 +410,7 @@ class BillViewModel(
                     type = when (kind) {
                         DraftSummaryKind.EXPENSE -> TransactionType.EXPENSE
                         DraftSummaryKind.INCOME -> TransactionType.INCOME
+                        DraftSummaryKind.INVEST_BUY -> TransactionType.INVEST_BUY
                     },
                     amountText = amount,
                     counterparty = counterparty,
@@ -333,6 +430,7 @@ class BillViewModel(
         note: String,
         currency: CurrencyCode = CurrencyCode.CNY,
         occurredAt: Instant? = null,
+        investmentAccountId: String? = null,
     ) {
         perform(BillOperationKind.CREATE_EXTERNAL_DRAFT, proposalId) {
             service.createExternalDraft(
@@ -342,12 +440,14 @@ class BillViewModel(
                     type = when (kind) {
                         DraftSummaryKind.EXPENSE -> TransactionType.EXPENSE
                         DraftSummaryKind.INCOME -> TransactionType.INCOME
+                        DraftSummaryKind.INVEST_BUY -> TransactionType.INVEST_BUY
                     },
                     amountText = amount,
                     counterparty = counterparty,
                     note = note,
                     occurredAt = occurredAt,
                     currency = currency,
+                    investmentAccountId = investmentAccountId?.let(::AccountId),
                 ),
             )
         }
@@ -1209,6 +1309,8 @@ class BillViewModel(
             SharedReceiptImageDocumentReader.Unavailable,
         private val selectedPhotoOcrImporter: SelectedPhotoOcrImporter =
             SelectedPhotoOcrImporter.Unavailable,
+        private val selectedImageOcrReader: SelectedImageOcrReader =
+            SelectedImageOcrReader.Unavailable,
         private val delimitedStatementImport: DelimitedStatementImport =
             DelimitedStatementImport.Unavailable,
         private val delimitedStatementDocumentReader: SelectedDelimitedStatementDocumentReader =
@@ -1227,6 +1329,7 @@ class BillViewModel(
                 sharedReceiptImageIngestionService = sharedReceiptImageIngestionService,
                 sharedReceiptImageDocumentReader = sharedReceiptImageDocumentReader,
                 selectedPhotoOcrImporter = selectedPhotoOcrImporter,
+                selectedImageOcrReader = selectedImageOcrReader,
                 delimitedStatementImport = delimitedStatementImport,
                 delimitedStatementDocumentReader = delimitedStatementDocumentReader,
                 statementImportDispatcher = statementImportDispatcher,
@@ -1239,6 +1342,21 @@ class BillViewModel(
         const val STATEMENT_MAPPING_PREVIEW_DEBOUNCE_MILLIS = 250L
     }
 }
+
+private fun SourceCaptureError.toInvestmentOcrUiError(): InvestmentOcrPrefillUiError = when (this) {
+    SourceCaptureError.EMPTY_CONTENT -> InvestmentOcrPrefillUiError.EMPTY_IMAGE
+    SourceCaptureError.CONTENT_TOO_LARGE -> InvestmentOcrPrefillUiError.IMAGE_TOO_LARGE
+    else -> InvestmentOcrPrefillUiError.UNREADABLE_IMAGE
+}
+
+private fun InvestmentPositionOcrPrefillError.toUiError(): InvestmentOcrPrefillUiError =
+    when (this) {
+        InvestmentPositionOcrPrefillError.NO_RECOGNIZED_FIELDS ->
+            InvestmentOcrPrefillUiError.NO_RECOGNIZED_FIELDS
+
+        InvestmentPositionOcrPrefillError.AMBIGUOUS_FIELDS ->
+            InvestmentOcrPrefillUiError.AMBIGUOUS_FIELDS
+    }
 
 private sealed interface StatementMappingBuildResult {
     data class Ready(

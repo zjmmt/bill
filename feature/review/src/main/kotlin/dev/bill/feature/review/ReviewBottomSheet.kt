@@ -59,6 +59,9 @@ fun ReviewBottomSheet(
 ) {
     val draft = state.draft
     val selectedAccount = state.eligibleAccounts.firstOrNull { it.id == draft.fundingAccountId }
+    val investmentTargetReady = draft.kind != DraftSummaryKind.INVEST_BUY ||
+        state.investmentAccount?.type == AccountType.INVESTMENT_SECURITY
+    val postingReady = selectedAccount != null && investmentTargetReady
 
     ModalBottomSheet(
         onDismissRequest = {
@@ -120,10 +123,11 @@ fun ReviewBottomSheet(
 
             InformationSection(
                 title = stringResource(R.string.review_reason_heading),
-                body = if (selectedAccount == null) {
-                    stringResource(R.string.review_reason_account_missing)
-                } else {
-                    stringResource(R.string.review_reason_ready)
+                body = when {
+                    selectedAccount == null -> stringResource(R.string.review_reason_account_missing)
+                    !investmentTargetReady ->
+                        stringResource(R.string.review_reason_investment_position_missing)
+                    else -> stringResource(R.string.review_reason_ready)
                 },
             )
 
@@ -132,6 +136,13 @@ fun ReviewBottomSheet(
                 label = stringResource(R.string.economic_type),
                 value = draft.kind.localizedName(),
             )
+            if (draft.kind == DraftSummaryKind.INVEST_BUY) {
+                LabeledValue(
+                    label = stringResource(R.string.investment_position_target),
+                    value = state.investmentAccount?.name
+                        ?: stringResource(R.string.investment_position_missing),
+                )
+            }
             LabeledValue(
                 label = stringResource(R.string.payment_channel),
                 value = stringResource(
@@ -192,6 +203,7 @@ fun ReviewBottomSheet(
                 body = when (draft.kind) {
                     DraftSummaryKind.EXPENSE -> stringResource(R.string.expense_impact)
                     DraftSummaryKind.INCOME -> stringResource(R.string.income_impact)
+                    DraftSummaryKind.INVEST_BUY -> stringResource(R.string.investment_buy_impact)
                 },
             )
 
@@ -208,7 +220,7 @@ fun ReviewBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 56.dp),
-                enabled = !state.isSaving && selectedAccount != null,
+                enabled = !state.isSaving && postingReady,
                 shape = MaterialTheme.shapes.small,
             ) {
                 if (state.isSaving) {
@@ -333,6 +345,7 @@ private fun DraftSummaryKind.localizedName(): String = stringResource(
     when (this) {
         DraftSummaryKind.EXPENSE -> R.string.expense
         DraftSummaryKind.INCOME -> R.string.income
+        DraftSummaryKind.INVEST_BUY -> R.string.investment_buy
     },
 )
 

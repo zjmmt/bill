@@ -39,6 +39,7 @@ data class AccountEntity(
     indices = [
         Index(value = ["state", "updatedAtEpochMillis"]),
         Index(value = ["fundingAccountId"]),
+        Index(value = ["investmentAccountId"]),
         Index(value = ["creationCommandId"]),
     ],
 )
@@ -52,6 +53,7 @@ data class DraftEntity(
     val counterparty: String,
     val note: String?,
     val fundingAccountId: String?,
+    val investmentAccountId: String?,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val creationCommandId: String,
@@ -112,6 +114,40 @@ data class EntryEntity(
     val amountMinorUnits: Long,
     val currency: String,
     val role: String,
+)
+
+@Entity(
+    tableName = "investment_positions",
+    foreignKeys = [
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.RESTRICT,
+        ),
+    ],
+    indices = [
+        Index(value = ["accountId"], unique = true),
+        Index(value = ["instrumentCode"]),
+        Index(value = ["creationCommandId"], unique = true),
+        Index(value = ["updatedAtEpochMillis"]),
+    ],
+)
+data class InvestmentPositionEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val accountId: String,
+    val instrumentCode: String?,
+    val name: String,
+    val currentValueMinorUnits: Long,
+    val currency: String,
+    val unitsDecimal: String?,
+    val costBasisMinorUnits: Long?,
+    val costBasisCurrency: String?,
+    val asOfEpochMillis: Long,
+    val sourceMode: String,
+    val createdAtEpochMillis: Long,
+    val updatedAtEpochMillis: Long,
+    val creationCommandId: String,
 )
 
 @Entity(

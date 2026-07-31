@@ -6,15 +6,19 @@ import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.EvidenceLocator
 import dev.bill.source.contract.FieldCandidate
 import dev.bill.source.contract.NormalizedCandidate
+import dev.bill.source.contract.ObservedEconomicEvent
 import dev.bill.source.contract.ObservedMoneyDirection
 import dev.bill.source.contract.ObservedTime
 import dev.bill.source.contract.ProviderId
 import dev.bill.source.contract.ScopedExternalReference
+import java.io.ByteArrayOutputStream
+import java.io.DataOutputStream
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
@@ -53,6 +57,11 @@ class SourceCandidateCodecTest {
                 confidence = 0.55,
                 evidenceLocator = EvidenceLocator.TextRange(10, 17),
             ),
+            economicEvent = FieldCandidate(
+                value = ObservedEconomicEvent.INVEST_BUY,
+                confidence = 0.97,
+                evidenceLocator = EvidenceLocator.WholePayload,
+            ),
             externalReferences = setOf(
                 ScopedExternalReference(
                     providerId = ProviderId("fixture-provider"),
@@ -68,6 +77,30 @@ class SourceCandidateCodecTest {
         assertEquals(candidate, SourceCandidateCodec.decode(encoded))
         assertNull(SourceCandidateCodec.encode(null))
         assertNull(SourceCandidateCodec.decode(null))
+    }
+
+    @Test
+    fun `legacy version one candidate remains readable without an economic event`() {
+        val buffer = ByteArrayOutputStream()
+        DataOutputStream(buffer).use { output ->
+            output.writeInt(0x42494C4C)
+            output.writeInt(1)
+            repeat(3) { output.writeBoolean(false) }
+            output.writeBoolean(true)
+            val value = "legacy".toByteArray(Charsets.UTF_8)
+            output.writeInt(value.size)
+            output.write(value)
+            output.writeDouble(0.8)
+            output.writeByte(1)
+            output.writeBoolean(false)
+            output.writeInt(0)
+        }
+
+        val decoded = requireNotNull(SourceCandidateCodec.decode(buffer.toByteArray()))
+
+        assertNull(decoded.economicEvent)
+        assertEquals("legacy", decoded.counterparty?.value)
+        assertTrue(decoded.externalReferences.isEmpty())
     }
 
     @Test

@@ -9,6 +9,7 @@ import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
+import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.ReconciliationDraftRole
@@ -31,11 +32,13 @@ import dev.bill.source.contract.EvidenceLocator
 import dev.bill.source.contract.FieldCandidate
 import dev.bill.source.contract.GenericDelimitedStatementIdentity
 import dev.bill.source.contract.NormalizedCandidate
+import dev.bill.source.contract.ObservedEconomicEvent
 import dev.bill.source.contract.ObservedMoneyDirection
 import dev.bill.source.contract.ObservedTime
 import dev.bill.source.contract.SourceFamily
 import dev.bill.source.review.SourceProposalRecord
 import dev.bill.source.review.SourceReviewRepository
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -79,6 +82,40 @@ class BillServiceTest {
                 call.auditRecords.map(AuditRecord::action),
             )
         }
+    }
+
+    @Test
+    fun `user confirmed investment fields create one position snapshot and account`() = runBlocking {
+        val repository = FakeLedgerRepository()
+        val result = BillService(repository, clock).createInvestmentPosition(
+            CreateInvestmentPositionCommand(
+                commandId = CommandId("create-position"),
+                name = "  示例基金  ",
+                instrumentCode = "ab.123",
+                currentValueText = "123.45",
+                unitsText = "12.345",
+                costBasisText = "100.00",
+                sourceMode = dev.bill.core.domain.InvestmentPositionSourceMode.OCR,
+            ),
+        )
+
+        assertEquals(OperationResult.Success("investment:create-position"), result)
+        val call = requireNotNull(repository.createInvestmentPositionCall)
+        assertEquals("示例基金", call.position.name)
+        assertEquals("AB.123", call.position.instrumentCode)
+        assertEquals(Money.cny(12_345L), call.position.currentValue)
+        assertEquals(BigDecimal("12.345"), call.position.units)
+        assertEquals(Money.cny(10_000L), call.position.costBasis)
+        assertEquals(AccountType.INVESTMENT_SECURITY, call.account.type)
+        assertEquals(call.position.accountId, call.account.id)
+        assertEquals(
+            listOf(
+                AuditAction.ACCOUNT_CREATED,
+                AuditAction.OPENING_BALANCE_POSTED,
+                AuditAction.INVESTMENT_POSITION_CREATED,
+            ),
+            call.auditRecords.map(AuditRecord::action),
+        )
     }
 
     @Test
@@ -413,6 +450,185 @@ class BillServiceTest {
             assertEquals(AuditAction.EXTERNAL_DRAFT_CREATED, call.auditRecord.action)
             assertNull(ledgerRepository.createDraftCall)
         }
+
+    @Test
+    fun `confirmed fund source requires an existing position and creates only an investment draft`() =
+        runBlocking {
+            val investment = account("fund-position", AccountType.INVESTMENT_SECURITY)
+            val ledgerRepository = FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(AccountBalance(investment, Money.cny(10_000L))),
+                    positions = listOf(investmentPosition(investment)),
+                ),
+            )
+            val candidate = NormalizedCandidate(
+                amount = FieldCandidate(
+                    Money.cny(1_234L),
+                    0.99,
+                    EvidenceLocator.WholePayload,
+                ),
+                moneyDirection = FieldCandidate(
+                    ObservedMoneyDirection.OUTBOUND,
+                    0.99,
+                    EvidenceLocator.WholePayload,
+                ),
+                economicEvent = FieldCandidate(
+                    ObservedEconomicEvent.INVEST_BUY,
+                    0.99,
+                    EvidenceLocator.WholePayload,
+                ),
+            )
+            val sourceRepository = FakeSourceReviewRepository(
+                initialProposals = listOf(
+                    sourceProposal(
+                        id = "fund-confirmed",
+                        sourceFamily = SourceFamily.ALIPAY,
+                        candidate = candidate,
+                    ),
+                ),
+            )
+            val service = BillService(ledgerRepository, clock, sourceRepository)
+
+            val review = service.observeSnapshot().first().pendingSourceReviews.single()
+            assertEquals(DraftSummaryKind.INVEST_BUY, review.suggestedKind)
+            assertEquals(setOf(DraftSummaryKind.INVEST_BUY), review.allowedDraftKinds)
+
+            val result = service.createExternalDraft(
+                CreateExternalDraftCommand(
+                    commandId = CommandId("fund-external-draft"),
+                    proposalId = "fund-confirmed",
+                    type = TransactionType.INVEST_BUY,
+                    amountText = "12.34",
+                    counterparty = investment.name,
+                    note = null,
+                    investmentAccountId = investment.id,
+                ),
+            )
+
+            assertEquals(OperationResult.Success("draft:fund-external-draft"), result)
+            val draft = requireNotNull(sourceRepository.completeCall).draft
+            assertEquals(TransactionType.INVEST_BUY, draft.type)
+            assertEquals(investment.id, draft.investmentAccountId)
+            assertEquals(TransactionSourceMode.EXTERNAL, draft.sourceMode)
+        }
+
+    @Test
+    fun `confirmed fund source rejects ordinary drafts and missing position targets`() = runBlocking {
+        val candidate = NormalizedCandidate(
+            economicEvent = FieldCandidate(
+                ObservedEconomicEvent.INVEST_BUY,
+                0.99,
+                EvidenceLocator.WholePayload,
+            ),
+        )
+        val sourceRepository = FakeSourceReviewRepository(
+            initialProposals = listOf(
+                sourceProposal(
+                    id = "fund-confirmed",
+                    sourceFamily = SourceFamily.ALIPAY,
+                    candidate = candidate,
+                ),
+            ),
+        )
+        val service = BillService(FakeLedgerRepository(), clock, sourceRepository)
+
+        assertEquals(
+            OperationResult.Failure(OperationError.INVALID_STATE),
+            service.createExternalDraft(
+                CreateExternalDraftCommand(
+                    commandId = CommandId("wrong-kind"),
+                    proposalId = "fund-confirmed",
+                    type = TransactionType.EXPENSE,
+                    amountText = "12.34",
+                    counterparty = "Example",
+                    note = null,
+                ),
+            ),
+        )
+        assertEquals(
+            OperationResult.Failure(OperationError.ACCOUNT_REQUIRED),
+            service.createExternalDraft(
+                CreateExternalDraftCommand(
+                    commandId = CommandId("missing-target"),
+                    proposalId = "fund-confirmed",
+                    type = TransactionType.INVEST_BUY,
+                    amountText = "12.34",
+                    counterparty = "Example",
+                    note = null,
+                ),
+            ),
+        )
+        val orphanInvestmentAccount = account(
+            id = "orphan-investment-account",
+            type = AccountType.INVESTMENT_SECURITY,
+        )
+        val orphanService = BillService(
+            FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(
+                        AccountBalance(orphanInvestmentAccount, Money.cny(10_000L)),
+                    ),
+                ),
+            ),
+            clock,
+            sourceRepository,
+        )
+        assertEquals(
+            OperationResult.Failure(OperationError.INVALID_STATE),
+            orphanService.createExternalDraft(
+                CreateExternalDraftCommand(
+                    commandId = CommandId("orphan-target"),
+                    proposalId = "fund-confirmed",
+                    type = TransactionType.INVEST_BUY,
+                    amountText = "12.34",
+                    counterparty = "Example",
+                    note = null,
+                    investmentAccountId = orphanInvestmentAccount.id,
+                ),
+            ),
+        )
+        assertNull(sourceRepository.completeCall)
+    }
+
+    @Test
+    fun `investment draft confirmation posts a balanced asset transfer`() = runBlocking {
+        val bank = account("bank", AccountType.ASSET_BANK)
+        val investment = account("fund-position", AccountType.INVESTMENT_SECURITY)
+        val pending = draft(
+            id = "invest-buy",
+            type = TransactionType.INVEST_BUY,
+            fundingAccountId = bank.id,
+            investmentAccountId = investment.id,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(
+                balances = listOf(
+                    AccountBalance(bank, Money.cny(50_000L)),
+                    AccountBalance(investment, Money.cny(10_000L)),
+                ),
+                drafts = listOf(pending),
+                positions = listOf(investmentPosition(investment)),
+            ),
+        )
+
+        val result = BillService(repository, clock).confirmDraft(
+            CommandId("confirm-invest-buy"),
+            pending.id,
+        )
+
+        assertEquals(
+            OperationResult.Success("transaction:confirm:confirm-invest-buy"),
+            result,
+        )
+        val transaction = requireNotNull(repository.confirmDraftCall).transaction
+        assertEquals(TransactionType.INVEST_BUY, transaction.type)
+        assertEquals(-2_500L, transaction.entries.single { it.accountId == bank.id }.amount.minorUnits)
+        assertEquals(
+            2_500L,
+            transaction.entries.single { it.accountId == investment.id }.amount.minorUnits,
+        )
+    }
 
     @Test
     fun `wallet source rejects USD before attempting external draft completion`() = runBlocking {
@@ -1252,6 +1468,7 @@ class BillServiceTest {
     private fun sourceProposal(
         id: String,
         sourceFamily: SourceFamily = SourceFamily.GENERIC,
+        candidate: NormalizedCandidate? = null,
     ) = SourceProposalRecord(
         id = id,
         rawEventId = "raw-$id",
@@ -1260,7 +1477,7 @@ class BillServiceTest {
         captureMethod = CaptureMethod.SHARE_TEXT,
         capturedAt = now,
         diagnostic = null,
-        candidate = null,
+        candidate = candidate,
         isPossibleDuplicate = false,
     )
 
@@ -1288,6 +1505,11 @@ class BillServiceTest {
         type: TransactionType = TransactionType.EXPENSE,
         state: DraftState = DraftState.WAITING_USER,
         fundingAccountId: AccountId? = null,
+        investmentAccountId: AccountId? = if (type == TransactionType.INVEST_BUY) {
+            AccountId("fund-position")
+        } else {
+            null
+        },
         updatedAt: Instant = now,
         sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
         currency: CurrencyCode = CurrencyCode.CNY,
@@ -1302,10 +1524,26 @@ class BillServiceTest {
         counterparty = "TEST COUNTERPARTY",
         note = "local fixture",
         fundingAccountId = fundingAccountId,
+        investmentAccountId = investmentAccountId,
         createdAt = now.minusSeconds(120),
         updatedAt = updatedAt,
         creationCommandId = CommandId("create-$id"),
         sourceMode = sourceMode,
+    )
+
+    private fun investmentPosition(account: LedgerAccount) = InvestmentPosition(
+        id = dev.bill.core.domain.InvestmentPositionId("position:${account.id.value}"),
+        accountId = account.id,
+        instrumentCode = null,
+        name = account.name,
+        currentValue = Money.cny(10_000L),
+        units = null,
+        costBasis = null,
+        asOf = now,
+        sourceMode = dev.bill.core.domain.InvestmentPositionSourceMode.MANUAL,
+        createdAt = now,
+        updatedAt = now,
+        creationCommandId = account.creationCommandId,
     )
 
     private fun transaction(
@@ -1349,11 +1587,13 @@ class BillServiceTest {
         drafts: List<ManualDraft> = emptyList(),
         transactions: List<PostedTransaction> = emptyList(),
         activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
+        positions: List<InvestmentPosition> = emptyList(),
     ) = LedgerState(
         accountBalances = balances,
         pendingDrafts = drafts,
         recentTransactions = transactions,
         activeRefundTotals = activeRefundTotals,
+        investmentPositions = positions,
     )
 }
 
@@ -1401,6 +1641,7 @@ private class FakeLedgerRepository(
     val state = MutableStateFlow(state)
 
     var createAccountResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
+    var createInvestmentPositionResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var createDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var selectFundingResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var confirmDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
@@ -1409,6 +1650,7 @@ private class FakeLedgerRepository(
     var voidTransactionResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
 
     var createAccountCall: CreateAccountCall? = null
+    var createInvestmentPositionCall: CreateInvestmentPositionCall? = null
     var createDraftCall: CreateDraftCall? = null
     var selectFundingCall: SelectFundingCall? = null
     var confirmDraftCall: ConfirmDraftCall? = null
@@ -1420,6 +1662,12 @@ private class FakeLedgerRepository(
 
     override suspend fun findAccount(id: AccountId): LedgerAccount? =
         state.value.accountBalances.firstOrNull { it.account.id == id }?.account
+
+    override suspend fun findInvestmentPositionByAccountId(
+        accountId: AccountId,
+    ): InvestmentPosition? = state.value.investmentPositions.firstOrNull {
+        it.accountId == accountId
+    }
 
     override suspend fun findDraft(id: DraftId): ManualDraft? =
         state.value.pendingDrafts.firstOrNull { it.id == id }
@@ -1447,6 +1695,31 @@ private class FakeLedgerRepository(
             )
         }
         return createAccountResult.withDefaultEntityId(account.id.value)
+    }
+
+    override suspend fun createInvestmentPosition(
+        position: InvestmentPosition,
+        account: LedgerAccount,
+        openingTransaction: PostedTransaction,
+        auditRecords: List<AuditRecord>,
+    ): RepositoryWriteResult {
+        createInvestmentPositionCall = CreateInvestmentPositionCall(
+            position,
+            account,
+            openingTransaction,
+            auditRecords,
+        )
+        if (createInvestmentPositionResult.status == RepositoryWriteStatus.APPLIED) {
+            state.value = state.value.copy(
+                accountBalances = state.value.accountBalances + AccountBalance(
+                    account,
+                    position.currentValue,
+                ),
+                investmentPositions = state.value.investmentPositions + position,
+                recentTransactions = state.value.recentTransactions + openingTransaction,
+            )
+        }
+        return createInvestmentPositionResult.withDefaultEntityId(position.id.value)
     }
 
     override suspend fun createManualDraft(
@@ -1550,6 +1823,13 @@ private class FakeLedgerRepository(
     data class CreateAccountCall(
         val account: LedgerAccount,
         val openingTransaction: PostedTransaction?,
+        val auditRecords: List<AuditRecord>,
+    )
+
+    data class CreateInvestmentPositionCall(
+        val position: InvestmentPosition,
+        val account: LedgerAccount,
+        val openingTransaction: PostedTransaction,
         val auditRecords: List<AuditRecord>,
     )
 

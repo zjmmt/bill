@@ -87,6 +87,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.bill.application.SourceCaptureError
 import dev.bill.application.SourceEvidenceOperationError
+import dev.bill.application.InvestmentPositionOcrPrefill
 import dev.bill.app.notification.NotificationCaptureHealth
 import dev.bill.app.notification.NotificationCaptureHealthSnapshot
 import dev.bill.app.notification.NotificationCaptureHealthState
@@ -96,12 +97,14 @@ import dev.bill.app.notification.openNotificationListenerSettings
 import dev.bill.app.quickcapture.BillQuickCaptureRuntime
 import dev.bill.app.quickcapture.BillQuickCaptureTileService
 import dev.bill.app.quickcapture.ContentResolverSelectedPhotoOcrImporter
+import dev.bill.app.quickcapture.ContentResolverSelectedImageOcrReader
 import dev.bill.app.quickcapture.QuickCaptureConnectionState
 import dev.bill.app.quickcapture.openQuickCaptureAccessibilitySettings
 import dev.bill.app.quickcapture.requestQuickCaptureTile
 import dev.bill.core.designsystem.component.PosterPanel
 import dev.bill.core.designsystem.theme.BillTheme
 import dev.bill.feature.accounts.AccountsScreen
+import dev.bill.feature.accounts.CreateInvestmentPositionInput
 import dev.bill.feature.ledger.LedgerScreen
 import dev.bill.feature.overview.OverviewAction
 import dev.bill.feature.overview.OverviewPresenter
@@ -133,6 +136,10 @@ class MainActivity : ComponentActivity() {
 
     private val billViewModel: BillViewModel by viewModels {
         val application = application as BillApplication
+        val selectedImageOcrReader = ContentResolverSelectedImageOcrReader(
+            applicationContext = applicationContext,
+            contentResolver = contentResolver,
+        )
         BillViewModel.Factory(
             service = application.container.billService,
             sharedTextIngestionService = application.container.sharedTextIngestionService,
@@ -148,10 +155,10 @@ class MainActivity : ComponentActivity() {
                 contentResolver,
             ),
             selectedPhotoOcrImporter = ContentResolverSelectedPhotoOcrImporter(
-                applicationContext = applicationContext,
-                contentResolver = contentResolver,
+                reader = selectedImageOcrReader,
                 capture = application.container.photoOcrTranscriptIngestionService,
             ),
+            selectedImageOcrReader = selectedImageOcrReader,
         )
     }
 
@@ -321,8 +328,11 @@ private fun BillApp(
     val snackbarHostState = remember { SnackbarHostState() }
     var destination by rememberSaveable { mutableStateOf(AppDestination.OVERVIEW) }
     var showCreateAccount by rememberSaveable { mutableStateOf(false) }
+    var showCreateInvestment by rememberSaveable { mutableStateOf(false) }
     var showManualDraft by rememberSaveable { mutableStateOf(false) }
     var createAccountCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var createInvestmentCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var investmentFormSeed by remember { mutableStateOf(CreateInvestmentPositionInput()) }
     var manualDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedDraftId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSourceReviewId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -345,6 +355,14 @@ private fun BillApp(
     fun openCreateAccount() {
         createAccountCommandId = createAccountCommandId ?: viewModel.newCommandId()
         showCreateAccount = true
+    }
+
+    fun openCreateInvestment(
+        seed: CreateInvestmentPositionInput = CreateInvestmentPositionInput(),
+    ) {
+        createInvestmentCommandId = createInvestmentCommandId ?: viewModel.newCommandId()
+        investmentFormSeed = seed
+        showCreateInvestment = true
     }
 
     fun openManualDraft() {
@@ -381,6 +399,13 @@ private fun BillApp(
         contract = ActivityResultContracts.PickMultipleVisualMedia(MAX_SELECTED_OCR_IMAGES),
     ) { uris ->
         viewModel.ingestSelectedPhotos(uris.map(Uri::toString))
+    }
+    val investmentOcrLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.prefillInvestmentFromScreenshot(uri.toString())
+        }
     }
 
     fun openSelectedTextFile() {
@@ -427,6 +452,11 @@ private fun BillApp(
             createAccountCommandId = viewModel.newCommandId()
         }
     }
+    LaunchedEffect(showCreateInvestment) {
+        if (showCreateInvestment && createInvestmentCommandId == null) {
+            createInvestmentCommandId = viewModel.newCommandId()
+        }
+    }
     LaunchedEffect(showManualDraft) {
         if (showManualDraft && manualDraftCommandId == null) {
             manualDraftCommandId = viewModel.newCommandId()
@@ -446,6 +476,11 @@ private fun BillApp(
                         BillOperationKind.CREATE_ACCOUNT -> {
                             showCreateAccount = false
                             createAccountCommandId = null
+                        }
+                        BillOperationKind.CREATE_INVESTMENT_POSITION -> {
+                            showCreateInvestment = false
+                            createInvestmentCommandId = null
+                            investmentFormSeed = CreateInvestmentPositionInput()
                         }
                         BillOperationKind.CREATE_DRAFT -> {
                             showManualDraft = false
@@ -524,6 +559,20 @@ private fun BillApp(
                         )
                     }
                     snackbarHostState.showSnackbar(message)
+                }
+
+                is BillUiEvent.InvestmentOcrPrefillReady -> {
+                    investmentFormSeed = investmentFormSeed.merge(event.prefill)
+                    showCreateInvestment = true
+                    snackbarHostState.showSnackbar(
+                        resources.getString(R.string.investment_ocr_prefill_ready),
+                    )
+                }
+
+                is BillUiEvent.InvestmentOcrPrefillFailed -> {
+                    snackbarHostState.showSnackbar(
+                        resources.getString(event.error.messageRes()),
+                    )
                 }
 
                 is BillUiEvent.EvidenceOperationSucceeded -> {
@@ -743,17 +792,41 @@ private fun BillApp(
 
                 AppDestination.ACCOUNTS -> AccountsScreen(
                     accounts = snapshot.accounts,
+                    investmentPositions = snapshot.investmentPositions,
                     amountsMasked = state.amountsMasked,
                     isSubmitting = state.activeOperation?.kind == BillOperationKind.CREATE_ACCOUNT,
+                    isInvestmentSubmitting =
+                        state.activeOperation?.kind == BillOperationKind.CREATE_INVESTMENT_POSITION,
+                    isInvestmentOcrRunning = state.isInvestmentOcrRunning,
                     operationError = state.operationError,
                     showCreateSheet = showCreateAccount,
+                    showInvestmentSheet = showCreateInvestment,
+                    investmentFormSeed = investmentFormSeed,
                     onCreateRequested = {
                         viewModel.clearOperationFeedback()
                         openCreateAccount()
                     },
+                    onInvestmentCreateRequested = {
+                        viewModel.clearOperationFeedback()
+                        openCreateInvestment()
+                    },
+                    onInvestmentOcrRequested = { currentInput ->
+                        investmentFormSeed = currentInput
+                        investmentOcrLauncher.launch(
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
                     onDismissCreate = {
                         showCreateAccount = false
                         createAccountCommandId = null
+                        viewModel.clearOperationFeedback()
+                    },
+                    onDismissInvestment = {
+                        showCreateInvestment = false
+                        createInvestmentCommandId = null
+                        investmentFormSeed = CreateInvestmentPositionInput()
                         viewModel.clearOperationFeedback()
                     },
                     onCreateAccount = { input ->
@@ -764,6 +837,19 @@ private fun BillApp(
                                 type = input.type,
                                 openingBalance = input.openingBalance,
                                 currency = input.currency,
+                            )
+                        }
+                    },
+                    onCreateInvestment = { input ->
+                        createInvestmentCommandId?.let { commandId ->
+                            viewModel.createInvestmentPosition(
+                                commandId = commandId,
+                                name = input.name,
+                                instrumentCode = input.instrumentCode,
+                                currentValue = input.currentValue,
+                                units = input.units,
+                                costBasis = input.costBasis,
+                                wasOcrPrefilled = input.wasOcrPrefilled,
                             )
                         }
                     },
@@ -868,6 +954,7 @@ private fun BillApp(
         if (selectedSourceReview != null) {
             SourceDraftSheet(
                 sourceReview = selectedSourceReview,
+                investmentPositions = snapshot.investmentPositions,
                 isSubmitting = state.activeOperation?.let { operation ->
                     operation.kind in sourceReviewOperationKinds &&
                         operation.entityId == selectedSourceReview.id
@@ -889,6 +976,7 @@ private fun BillApp(
                             note = input.note,
                             currency = input.currency,
                             occurredAt = selectedSourceReview.suggestedOccurredAt,
+                            investmentAccountId = input.investmentAccountId,
                         )
                     }
                 },
@@ -1760,6 +1848,33 @@ private fun SourceCaptureError.messageRes(): Int = when (this) {
 
     SourceCaptureError.COMMIT_STATUS_UNKNOWN ->
         R.string.quick_capture_result_unconfirmed
+}
+
+private fun InvestmentOcrPrefillUiError.messageRes(): Int = when (this) {
+    InvestmentOcrPrefillUiError.EMPTY_IMAGE -> R.string.investment_ocr_empty
+    InvestmentOcrPrefillUiError.IMAGE_TOO_LARGE -> R.string.investment_ocr_too_large
+    InvestmentOcrPrefillUiError.UNREADABLE_IMAGE -> R.string.investment_ocr_unreadable
+    InvestmentOcrPrefillUiError.NO_RECOGNIZED_FIELDS -> R.string.investment_ocr_no_fields
+    InvestmentOcrPrefillUiError.AMBIGUOUS_FIELDS -> R.string.investment_ocr_ambiguous
+}
+
+private fun CreateInvestmentPositionInput.merge(
+    prefill: InvestmentPositionOcrPrefill,
+): CreateInvestmentPositionInput {
+    val usedOcrValue =
+        (name.isBlank() && prefill.name != null) ||
+            (instrumentCode.isBlank() && prefill.instrumentCode != null) ||
+            (currentValue.isBlank() && prefill.currentValue != null) ||
+            (units.isBlank() && prefill.units != null) ||
+            (costBasis.isBlank() && prefill.costBasis != null)
+    return copy(
+        name = name.ifBlank { prefill.name.orEmpty() },
+        instrumentCode = instrumentCode.ifBlank { prefill.instrumentCode.orEmpty() },
+        currentValue = currentValue.ifBlank { prefill.currentValue.orEmpty() },
+        units = units.ifBlank { prefill.units.orEmpty() },
+        costBasis = costBasis.ifBlank { prefill.costBasis.orEmpty() },
+        wasOcrPrefilled = wasOcrPrefilled || usedOcrValue,
+    )
 }
 
 @Composable

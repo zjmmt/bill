@@ -291,4 +291,74 @@ object BillMigrations {
             )
         }
     }
+
+    val Migration7To8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `investment_positions` (
+                    `id` TEXT NOT NULL,
+                    `accountId` TEXT NOT NULL,
+                    `instrumentCode` TEXT,
+                    `name` TEXT NOT NULL,
+                    `currentValueMinorUnits` INTEGER NOT NULL,
+                    `currency` TEXT NOT NULL,
+                    `unitsDecimal` TEXT,
+                    `costBasisMinorUnits` INTEGER,
+                    `costBasisCurrency` TEXT,
+                    `asOfEpochMillis` INTEGER NOT NULL,
+                    `sourceMode` TEXT NOT NULL,
+                    `createdAtEpochMillis` INTEGER NOT NULL,
+                    `updatedAtEpochMillis` INTEGER NOT NULL,
+                    `creationCommandId` TEXT NOT NULL,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`)
+                        ON UPDATE NO ACTION ON DELETE RESTRICT
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    `index_investment_positions_accountId`
+                ON `investment_positions` (`accountId`)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                    `index_investment_positions_instrumentCode`
+                ON `investment_positions` (`instrumentCode`)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    `index_investment_positions_creationCommandId`
+                ON `investment_positions` (`creationCommandId`)
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                    `index_investment_positions_updatedAtEpochMillis`
+                ON `investment_positions` (`updatedAtEpochMillis`)
+                """.trimIndent(),
+            )
+        }
+    }
+
+    val Migration8To9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `drafts` ADD COLUMN `investmentAccountId` TEXT",
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS `index_drafts_investmentAccountId`
+                ON `drafts` (`investmentAccountId`)
+                """.trimIndent(),
+            )
+        }
+    }
 }

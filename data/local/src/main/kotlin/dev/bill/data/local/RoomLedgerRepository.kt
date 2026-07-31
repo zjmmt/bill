@@ -11,6 +11,7 @@ import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
+import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.RepositoryWriteResult
@@ -55,7 +56,10 @@ class RoomLedgerRepository(
     }
 
     override fun observeState(): Flow<LedgerState> = combine(
-        dao.observeAccountBalances(),
+        combine(
+            dao.observeAccountBalances(),
+            dao.observeInvestmentPositions(),
+        ) { balances, positions -> balances to positions },
         dao.observePendingDrafts(),
         combine(
             dao.observeRecentTransactions(recentTransactionLimit),
@@ -64,18 +68,26 @@ class RoomLedgerRepository(
             transactions to refundTotals
         },
         combine(
-            dao.observeLedgerIntegrityIssueCount(),
-            dao.observeReconciliationLinkIntegrityIssueCount(),
-            dao.observeTransactionRelationIntegrityIssueCount(),
-            dao.observeReconciliationTransactionIntegrityIssueCount(),
-        ) { ledger, draftLinks, transactionRelations, reconciliationTransactions ->
-            Math.addExact(
-                Math.addExact(ledger, draftLinks),
-                Math.addExact(transactionRelations, reconciliationTransactions),
-            )
-        },
+            combine(
+                combine(
+                    dao.observeLedgerIntegrityIssueCount(),
+                    dao.observeDraftIntegrityIssueCount(),
+                    Math::addExact,
+                ),
+                dao.observeReconciliationLinkIntegrityIssueCount(),
+                dao.observeTransactionRelationIntegrityIssueCount(),
+                dao.observeReconciliationTransactionIntegrityIssueCount(),
+            ) { ledger, draftLinks, transactionRelations, reconciliationTransactions ->
+                Math.addExact(
+                    Math.addExact(ledger, draftLinks),
+                    Math.addExact(transactionRelations, reconciliationTransactions),
+                )
+            },
+            dao.observeInvestmentPositionIntegrityIssueCount(),
+            Math::addExact,
+        ),
         sourceDao.observeSourceIntegrityIssueCount(),
-    ) { balanceRows, draftRelations, transactionAndRefunds, ledgerIssueCount, sourceIssueCount ->
+    ) { accountAndPositions, draftRelations, transactionAndRefunds, ledgerIssueCount, sourceIssueCount ->
         if (ledgerIssueCount > 0L || sourceIssueCount > 0L) {
             reportIntegrityFailure()
             throw LocalDataIntegrityException("active ledger")
@@ -100,7 +112,7 @@ class RoomLedgerRepository(
             }
         }
         LedgerState(
-            accountBalances = balanceRows.map { row ->
+            accountBalances = accountAndPositions.first.map { row ->
                 mapAccountBalance(row)
             },
             pendingDrafts = draftRelations.map { relation ->
@@ -112,11 +124,22 @@ class RoomLedgerRepository(
                 mapTransaction(relation)
             },
             activeRefundTotals = activeRefundTotals,
+            investmentPositions = accountAndPositions.second.map { entity ->
+                LedgerEntityMapper.investmentPositionToDomain(entity, diagnostics)
+                    ?: throw LocalDataIntegrityException("investment position")
+            },
         )
     }
 
     override suspend fun findAccount(id: AccountId): LedgerAccount? =
         dao.findAccount(id.value)?.let(::mapAccount)
+
+    override suspend fun findInvestmentPositionByAccountId(
+        accountId: AccountId,
+    ): InvestmentPosition? = dao.findInvestmentPositionByAccountId(accountId.value)?.let { entity ->
+        LedgerEntityMapper.investmentPositionToDomain(entity, diagnostics)
+            ?: throw LocalDataIntegrityException("investment position")
+    }
 
     override suspend fun findDraft(id: DraftId): ManualDraft? =
         findDraftSafely(id.value)
@@ -221,6 +244,113 @@ class RoomLedgerRepository(
         }
         dao.insertAuditEvents(auditRecords.map(LedgerEntityMapper::auditToEntity))
         applied(account.id.value)
+    }
+
+    override suspend fun createInvestmentPosition(
+        position: InvestmentPosition,
+        account: LedgerAccount,
+        openingTransaction: PostedTransaction,
+        auditRecords: List<AuditRecord>,
+    ): RepositoryWriteResult = safelyWrite(
+        onConstraint = {
+            if (dao.findAccountByNormalizedName(account.normalizedName) != null) {
+                result(RepositoryWriteStatus.DUPLICATE_NAME)
+            } else {
+                collision()
+            }
+        },
+    ) {
+        val fingerprint = Fingerprints.createInvestmentPosition(
+            position = position,
+            account = account,
+            opening = openingTransaction,
+        )
+        when (
+            val replay = inspectCommand(
+                commandId = position.creationCommandId,
+                operation = Operation.CREATE_INVESTMENT_POSITION,
+                targetId = position.id.value,
+                fingerprint = fingerprint,
+            )
+        ) {
+            is CommandInspection.Replay -> return@safelyWrite replay.result
+            CommandInspection.Collision -> return@safelyWrite collision()
+            CommandInspection.New -> Unit
+        }
+
+        if (
+            position.accountId != account.id ||
+            position.name != account.name ||
+            position.creationCommandId != account.creationCommandId ||
+            position.currentValue.currency != account.currency ||
+            account.type != AccountType.INVESTMENT_SECURITY ||
+            account.isSystem ||
+            account.isArchived ||
+            !account.type.allowsUserAccountCurrency(account.currency) ||
+            dao.findInvestmentPosition(position.id.value) != null ||
+            dao.findAccount(account.id.value) != null
+        ) {
+            return@safelyWrite invalidState()
+        }
+        if (dao.findAccountByNormalizedName(account.normalizedName) != null) {
+            return@safelyWrite result(RepositoryWriteStatus.DUPLICATE_NAME)
+        }
+        if (systemAccountTemplates(0L).any { it.normalizedName == account.normalizedName }) {
+            return@safelyWrite result(RepositoryWriteStatus.DUPLICATE_NAME)
+        }
+        if (!systemAccountsAreValidOrMissing()) {
+            return@safelyWrite invalidState()
+        }
+        if (
+            !auditsAreInsertable(
+                audits = auditRecords,
+                commandId = position.creationCommandId,
+                expectedTargets = mapOf(
+                    AuditAction.ACCOUNT_CREATED to AuditTarget("account", account.id.value),
+                    AuditAction.OPENING_BALANCE_POSTED to
+                        AuditTarget("transaction", openingTransaction.id.value),
+                    AuditAction.INVESTMENT_POSITION_CREATED to
+                        AuditTarget("investment_position", position.id.value),
+                ),
+            )
+        ) {
+            return@safelyWrite collision()
+        }
+        if (
+            openingTransaction.commandId != position.creationCommandId ||
+            openingTransaction.draftId != null ||
+            openingTransaction.type != TransactionType.ADJUSTMENT ||
+            dao.findTransactionWithEntries(openingTransaction.id.value) != null
+        ) {
+            return@safelyWrite invalidState()
+        }
+        when (validateTransaction(openingTransaction, account)) {
+            TransactionValidation.VALID -> Unit
+            TransactionValidation.ACCOUNT_NOT_FOUND -> return@safelyWrite accountNotFound()
+            TransactionValidation.INVALID -> return@safelyWrite invalidState()
+        }
+        if (
+            !RepositoryTransactionSemantics.openingMatchesAccount(openingTransaction, account) ||
+            openingTransaction.entries.singleOrNull { it.accountId == account.id }?.amount !=
+            position.currentValue
+        ) {
+            return@safelyWrite invalidState()
+        }
+
+        claimCommand(
+            commandId = position.creationCommandId,
+            operation = Operation.CREATE_INVESTMENT_POSITION,
+            targetId = position.id.value,
+            resultEntityId = position.id.value,
+            fingerprint = fingerprint,
+            appliedAtEpochMillis = auditRecords.minOf { it.occurredAt.toEpochMilli() },
+        )
+        insertSystemAccountsIfMissing(account.createdAt.toEpochMilli())
+        dao.insertAccount(LedgerEntityMapper.accountToEntity(account))
+        insertTransaction(openingTransaction)
+        dao.insertInvestmentPosition(LedgerEntityMapper.investmentPositionToEntity(position))
+        dao.insertAuditEvents(auditRecords.map(LedgerEntityMapper::auditToEntity))
+        applied(position.id.value)
     }
 
     override suspend fun createManualDraft(
@@ -377,6 +507,27 @@ class RoomLedgerRepository(
         val fundingAccount = dao.findAccount(fundingAccountId.value)?.let(::mapAccount)
             ?: return@safelyWrite accountNotFound()
         if (!fundingAccount.canFund(draft)) {
+            return@safelyWrite invalidState()
+        }
+        val investmentAccount = draft.investmentAccountId?.let { accountId ->
+            dao.findAccount(accountId.value)?.let(::mapAccount)
+                ?: return@safelyWrite accountNotFound()
+        }
+        if (
+            draft.type == TransactionType.INVEST_BUY &&
+            (
+                investmentAccount == null ||
+                    dao.findInvestmentPositionByAccountId(investmentAccount.id.value) == null ||
+                    investmentAccount.type != AccountType.INVESTMENT_SECURITY ||
+                    investmentAccount.currency != draft.amount.currency ||
+                    investmentAccount.isSystem ||
+                    investmentAccount.isArchived ||
+                    investmentAccount.id == fundingAccount.id
+            )
+        ) {
+            return@safelyWrite invalidState()
+        }
+        if (draft.type != TransactionType.INVEST_BUY && investmentAccount != null) {
             return@safelyWrite invalidState()
         }
         when (validateTransaction(transaction, additionalAccount = null)) {
@@ -928,6 +1079,10 @@ class RoomLedgerRepository(
                 type == AccountType.ASSET_BANK ||
                 type == AccountType.ASSET_EWALLET_BALANCE
 
+            TransactionType.INVEST_BUY -> type == AccountType.ASSET_CASH ||
+                type == AccountType.ASSET_BANK ||
+                type == AccountType.ASSET_EWALLET_BALANCE
+
             else -> false
         }
     }
@@ -1046,6 +1201,9 @@ internal object RepositoryTransactionSemantics {
             AccountType.ASSET_EWALLET_BALANCE,
             -> accountEntry.role == EntryRole.ASSET && accountEntry.amount.minorUnits > 0L
 
+            AccountType.INVESTMENT_SECURITY ->
+                accountEntry.role == EntryRole.INVESTMENT && accountEntry.amount.minorUnits > 0L
+
             AccountType.LIABILITY_CC ->
                 accountEntry.role == EntryRole.LIABILITY && accountEntry.amount.minorUnits < 0L
 
@@ -1073,7 +1231,15 @@ internal object RepositoryTransactionSemantics {
             .map { it.accountId }
             .filterNot { it.value in SystemAccountIdValues }
             .toSet()
-        if (nonSystemAccountIds != setOf(fundingAccountId)) return false
+        val expectedNonSystemAccountIds = when (draft.type) {
+            TransactionType.INVEST_BUY -> setOf(
+                fundingAccountId,
+                draft.investmentAccountId ?: return false,
+            )
+
+            else -> setOf(fundingAccountId)
+        }
+        if (nonSystemAccountIds != expectedNonSystemAccountIds) return false
 
         val expectedAmount = draft.amount.minorUnits
         return when (draft.type) {
@@ -1096,7 +1262,21 @@ internal object RepositoryTransactionSemantics {
             } && transaction.entries.any { entry ->
                 entry.accountId == fundingAccountId &&
                     entry.role == EntryRole.FUNDING &&
-                    entry.amount == draft.amount
+                entry.amount == draft.amount
+            }
+
+            TransactionType.INVEST_BUY -> {
+                val investmentAccountId = draft.investmentAccountId ?: return false
+                transaction.entries.any { entry ->
+                    entry.accountId == fundingAccountId &&
+                        entry.role == EntryRole.FUNDING &&
+                        entry.amount.currency == draft.amount.currency &&
+                        entry.amount.minorUnits == -expectedAmount
+                } && transaction.entries.any { entry ->
+                    entry.accountId == investmentAccountId &&
+                        entry.role == EntryRole.INVESTMENT &&
+                        entry.amount == draft.amount
+                }
             }
 
             else -> false
@@ -1128,6 +1308,7 @@ private object Operation {
     const val DISMISS_DRAFT = "DISMISS_DRAFT"
     const val VOID_TRANSACTION = "VOID_TRANSACTION"
     const val RESOLVE_RECONCILIATION = "RESOLVE_RECONCILIATION"
+    const val CREATE_INVESTMENT_POSITION = "CREATE_INVESTMENT_POSITION"
 }
 
 internal object Fingerprints {
@@ -1141,6 +1322,26 @@ internal object Fingerprints {
             .also { fingerprint -> if (opening != null) fingerprint.addTransaction(opening) }
             .finish()
 
+    fun createInvestmentPosition(
+        position: InvestmentPosition,
+        account: LedgerAccount,
+        opening: PostedTransaction,
+    ): String = CanonicalFingerprint()
+        .add(Operation.CREATE_INVESTMENT_POSITION)
+        .add(position.id.value)
+        .add(position.accountId.value)
+        .addNullable(position.instrumentCode)
+        .add(position.name)
+        .add(position.currentValue.minorUnits)
+        .add(position.currentValue.currency.value)
+        .addNullable(position.units?.stripTrailingZeros()?.toPlainString())
+        .addNullable(position.costBasis?.minorUnits?.toString())
+        .addNullable(position.costBasis?.currency?.value)
+        .add(position.sourceMode.name)
+        .addAccount(account)
+        .addTransaction(opening)
+        .finish()
+
     fun createDraft(draft: ManualDraft): String = CanonicalFingerprint()
         .add(Operation.CREATE_DRAFT)
         .add(draft.id.value)
@@ -1152,6 +1353,7 @@ internal object Fingerprints {
         .add(draft.counterparty)
         .addNullable(draft.note)
         .addNullable(draft.fundingAccountId?.value)
+        .addNullable(draft.investmentAccountId?.value)
         .finish()
 
     fun selectFundingAccount(draftId: DraftId, accountId: AccountId): String =

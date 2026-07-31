@@ -119,6 +119,32 @@ class PostingFactoryTest {
     }
 
     @Test
+    fun `fund purchase moves an asset into the selected investment account`() {
+        val bank = account(AccountType.ASSET_BANK, id = "bank")
+        val investment = account(AccountType.INVESTMENT_SECURITY, id = "investment")
+        val result = PostingFactory.manualDraft(
+            draft = draft(
+                type = TransactionType.INVEST_BUY,
+                fundingAccountId = bank.id,
+                investmentAccountId = investment.id,
+            ),
+            fundingAccount = bank,
+            investmentAccount = investment,
+            transactionId = TransactionId("tx-invest-buy"),
+            confirmedAt = now,
+        )
+
+        assertTrue(result is PostingBuildResult.Valid)
+        val transaction = (result as PostingBuildResult.Valid).transaction
+        assertEquals(TransactionType.INVEST_BUY, transaction.type)
+        assertEquals(-2_500L, transaction.entries[0].amount.minorUnits)
+        assertEquals(EntryRole.FUNDING, transaction.entries[0].role)
+        assertEquals(2_500L, transaction.entries[1].amount.minorUnits)
+        assertEquals(EntryRole.INVESTMENT, transaction.entries[1].role)
+        assertEquals(investment.id, transaction.entries[1].accountId)
+    }
+
+    @Test
     fun `USD bank opening balance uses USD equity`() {
         val result = PostingFactory.openingBalance(
             account = account(AccountType.ASSET_BANK, CurrencyCode.USD),
@@ -303,6 +329,11 @@ class PostingFactoryTest {
         type: TransactionType,
         id: String = "draft-1",
         fundingAccountId: AccountId? = null,
+        investmentAccountId: AccountId? = if (type == TransactionType.INVEST_BUY) {
+            AccountId("investment")
+        } else {
+            null
+        },
         amount: Money = Money.cny(2_500L),
     ) = ManualDraft(
         id = DraftId(id),
@@ -313,6 +344,7 @@ class PostingFactoryTest {
         counterparty = "测试商户",
         note = null,
         fundingAccountId = fundingAccountId,
+        investmentAccountId = investmentAccountId,
         createdAt = now,
         updatedAt = now,
         creationCommandId = CommandId("command-draft"),

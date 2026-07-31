@@ -26,6 +26,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +48,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.bill.application.AccountSummary
 import dev.bill.application.OperationError
+import dev.bill.application.InvestmentPositionSummary
 import dev.bill.core.designsystem.component.LedgerCard
 import dev.bill.core.designsystem.component.MoneyText
 import dev.bill.core.designsystem.component.PosterPanel
@@ -56,6 +58,8 @@ import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.model.allowsUserAccountCurrency
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 data class CreateAccountInput(
     val name: String,
@@ -64,16 +68,34 @@ data class CreateAccountInput(
     val currency: CurrencyCode = CurrencyCode.CNY,
 )
 
+data class CreateInvestmentPositionInput(
+    val name: String = "",
+    val instrumentCode: String = "",
+    val currentValue: String = "",
+    val units: String = "",
+    val costBasis: String = "",
+    val wasOcrPrefilled: Boolean = false,
+)
+
 @Composable
 fun AccountsScreen(
     accounts: List<AccountSummary>,
+    investmentPositions: List<InvestmentPositionSummary>,
     amountsMasked: Boolean,
     isSubmitting: Boolean,
+    isInvestmentSubmitting: Boolean,
+    isInvestmentOcrRunning: Boolean,
     operationError: OperationError?,
     showCreateSheet: Boolean,
+    showInvestmentSheet: Boolean,
+    investmentFormSeed: CreateInvestmentPositionInput,
     onCreateRequested: () -> Unit,
+    onInvestmentCreateRequested: () -> Unit,
+    onInvestmentOcrRequested: (CreateInvestmentPositionInput) -> Unit,
     onDismissCreate: () -> Unit,
+    onDismissInvestment: () -> Unit,
     onCreateAccount: (CreateAccountInput) -> Unit,
+    onCreateInvestment: (CreateInvestmentPositionInput) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -108,9 +130,41 @@ fun AccountsScreen(
             ) {
                 Text(stringResource(R.string.add_account))
             }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onInvestmentCreateRequested,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(stringResource(R.string.add_investment_position))
+            }
         }
 
-        if (accounts.isEmpty()) {
+        if (investmentPositions.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.investment_positions_heading),
+                    modifier = Modifier.semantics { heading() },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.investment_positions_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            items(investmentPositions, key = InvestmentPositionSummary::id) { position ->
+                InvestmentPositionRow(position = position, amountsMasked = amountsMasked)
+            }
+        }
+
+        val fundingAccounts = accounts.filter { account ->
+            account.type != AccountType.INVESTMENT_SECURITY
+        }
+        if (fundingAccounts.isEmpty() && investmentPositions.isEmpty()) {
             item {
                 PosterPanel(contentPadding = PaddingValues(20.dp)) {
                     Text(
@@ -126,7 +180,17 @@ fun AccountsScreen(
                 }
             }
         } else {
-            items(accounts, key = AccountSummary::id) { account ->
+            if (fundingAccounts.isNotEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(R.string.funding_accounts_heading),
+                        modifier = Modifier.semantics { heading() },
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+            items(fundingAccounts, key = AccountSummary::id) { account ->
                 AccountRow(account = account, amountsMasked = amountsMasked)
             }
         }
@@ -141,6 +205,289 @@ fun AccountsScreen(
             onDismiss = onDismissCreate,
             onSubmit = onCreateAccount,
         )
+    }
+    if (showInvestmentSheet) {
+        CreateInvestmentPositionSheet(
+            initial = investmentFormSeed,
+            isSubmitting = isInvestmentSubmitting,
+            isOcrRunning = isInvestmentOcrRunning,
+            operationError = operationError,
+            onOcrRequested = onInvestmentOcrRequested,
+            onDismiss = onDismissInvestment,
+            onSubmit = onCreateInvestment,
+        )
+    }
+}
+
+@Composable
+private fun InvestmentPositionRow(
+    position: InvestmentPositionSummary,
+    amountsMasked: Boolean,
+) {
+    LedgerCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = position.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    position.instrumentCode?.let { code ->
+                        Text(
+                            text = stringResource(R.string.investment_code_value, code),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                MoneyText(
+                    amount = position.currentValue,
+                    masked = amountsMasked,
+                    style = MaterialTheme.typography.titleLarge,
+                )
+            }
+            Text(
+                text = stringResource(
+                    R.string.investment_value_as_of,
+                    position.asOf.atZone(ZoneId.systemDefault()).format(investmentDateFormatter),
+                ),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (position.units != null || position.costBasis != null) {
+                HorizontalDivider()
+                position.units?.let { units ->
+                    Text(
+                        text = stringResource(
+                            R.string.investment_units_value,
+                            units.stripTrailingZeros().toPlainString(),
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                position.costBasis?.let { cost ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.investment_cost_basis),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        MoneyText(
+                            amount = cost,
+                            masked = amountsMasked,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                }
+            }
+            Text(
+                text = stringResource(
+                    if (position.wasOcrPrefilled) {
+                        R.string.investment_source_ocr_confirmed
+                    } else {
+                        R.string.investment_source_manual
+                    },
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateInvestmentPositionSheet(
+    initial: CreateInvestmentPositionInput,
+    isSubmitting: Boolean,
+    isOcrRunning: Boolean,
+    operationError: OperationError?,
+    onOcrRequested: (CreateInvestmentPositionInput) -> Unit,
+    onDismiss: () -> Unit,
+    onSubmit: (CreateInvestmentPositionInput) -> Unit,
+) {
+    var name by rememberSaveable(initial) { mutableStateOf(initial.name) }
+    var code by rememberSaveable(initial) { mutableStateOf(initial.instrumentCode) }
+    var currentValue by rememberSaveable(initial) { mutableStateOf(initial.currentValue) }
+    var units by rememberSaveable(initial) { mutableStateOf(initial.units) }
+    var costBasis by rememberSaveable(initial) { mutableStateOf(initial.costBasis) }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.create_investment_title),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text(
+                text = stringResource(R.string.create_investment_explanation),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = {
+                    onOcrRequested(
+                        CreateInvestmentPositionInput(
+                            name = name,
+                            instrumentCode = code,
+                            currentValue = currentValue,
+                            units = units,
+                            costBasis = costBasis,
+                            wasOcrPrefilled = initial.wasOcrPrefilled,
+                        ),
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                enabled = !isSubmitting && !isOcrRunning,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                if (isOcrRunning) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.reading_investment_screenshot),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                } else {
+                    Text(stringResource(R.string.prefill_investment_from_screenshot))
+                }
+            }
+            Text(
+                text = stringResource(R.string.investment_ocr_boundary),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.investment_name)) },
+                supportingText = { Text(stringResource(R.string.investment_name_hint)) },
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            )
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.investment_code_optional)) },
+                supportingText = { Text(stringResource(R.string.investment_code_hint)) },
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            )
+            OutlinedTextField(
+                value = currentValue,
+                onValueChange = { currentValue = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.investment_current_value)) },
+                prefix = { Text("¥") },
+                supportingText = { Text(stringResource(R.string.investment_current_value_hint)) },
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            OutlinedTextField(
+                value = units,
+                onValueChange = { units = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.investment_units_optional)) },
+                supportingText = { Text(stringResource(R.string.investment_units_hint)) },
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            OutlinedTextField(
+                value = costBasis,
+                onValueChange = { costBasis = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.investment_cost_optional)) },
+                prefix = { Text("¥") },
+                supportingText = { Text(stringResource(R.string.investment_cost_hint)) },
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done,
+                ),
+            )
+            operationError?.investmentErrorMessage()?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            HorizontalDivider()
+            Button(
+                onClick = {
+                    onSubmit(
+                        CreateInvestmentPositionInput(
+                            name = name,
+                            instrumentCode = code,
+                            currentValue = currentValue,
+                            units = units,
+                            costBasis = costBasis,
+                            wasOcrPrefilled = initial.wasOcrPrefilled,
+                        ),
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp),
+                enabled = !isSubmitting && name.isNotBlank() && currentValue.isNotBlank(),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(strokeWidth = 2.dp)
+                    Text(
+                        text = stringResource(R.string.creating_investment),
+                        modifier = Modifier.padding(start = 8.dp),
+                    )
+                } else {
+                    Text(stringResource(R.string.create_investment))
+                }
+            }
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .heightIn(min = 48.dp),
+                enabled = !isSubmitting,
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }
 
@@ -413,12 +760,26 @@ private fun OperationError.accountErrorMessage(): String? = when (this) {
     else -> null
 }
 
+@Composable
+private fun OperationError.investmentErrorMessage(): String? = when (this) {
+    OperationError.INVALID_NAME -> stringResource(R.string.error_invalid_investment_name)
+    OperationError.INVALID_AMOUNT -> stringResource(R.string.error_invalid_investment_value)
+    OperationError.INVALID_INSTRUMENT_CODE ->
+        stringResource(R.string.error_invalid_investment_code)
+    OperationError.INVALID_UNITS -> stringResource(R.string.error_invalid_investment_units)
+    OperationError.INVALID_COST_BASIS -> stringResource(R.string.error_invalid_investment_cost)
+    OperationError.DUPLICATE_ACCOUNT_NAME -> stringResource(R.string.error_duplicate_investment)
+    else -> null
+}
+
 private val creatableAccountTypes = listOf(
     AccountType.ASSET_CASH,
     AccountType.ASSET_BANK,
     AccountType.ASSET_EWALLET_BALANCE,
     AccountType.LIABILITY_CC,
 )
+
+private val investmentDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 780)
 @Preview(
@@ -441,13 +802,22 @@ private fun AccountsPreview() {
                     isLiability = false,
                 ),
             ),
+            investmentPositions = emptyList(),
             amountsMasked = false,
             isSubmitting = false,
+            isInvestmentSubmitting = false,
+            isInvestmentOcrRunning = false,
             operationError = null,
             showCreateSheet = false,
+            showInvestmentSheet = false,
+            investmentFormSeed = CreateInvestmentPositionInput(),
             onCreateRequested = {},
+            onInvestmentCreateRequested = {},
+            onInvestmentOcrRequested = {},
             onDismissCreate = {},
+            onDismissInvestment = {},
             onCreateAccount = {},
+            onCreateInvestment = {},
             contentPadding = PaddingValues(),
         )
     }

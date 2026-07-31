@@ -89,6 +89,10 @@
     <string name="shared_text_possible_duplicate">Possible duplicate: matching evidence was captured before.</string>
     <string name="expense">Expense</string>
     <string name="income">Income</string>
+    <string name="investment_buy">Fund purchase</string>
+    <string name="investment_position_target">Existing fund holding</string>
+    <string name="investment_position_target_hint">Choose which user-confirmed holding received this purchase. The notification does not create or value a holding.</string>
+    <string name="investment_position_required">Create and verify the fund holding first, then return to this notification.</string>
     <string name="amount">Amount</string>
     <string name="amount_hint">Positive amount, up to two decimal places. Currency conversion is not performed.</string>
     <string name="counterparty">Counterparty or description</string>
@@ -104,6 +108,7 @@
     <string name="error_source_currency_not_allowed">This source cannot be saved in the selected currency.</string>
     <string name="source_currency_restricted">This source is reviewed in CNY. Verify the amount before saving.</string>
     <string name="source_currency_unavailable">This source has no verified currency amount, so it cannot be saved as a transaction.</string>
+    <string name="source_kind_unavailable">This evidence has no supported economic event, so it cannot create a draft.</string>
 
     <string name="review_marker">05 / REVIEW</string>
     <string name="review_title">Review draft</string>
@@ -112,6 +117,7 @@
     <string name="shared_text_channel">User-provided evidence; provider not verified</string>
     <string name="review_reason_heading">Why confirmation is needed</string>
     <string name="review_reason_account_missing">Choose the account that actually paid or received this amount.</string>
+    <string name="review_reason_investment_position_missing">The selected fund holding no longer exists. Recreate and verify the holding before posting.</string>
     <string name="review_reason_ready">The amount, type, and funding account are ready for balanced posting.</string>
     <string name="review_details_heading">Ledger details</string>
     <string name="review_evidence_heading">Evidence</string>
@@ -120,6 +126,7 @@
     <string name="payment_channel">Payment channel</string>
     <string name="manual_channel">Not applicable for manual entry</string>
     <string name="funding_account">Actual funding account</string>
+    <string name="investment_position_missing">Holding unavailable</string>
     <string name="no_eligible_accounts">No eligible account exists. Create an account first, then return to this draft.</string>
     <string name="asset_account">Available asset account</string>
     <string name="credit_account">Credit liability account</string>
@@ -127,6 +134,7 @@
     <string name="shared_text_evidence">Linked to immutable user-provided text evidence. The provider is not verified, and the original text is not displayed here.</string>
     <string name="expense_impact">Posts an expense and an equal reduction of the selected asset, or an equal increase in credit-card debt.</string>
     <string name="income_impact">Posts income and an equal increase in the selected asset account.</string>
+    <string name="investment_buy_impact">Moves the confirmed amount from the selected funding account into the chosen fund holding. It is an asset transfer, not an expense, and does not change the holding value snapshot automatically.</string>
     <string name="confirm_posting">Confirm posting</string>
     <string name="save_for_later">Review later</string>
     <string name="ignore_draft">Ignore this draft</string>

@@ -5,10 +5,12 @@ import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
 import dev.bill.core.domain.ReviewDraft
 import dev.bill.core.model.CurrencyCode
+import dev.bill.core.model.TransactionType
 import dev.bill.core.model.isSupportedLedgerCurrency
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.GenericDelimitedStatementIdentity
 import dev.bill.source.contract.NormalizedCandidate
+import dev.bill.source.contract.ObservedEconomicEvent
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.SafeDiagnostic
 import dev.bill.source.contract.SourceFamily
@@ -64,6 +66,16 @@ fun SourceProposalRecord.allowedExternalDraftCurrencies(): Set<CurrencyCode> = w
 
 fun SourceProposalRecord.allowsExternalDraftCurrency(currency: CurrencyCode): Boolean =
     currency in allowedExternalDraftCurrencies()
+
+fun SourceProposalRecord.allowedExternalDraftTypes(): Set<TransactionType> =
+    when (candidate?.economicEvent?.value) {
+        ObservedEconomicEvent.INVEST_BUY -> setOf(TransactionType.INVEST_BUY)
+        ObservedEconomicEvent.INVEST_SELL -> emptySet()
+        null -> setOf(TransactionType.EXPENSE, TransactionType.INCOME)
+    }
+
+fun SourceProposalRecord.allowsExternalDraftType(type: TransactionType): Boolean =
+    type in allowedExternalDraftTypes()
 
 interface SourceReviewRepository {
     fun observePendingSourceProposals(): Flow<List<SourceProposalRecord>>

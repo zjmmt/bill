@@ -8,13 +8,14 @@ import org.junit.Test
 
 class ProductionNotificationRoutesTest {
     @Test
-    fun `production catalog exposes four safe-labelled provider parsers`() {
+    fun `production catalog exposes five safe-labelled provider parsers`() {
         val presentations = ProductionNotificationRoutes.catalog.presentations()
         val parsers = ProductionNotificationRoutes.catalog.parsers()
 
-        assertEquals(4, presentations.size)
-        assertEquals(4, presentations.map { it.routeId }.toSet().size)
-        assertEquals(4, parsers.map { it.identity }.toSet().size)
+        assertEquals(5, presentations.size)
+        assertEquals(5, presentations.map { it.routeId }.toSet().size)
+        assertEquals(5, parsers.map { it.identity }.toSet().size)
+        assertEquals(3, parsers.count { it.identity.sourceFamily == SourceFamily.ALIPAY })
         assertEquals(
             setOf(SourceFamily.ALIPAY, SourceFamily.WECHAT, SourceFamily.BANK),
             parsers.map { it.identity.sourceFamily }.toSet(),

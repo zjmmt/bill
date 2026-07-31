@@ -78,6 +78,12 @@
     <string name="quick_capture_result_unconfirmed">未能及时确认本次处理结果；它可能已保存，也可能尚未写入。重试前请先查看待复核列表。</string>
     <string name="photo_ocr_batch_completed">图片识别完成：%1$d 条可复核，%2$d 条失败。</string>
     <string name="photo_ocr_batch_progress">已处理 %1$d / %2$d 张…</string>
+    <string name="investment_ocr_prefill_ready">已在本机预填持仓字段，请核对后再创建。</string>
+    <string name="investment_ocr_empty">这张图片中没有识别到可读文字。</string>
+    <string name="investment_ocr_too_large">图片过大，无法在安全限制内处理。</string>
+    <string name="investment_ocr_unreadable">本地 OCR 无法读取所选图片。</string>
+    <string name="investment_ocr_no_fields">没有识别到带标签的基金名称、代码、当前金额、份额或成本；仍可手工填写。</string>
+    <string name="investment_ocr_ambiguous">截图中出现互相冲突的带标签数值，因此没有预填。请手工填写或核对。</string>
     <string name="quick_capture_tile_add_manually">请下拉两次打开快捷设置，点“编辑”，再把“截图记账”拖到已启用区域。</string>
     <string name="quick_capture_tile_request_finished">系统已处理添加请求；若磁贴未出现，请在快捷设置的“编辑”中手动添加。</string>
     <string name="payment_result_observer_description">Bill 的只读支付结果页观察器。除非你在 Bill 中单独开启经过验证的来源，否则没有活跃来源模板。</string>

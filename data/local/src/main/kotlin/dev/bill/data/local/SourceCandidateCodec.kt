@@ -9,6 +9,7 @@ import dev.bill.source.contract.FieldCandidate
 import dev.bill.source.contract.NormalizedCandidate
 import dev.bill.source.contract.NotificationField
 import dev.bill.source.contract.ObservedMoneyDirection
+import dev.bill.source.contract.ObservedEconomicEvent
 import dev.bill.source.contract.ObservedTime
 import dev.bill.source.contract.ProviderId
 import dev.bill.source.contract.ScopedExternalReference
@@ -33,7 +34,7 @@ internal object SourceCandidateCodec {
             val buffer = ByteArrayOutputStream()
             DataOutputStream(buffer).use { output ->
                 output.writeInt(Magic)
-                output.writeInt(Version)
+                output.writeInt(CurrentVersion)
                 output.writeOptional(candidate.amount) { field ->
                     output.writeLong(field.value.minorUnits)
                     output.writeString(field.value.currency.value)
@@ -69,6 +70,10 @@ internal object SourceCandidateCodec {
                     output.writeString(field.value)
                     output.writeCandidateMetadata(field)
                 }
+                output.writeOptional(candidate.economicEvent) { field ->
+                    output.writeString(field.value.name)
+                    output.writeCandidateMetadata(field)
+                }
                 val references = TreeSet(compareBy<ScopedExternalReference>(
                     { it.providerId.value },
                     { it.accountScopeHash.value },
@@ -94,7 +99,8 @@ internal object SourceCandidateCodec {
             require(payload.size <= MaxPayloadBytes)
             DataInputStream(ByteArrayInputStream(payload)).use { input ->
                 require(input.readInt() == Magic)
-                require(input.readInt() == Version)
+                val version = input.readInt()
+                require(version == LegacyVersion || version == CurrentVersion)
                 val amount = input.readOptional {
                     FieldCandidate(
                         value = Money(
@@ -148,6 +154,17 @@ internal object SourceCandidateCodec {
                         evidenceLocator = input.readLocator(),
                     )
                 }
+                val economicEvent = if (version >= CurrentVersion) {
+                    input.readOptional {
+                        FieldCandidate(
+                            value = enumValueOf<ObservedEconomicEvent>(input.readString()),
+                            confidence = input.readDouble(),
+                            evidenceLocator = input.readLocator(),
+                        )
+                    }
+                } else {
+                    null
+                }
                 val referenceCount = input.readInt()
                 require(referenceCount in 0..MaxReferences)
                 val references = buildSet {
@@ -169,6 +186,7 @@ internal object SourceCandidateCodec {
                     occurredAt = occurredAt,
                     counterparty = counterparty,
                     fundingHint = fundingHint,
+                    economicEvent = economicEvent,
                     externalReferences = references,
                 )
             }
@@ -280,7 +298,8 @@ internal object SourceCandidateCodec {
     }
 
     private const val Magic = 0x42494C4C
-    private const val Version = 1
+    private const val LegacyVersion = 1
+    private const val CurrentVersion = 2
     private const val MaxPayloadBytes = 1024 * 1024
     private const val MaxStringBytes = 256 * 1024
     private const val MaxReferences = 1024
