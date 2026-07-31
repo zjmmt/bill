@@ -21,6 +21,7 @@ import dev.bill.source.genericphotoocr.OcrTranscript
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -66,6 +67,67 @@ class SpatialOcrPipelineInstrumentedTest {
         }
     }
 
+    @Test
+    fun bundledEngineRecognizesSimplifiedWechatStatusPages() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val fixtures = listOf(
+            SimplifiedStatusFixture(
+                title = "微信红包",
+                amount = "0.01元",
+                status = "领取成功，已存入余额",
+                expectedAmountMinorUnits = 1L,
+            ),
+            SimplifiedStatusFixture(
+                title = "微信红包",
+                amount = "￥0.02",
+                status = "红包尚未领取",
+                expectedAmountMinorUnits = null,
+            ),
+            SimplifiedStatusFixture(
+                title = "微信提现",
+                amount = "￥0.03",
+                status = "提现处理中",
+                expectedAmountMinorUnits = null,
+            ),
+            SimplifiedStatusFixture(
+                title = "微信转账",
+                amount = "+0.04",
+                status = "转账成功",
+                expectedAmountMinorUnits = 4L,
+            ),
+        )
+
+        fixtures.forEachIndexed { index, fixture ->
+            val bitmap = simplifiedStatusFixture(fixture)
+            try {
+                val recognized = BundledLocalOcrEngine.recognize(context, bitmap)
+                assertTrue(recognized is LocalOcrResult.Lines)
+                val lines = (recognized as LocalOcrResult.Lines).values
+                assertTrue(lines.any { fixture.status in it.value })
+
+                val evidence = requireNotNull(OcrTranscript.encodeSpatial(lines))
+                try {
+                    val parsed = GenericPhotoOcrParser().parse(
+                        rawEvent(evidence).copy(
+                            id = RawEventId("simplified-status-$index"),
+                            payloadId = PayloadId("simplified-status-$index-payload"),
+                        ),
+                        EvidenceInput(OcrTranscript.MEDIA_TYPE, evidence),
+                    ) as ParseResult.NeedsUserReview
+                    assertEquals(
+                        fixture.expectedAmountMinorUnits,
+                        parsed.candidate?.amount?.value?.minorUnits,
+                    )
+                    assertNull(parsed.candidate?.moneyDirection)
+                } finally {
+                    evidence.fill(0)
+                }
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
     private fun paymentFixture(): Bitmap {
         val bitmap = Bitmap.createBitmap(1_200, 900, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -81,6 +143,28 @@ class SpatialOcrPipelineInstrumentedTest {
         canvas.drawText("优惠 - ¥0.33", 80f, 690f, paint)
         return bitmap
     }
+
+    private fun simplifiedStatusFixture(fixture: SimplifiedStatusFixture): Bitmap {
+        val bitmap = Bitmap.createBitmap(1_200, 900, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+
+        paint.textSize = 64f
+        canvas.drawText(fixture.title, 80f, 150f, paint)
+        paint.textSize = 144f
+        canvas.drawText(fixture.amount, 330f, 430f, paint)
+        paint.textSize = 68f
+        canvas.drawText(fixture.status, 160f, 650f, paint)
+        return bitmap
+    }
+
+    private data class SimplifiedStatusFixture(
+        val title: String,
+        val amount: String,
+        val status: String,
+        val expectedAmountMinorUnits: Long?,
+    )
 
     private fun rawEvent(evidence: ByteArray) = RawEvent(
         id = RawEventId("spatial-ocr-device-fixture"),

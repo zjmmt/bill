@@ -30,6 +30,12 @@ class WeChatNotificationRoutesTest {
     private val gate = NotificationTemplateGate(catalog) { true }
 
     @Test
+    fun `localized title alias keeps the persisted route id stable`() {
+        assertEquals("wechat.notification.paid-en-cny.v1", WeChatNotificationRoutes.ROUTE_ID)
+        assertEquals(WeChatNotificationRoutes.ROUTE_ID, route.routeId)
+    }
+
+    @Test
     fun `sanitized English paid replay produces an outbound CNY candidate`() {
         val content = content("Weixin Pay", "¥12.34 paid")
         val decision = gate.evaluate(metadata()) { content }
@@ -38,6 +44,23 @@ class WeChatNotificationRoutesTest {
         val parsed = parse(content) as ParseResult.Parsed
         assertEquals(1_234L, parsed.candidate.amount?.value?.minorUnits)
         assertEquals(ObservedMoneyDirection.OUTBOUND, parsed.candidate.moneyDirection?.value)
+    }
+
+    @Test
+    fun `Chinese payment title accepts only the already verified English body shape`() {
+        val verifiedBody = content("微信支付", "¥12.34 paid")
+        assertTrue(gate.evaluate(metadata()) { verifiedBody } is NotificationGateDecision.Accepted)
+
+        listOf(
+            content("微信支付", "已支付¥12.34"),
+            content("微信支付", "支付成功 ¥12.34"),
+            content("微信支付", "¥12.34 付款成功"),
+        ).forEach { unverifiedChineseBody ->
+            assertEquals(
+                NotificationGateDecision.IgnoredContent,
+                gate.evaluate(metadata()) { unverifiedChineseBody },
+            )
+        }
     }
 
     @Test

@@ -1,11 +1,11 @@
 # 数据源覆盖与支持状态
 
-- 状态：部分实现；手工、通用分享文本、不透明文本证据、本地 CSV/TSV 显式映射、用户显式单次 PNG 收据、受控通知 route catalog/控制面、用户确认对账和持久观察去重已有代码；支付宝、微信与招商银行有 4 条默认关闭的实验性通知 route；Quick Settings/Photo Picker 本地 OCR 已有未签名 Release 静态审计与一台设备的合成推理，但通知 callback、真实页面和资源发布门未完成
+- 状态：部分实现；手工、通用分享文本、不透明文本证据、本地 CSV/TSV 显式映射、用户显式单次 PNG 收据、受控通知 route catalog/控制面、用户确认对账和持久观察去重已有代码；支付宝、微信与招商银行有 4 条默认关闭的实验性通知 route；Quick Settings/Photo Picker 本地 OCR 已有未签名 Release 静态审计、一台设备的合成推理、11 张本机私有真实页面回放和简中合成状态回归，但通知 callback、真实简中页面和完整资源发布门未完成
 - 所有者：项目维护者
-- 最后核验：2026-07-31
+- 最后核验：2026-08-01
 - 事实来源：当前 Android/Room/来源模块、项目负责人范围、Android/平台官方资料、财付通公开隐私政策、来源适配器设计、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
 
-本文件定义目标能力和“什么才算支持”，同时记录生成矩阵上线前的人工核验快照。当前已有受限 CNY/USD 手工账本闭环，以及 provider-unverified 的显式分享文本、不透明文本文件、用户逐列映射 CSV/TSV 和单次 PNG 收据截图证据/复核闭环；另有 Quick Settings 单次截图与 Photo Picker 最多 5 张串行 OCR。CSV/TSV 只提供来源中立映射，不识别银行或支付平台。PP-OCRv6 small + ONNX Runtime/OpenCV 已静态随包，并通过源码/AAR 与当前未签名 Release 分包的权限、组件、ABI、模型、体积和 16 KiB ZIP 对齐审计；港版 S24 Ultra 上的一组合成中/英/日支付文本已证明模型与原生运行时可加载、推理并释放，但真实支付截图准确率、空间主金额端到端、ELF LOAD 段页兼容、目标真机资源和签名发行证据仍未完成。21 条本地真实通知样本经用户授权离线分析后，项目新增支付宝支出/余额收款、微信英文付款完成、招商银行快捷支付退款 4 条窄范围通知 route；它们默认关闭，只用脱敏夹具自动回放，尚未完成真机系统 callback、更新/重启与资源验收。专属文件格式与其他通知事件仍未实现。现金、支付宝余额和微信零钱只能是 CNY；只有银行卡和信用卡可为 USD，且没有汇率换算。电子钱包余额与银行卡是独立资金账户：银行卡流水不能补齐钱包余额内的红包、个人转账、余额消费或余额退款。未来生成器建立后，逐格式实际矩阵必须由代码和测试写入 `docs/generated/`，不得手工伪造。
+本文件定义目标能力和“什么才算支持”，同时记录生成矩阵上线前的人工核验快照。当前已有受限 CNY/USD 手工账本闭环，以及 provider-unverified 的显式分享文本、不透明文本文件、用户逐列映射 CSV/TSV 和单次 PNG 收据截图证据/复核闭环；另有 Quick Settings 单次截图与 Photo Picker 最多 5 张串行 OCR。CSV/TSV 只提供来源中立映射，不识别银行或支付平台。PP-OCRv6 small + ONNX Runtime/OpenCV 已静态随包，并通过源码/AAR 与当前未签名 Release 分包的权限、组件、ABI、模型、体积和 16 KiB ZIP 对齐审计；港版 S24 Ultra 上的一组合成中/英/日支付文本已证明模型与原生运行时可加载、推理并释放。同一设备上的 11 张本机私有真实支付过程截图在状态门与空间规则修正后，金额和预期语义均为 11/11；真实样本覆盖当前繁中/英文页面，简中以四种程序绘制状态页补了真机回归。它们仍不替代真实简中微信页面、系统截图/选图 UI、ELF LOAD 段页兼容、Release 资源、完整目标真机和签名发行证据。21 条本地真实通知样本经用户授权离线分析后，项目新增支付宝支出/余额收款、微信付款完成、招商银行快捷支付退款 4 条窄范围通知 route；微信标题允许 `Weixin Pay` 与 `微信支付`，但金额仍只接受已验证的英文正文模板，未知中文正文失败关闭。它们默认关闭，只用脱敏夹具自动回放，尚未完成真机系统 callback、更新/重启与资源验收。专属文件格式与其他通知事件仍未实现。现金、支付宝余额和微信零钱只能是 CNY；只有银行卡和信用卡可为 USD，且没有汇率换算。电子钱包余额与银行卡是独立资金账户：银行卡流水不能补齐钱包余额内的红包、个人转账、余额消费或余额退款。未来生成器建立后，逐格式实际矩阵必须由代码和测试写入 `docs/generated/`，不得手工伪造。
 
 ## 支持标签
 
@@ -23,7 +23,7 @@
 | 能力 | 代码状态 | 运行时/验收状态 | 证据与限制 |
 | --- | --- | --- | --- |
 | 支付宝通知与文件 | 通知部分实现；文件未实现 | `FALLBACK_REQUIRED`；2 条通知 route 为 `Experimental` 且默认关闭 | 支出通知和余额收款通知各有独立 metadata/content rule、provider parser 与脱敏回放；只提取单一 CNY 金额和明确方向。扫码成功页无通知、其他通知文案、余额内部事件、文件导入和真机 callback 均未覆盖 |
-| 微信支付通知与文件 | 通知部分实现；文件未实现 | `FALLBACK_REQUIRED`；1 条通知 route 为 `Experimental` 且默认关闭 | 只覆盖当前英文环境 `Weixin Pay` + 单一 CNY 金额 + `paid` 的付款完成通知。红包、转账请求和提现状态拒绝；该通知与普通消息共用频道，启用时会在本机读取同频道有界正文后过滤。普通聊天通常不匹配，但同名联系人发送完全相同格式时无法由现有元数据证明来源，只能依靠待复核而非自动过账；仍缺真机 callback 与资源证据 |
+| 微信支付通知与文件 | 通知部分实现；文件未实现 | `FALLBACK_REQUIRED`；1 条通知 route 为 `Experimental` 且默认关闭 | 同一稳定 route 接受标题 `Weixin Pay` 或 `微信支付`，但当前只覆盖真实样本已验证的“单一 CNY 金额 + `paid`”英文正文。标题只用于筛选，金额从正文提取；未经样本验证的简中/繁中正文、红包、转账请求和提现状态均拒绝。该通知与普通消息共用频道，启用时会在本机读取同频道有界正文后过滤。普通聊天通常不匹配，但同名联系人发送完全相同格式时无法由现有元数据证明来源，只能依靠待复核而非自动过账；仍缺中文正文样本、真机 callback 与资源证据 |
 | 银行通知与文件 | 招商银行通知部分实现；其他银行/文件未实现 | `FALLBACK_REQUIRED`；1 条招商银行 route 为 `Experimental` 且默认关闭 | 只覆盖招商银行 App 专用通道中的快捷支付退款，登录通道和 Samsung 短信通知明确排除。普通扣款、入账、基金、其他银行、文件和真机 callback 均未覆盖 |
 | 通用受控通知 route 证据 | 已实现并承载 4 条实验 route | 不改变三类来源的 `FALLBACK_REQUIRED` | 静态 route catalog、默认关闭的 app-private route 开关、metadata gate、parser 注册和 RawEvent identity 由同一 route 提供；包名 + Android 通知渠道 + 类别（含 null）必须精确匹配。设置页只显示 catalog 安全标签；开启先持久化，关闭先收紧本进程门禁，失败会冻结其他 route 并要求重试或在重启前撤销系统通知使用权。关闭或未知 route 不读正文、不落库；ingress 会再次检查开关。候选使用容量 16 队列、Room v7 HMAC 观察租约和 command 恢复去重；provider parser 在运输后复核 template/version/content，只产出金额与方向的来源建议，复核 UI 不显示包名、频道或原文，也不直接过账。S24U-HK/API 36 已验证当前 catalog 默认关闭和 opaque opt-in，但不是系统 callback 或 provider 证据 |
 | Debug 通知模板采样器 | 已实现研究工具；不属于产品能力 | S24U-HK/API 36 上 10 个采样器、3 个隔离偏好和 1 个当前 catalog 默认关闭用例共 14/14 通过；21 条真实 callback 已只读导出并本地保留 | 仅 Debug 桌面入口可由用户手动开始/停止/清除；只接受开始之后所选精确包名的新 callback，跨进程无限期恢复，不设自动时间、条数或文件大小限制。仅追加五个有界正文域到 app-private no-backup NDJSON，不读历史/key/actions/RemoteViews，也不生成账本证据。11 张过程截图、通知文件和配置有两份 Git 忽略的本机私有副本；设备端原始数据未删除，原文不进入仓库、日志或文档。Release 无页面、无原始文件名和研究包名 |
@@ -32,7 +32,7 @@
 | 用户显式选择不透明文本文件 | 已实现，发布门未完成 | 既有 JVM/ViewModel 回归通过；SAF 真机待验收 | `GENERIC/STATEMENT_IMPORT` 的证据回退；当次读取 `text/plain`、CSV 或 TSV，64 KiB 有界复制为一条证据，不持久化 URI/文件名，不解析行或猜 provider/金额/账户 |
 | 用户显式映射 CSV/TSV | 已实现候选，发布门未完成 | 纯 Kotlin 解析/映射、application 批次、ViewModel 状态机与来源投影测试以及全量 JVM/Lint/Debug/Release 构建通过；Room v7 AndroidTest APK 已编译，设备 Room/SAF 仍待验收 | 当次 SAF 读取严格 UTF-8，文件最多 2 MiB、5000 数据行、64 列；用户必须映射日期、金额、方向、对方和可选参考号，选择 CNY/USD。有效行各自生成可清除 `GENERIC/STATEMENT_IMPORT` 证据与待复核建议；文件名/URI 不保存，未知表头不自动猜列，拒绝行只留安全错误码，停止后同文件+同映射可续传。行记录使用事务内 O(1) 增量汇总，不再逐行全表扫描。不是任何钱包或银行格式支持声明 |
 | 用户显式分享单张 PNG 收据截图 | 已实现，发布门未完成 | JVM 结构/边界、application 与 ViewModel 回归及完整构建已覆盖，S24U-HK 的 47/47 Room suite 覆盖共享证据仓储；真实 Sharesheet UI/临时授权仍待验收 | 只接收系统 `ACTION_SEND` 的当次 `content://`、声明与解析后均为 `image/png` 的一张图片；4 MiB 有界复制，验证签名/IHDR/分块 CRC/终止分块后作为 `GENERIC/SHARE_FILE` 保存。无相册权限、无 URI/文件名持久化、无图像解码/预览/OCR、无金额/来源推断；只打开用户填写的手工复核表单，不是 provider 支持声明 |
-| Quick Settings 单次截图与 Photo Picker 有界多选 OCR | 已实现候选，发布禁止 | 模型哈希/中英日字典、AAR 边界以及未签名 Release 分包的权限、组件、ABI、模型、体积与 16 KiB ZIP 对齐已有静态证据；S24U-HK 合成三语推理 1/1 与合成多金额 OCR→v2→建议定向 app instrumentation 1/1 通过，真实页面、系统截图/选图 UI、ELF 页兼容和目标真机资源证据缺失 | 磁贴只在用户点击后截取当前画面一次；command 先有 90 秒可取消阶段，在证据准入/容量清理/写入前用 CAS 原子交接取消权与本地提交。handle 注册中不提前宣称取消成功；提交前先释放像素，local commit 另有 15 秒协作式截止，闸门后的超时、取消或非致命异常统一提示“结果未确认”。提交/既成结果不可取消而回调缺失时最多再等一次 15 秒，随后释放并隔离迟到回调。Photo Picker 每批只处理前 1–5 张、逐张串行、显示已处理数量并只汇总一次，活动批次拒绝第二批。磁贴/无障碍设置入口深链到 Bill 教程；无节点读取、手势、后台捕获、相册广泛权限或自动过账。PP-OCRv6 small 静态随包，ONNX Runtime 建会话前关闭 telemetry；原始像素只作瞬时输入，v2 转录只保留文本和归一化整数边界，v1 可重放。主金额只有在独立金额的版面高度明显占优时才预填，结果仍是 `GENERIC/PHOTO_OCR` 可编辑待复核项。不能据此声称任一 provider 支持 |
+| Quick Settings 单次截图与 Photo Picker 有界多选 OCR | 已实现候选，发布禁止 | 模型哈希/中英日字典、AAR 边界以及未签名 Release 分包的权限、组件、ABI、模型、体积与 16 KiB ZIP 对齐已有静态证据；S24U-HK 合成三语推理 1/1、合成多金额 OCR→v2→建议 1/1、11 张本机私有真实页面金额/预期语义 11/11，以及简中四状态页定向 app instrumentation 1/1 通过。真实简中微信页面、系统截图/选图 UI、ELF 页兼容和完整目标真机 Release 资源证据缺失 | 磁贴只在用户点击后截取当前画面一次；command 先有 90 秒可取消阶段，在证据准入/容量清理/写入前用 CAS 原子交接取消权与本地提交。handle 注册中不提前宣称取消成功；提交前先释放像素，local commit 另有 15 秒协作式截止，闸门后的超时、取消或非致命异常统一提示“结果未确认”。提交/既成结果不可取消而回调缺失时最多再等一次 15 秒，随后释放并隔离迟到回调。Photo Picker 每批只处理前 1–5 张、逐张串行、显示已处理数量并只汇总一次，活动批次拒绝第二批。磁贴/无障碍设置入口深链到 Bill 教程；无节点读取、手势、后台捕获、相册广泛权限或自动过账。PP-OCRv6 small 静态随包，ONNX Runtime 建会话前关闭 telemetry；原始像素只作瞬时输入，v2 转录只保留文本和归一化整数边界，v1 可重放。未完成状态不提议金额；完成页仍须显著主金额，正负号仅作用于选中金额；金额和方向始终是 `GENERIC/PHOTO_OCR` 可编辑待复核项。不能据此声称任一 provider 支持 |
 
 手工录入是 `ManualIntent -> Draft`，不会制造外部 `RawEvent`。分享文本、不透明文件、映射 CSV/TSV 行、单次 PNG 截图与实验性单次 OCR 分别进入同一 `RawEvent -> ParseAttempt -> source proposal -> user-completed Draft` 主干；映射 CSV/TSV 先以文件摘要+映射摘要建立 `ImportBatch`，再为每个有效行建立独立证据和稳定 command。Debug 通知模板采样器停在研究文件，不进入这条业务主干。Sharesheet/SAF 的接收方、MIME、用户映射或 Debug 目标包名都不能证明 provider；PNG 和 OCR 入口同样只证明用户提供了一张不可信的当前凭证。这些通用证据入口都可以作为三类来源不可用时的回退，却不能替任何来源满足格式漂移、授权、provider 归属或脱敏样本验收门。
 
@@ -68,7 +68,7 @@
 | 通用 | 用户从短信/邮件/文件 App 主动分享文本 | Supported | 目标标签；当前 `text/plain` 切片已实现但仍属发布前部分实现，不读取整箱，只处理显式分享内容，不证明发送 App |
 | 通用 | 用户经 SAF 选择文本/CSV/TSV | Experimental | 当前同时保留 64 KiB 不透明文本证据和 2 MiB/5000 行的显式 CSV/TSV 映射；有效行逐条进入待复核，不含 XLS/XLSX、余额/账户列、provider 预设或 provider 识别 |
 | 通用 | 用户从系统分享单张 PNG 收据截图 | Experimental | 当前只提供有界、私有、无 OCR 的 `GENERIC/SHARE_FILE` 手工复核入口；不读取相册、不保存 URI/文件名、不推断财务字段或 provider |
-| 通用 | Quick Settings 单次截图 / Photo Picker 最多 5 张串行 OCR | Experimental，当前发布禁止 | 只在用户点磁贴或选择图片后处理；不绕过 `FLAG_SECURE`，结果必须确认。随包 PP-OCRv6/ONNX 候选已有未签名 Release 静态审计、S24U-HK 合成三语推理和合成多金额空间链验证，但尚未完成真实支付截图、系统截图/选图 UI、ELF 页兼容、签名发行和三台目标真机资源验收；不能用作 provider 支持声明 |
+| 通用 | Quick Settings 单次截图 / Photo Picker 最多 5 张串行 OCR | Experimental，当前发布禁止 | 只在用户点磁贴或选择图片后处理；不绕过 `FLAG_SECURE`，结果必须确认。随包 PP-OCRv6/ONNX 候选已有未签名 Release 静态审计、S24U-HK 合成三语、合成多金额空间链、11 张本机私有真实繁中/英文过程页 11/11 和简中四状态页合成回归；但尚未完成真实简中微信页面、系统截图/选图 UI、ELF 页兼容、签名发行和三台目标真机 Release 资源验收，不能用作 provider 支持声明 |
 | 通用 | 直接读取短信箱 | Experimental / 默认排除 | 受 Play 权限与合规审核约束；基础发行包不包含该权限 |
 | 通用 | Accessibility 自动操作支付/银行 UI | Unsupported | 脆弱且风险高，不作为产品路线 |
 | 通用 | 读取其他 App 私有目录、Root、抓包 | Unsupported | 违反系统/产品安全边界 |

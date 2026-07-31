@@ -37,6 +37,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -364,6 +365,31 @@ class SharedTextIngestionServiceTest {
     }
 
     @Test
+    fun `pending OCR page reaches review without proposing a displayed amount`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encodeSpatial(
+            listOf(
+                recognizedLine("Withdraw Balance", top = 600, bottom = 900),
+                recognizedLine("Bank is processing", top = 1_000, bottom = 1_350),
+                recognizedLine("Withdrawal completed", top = 1_600, bottom = 1_900),
+                recognizedLine("￥0.01", top = 2_200, bottom = 3_100),
+            ),
+        )!!
+
+        val result = fixture.photoOcrService().ingest(
+            commandId = "pending-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+        )
+
+        assertTrue(result is SourceCaptureResult.ReadyForReview)
+        val proposal = fixture.commitStore.persisted.values.single().proposal
+        assertNotNull(proposal)
+        assertNull(proposal?.candidate?.amount)
+        assertNull(proposal?.candidate?.moneyDirection)
+        assertTrue(bytes.all { it == 0.toByte() })
+    }
+
+    @Test
     fun `malformed OCR transcript is rejected and wiped before staging`() = runBlocking {
         val fixture = Fixture()
         val bytes = "not-an-ocr-envelope".toByteArray()
@@ -505,6 +531,20 @@ class SharedTextIngestionServiceTest {
         assertTrue(fixture.rawEvents.events.isEmpty())
         assertTrue(fixture.commitStore.persisted.isEmpty())
     }
+
+    private fun recognizedLine(
+        value: String,
+        top: Int,
+        bottom: Int,
+    ) = OcrTranscript.RecognizedLine(
+        value = value,
+        bounds = OcrTranscript.Bounds(
+            left = 1_000,
+            top = top,
+            right = 9_000,
+            bottom = bottom,
+        ),
+    )
 
     private class Fixture {
         val rawEvents = InMemoryRawEventRepository()

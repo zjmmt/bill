@@ -1,8 +1,8 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、4 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、14 个 app、47 个 Room 与 1 个随包 OCR 合成 instrumentation，新 route 的真实 callback、空间 OCR 设备链、完整设备矩阵与发布门待完成
+- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、4 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、14 个 app、47 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，新 route 的真实 callback、真实简中页面、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
-- 最后核验：2026-07-31
+- 最后核验：2026-08-01
 - 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
 
 ## 正确性不变量
@@ -76,7 +76,7 @@
 2026-07-31 的首批 provider route 结果：
 
 - 用户授权导出的 21 条真实 callback 与 11 张过程截图只保存在两份 Git 忽略的本机私有副本，设备端原始数据未删除。离线安全盘点只将 5/21 归入 4 条严格候选；仓库测试只使用脱敏成功/缺字段/漂移/敏感反例，不包含真实账号、商户或原文。
-- 新增 `:source:alipay` 两条 route、`:source:wechat` 一条 route、`:source:bank:cmb` 一条 route；它们默认关闭，只产生整条通知内无冲突、无外币标记的单一 CNY 金额和方向建议。Samsung 短信、微信红包/转账/提现、支付宝其他事件及招商银行登录/普通交易保持拒绝。微信共享消息频道仍存在同名联系人完全仿照格式的误触发风险，因此只允许待复核。
+- 新增 `:source:alipay` 两条 route、`:source:wechat` 一条 route、`:source:bank:cmb` 一条 route；它们默认关闭，只产生整条通知内无冲突、无外币标记的单一 CNY 金额和方向建议。微信 route 的稳定 ID 不变，标题接受 `Weixin Pay` 与 `微信支付`，但只有真实样本验证过的英文正文模板可提取金额；未经样本验证的简中/繁中正文失败关闭。Samsung 短信、微信红包/转账/提现、支付宝其他事件及招商银行登录/普通交易保持拒绝。微信共享消息频道仍存在同名联系人完全仿照格式的误触发风险，因此只允许待复核。
 - 定向 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks` 已实际执行并 173/173 通过。完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：80 executed、811 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `d76a2c91013bc2991cf8e61d71e52a0083edf33a6bb8ac8b74c253918cfad74e`；x86_64 Release 为 128,419,330 bytes、SHA-256 `62ec182dfed546540d68536458de181abe55e99ff32cab6dd63da7f2b44c1e4e`，两包通过 16 KiB ZIP 对齐。
 - 最终 `code-review` 未发现开放 P0/P1；已修复 parser 身份错配、超限载荷复制、致命错误被吞、带符号/多金额/跨字段冲突/混入外币的 CNY 误判，并以纵向测试确认 provider 建议保持 `WAITING_USER` 且不猜交易对手或资金账户。微信普通消息与支付通知共享频道是平台残余风险：同名联系人完全仿照正文仍可能产生待复核建议，因此该 route 保持默认关闭、实验性且不得自动入账。
 - 本轮 connected 测试均只使用程序生成的合成数据；没有读取通知、打开支付 App 或使用用户的真实截图。因此 4 条新 route 的系统 callback、更新/重启、OEM 后台与资源证据仍全部开放。
@@ -88,6 +88,15 @@
 - `:data:local:connectedDebugAndroidTest` 首次运行 45/47；失败的 2 条旧导入夹具直接追加 `STATEMENT_IMPORT` RawEvent，绕过了生产所需 staging reservation，因此仓储按设计返回冲突。夹具改为先建立活动暂存租约后，完整 47/47 通过，覆盖 v1→v7 migration、导入批次/行、对账、通知观察、证据生命周期/暂存与账本仓储；生产不变量没有放宽。
 - 空间 OCR v2 现在保留每行归一化整数边界、兼容 v1，并仅在独立金额相对正文中位高度及第二候选都明确占优时预填。指定 `code-review` 修复空 OCR 框令整次识别失败和值对象字符串泄露转录的风险，并阻止失败/拒绝/取消页提出金额，补英语退款/红包大小写阻断与遮罩回归；强制重跑 `generic-photo-ocr`、application 与 app 单测的 167 个任务全部通过。
 - 用户重新接入设备后，定向 `:app:connectedDebugAndroidTest` 空间 OCR instrumentation 1/1 通过，验证“程序绘制多金额图像 -> 随包 OCR -> v2 转录 -> 主金额建议”。它没有经过系统截图/Photo Picker UI、真实支付页面、证据入库或 provider 识别，不能据此扩大发布结论。
+
+2026-08-01 的本机私有真实页面与简繁体边界回归：
+
+- 在同一 `S24U-HK` 上，经用户明确授权，把 11 张只保存在 Git 忽略目录和独立磁盘副本中的真实支付过程截图逐张送入随包 OCR；临时测试源码和设备暂存随后移除，仓库、日志和本文都不含原图、OCR 原文、金额、账号或设备序列号。初始解析 11/11 有 OCR 文本、9/11 有金额、9/11 有方向，完整预期语义为 7/11；完成状态门、纯小数主金额、选中金额符号和促销红包语义修正后，金额与预期语义均为 11/11。
+- 11 张页面总 OCR 耗时 17.718 秒；单张最短 1.297 秒、中位数 1.688 秒、最长 2.026 秒。Debug instrumentation 进程在采样区间的 PSS 最低 174,332 KiB、最高 279,744 KiB，最大观测增量 98,841 KiB；该数包含测试进程、模型加载和分配器缓存，不是 Release 单次峰值或处理后空闲常驻结论，资源发布门仍开放。
+- 当前真实页面来自用户的繁体中文/英文微信环境，可证明这些具体页面及规则。为避免把语言环境偶然性写死，又用程序绘制的简中“领取成功”“红包尚未领取”“提现处理中”“转账成功”四页执行定向 app instrumentation，1/1 通过。它证明随包 OCR 能识别简体字并让对应规则通过，不证明真实简中微信布局或中文通知正文；真实简中页面仍须后续脱敏样本验收。
+- 本轮 `code-review` 先发现英语状态词采用宽泛子串会把正常文案误判为处理中，改为整行状态匹配；既有回归又捕获了“任意正负号决定方向”的过宽推断，现限制为选中主金额且必须存在交易详情上下文。真实回放暴露的币种符号拆行和促销红包假阻断也只在明确完成上下文、显著主金额和普通付款语义同时成立时放行。
+- 简繁体对称复审又补齐 `入账/入賬`、`到账/到賬/到帳`、`提现/提現`、`还款/還款`、`零钱通/零錢通`、失败/处理中状态与商户/对方标签，并增加成对回归。微信通知保持既有 route ID，标题接受 `Weixin Pay`/`微信支付`，三个未经验证的中文付款正文反例继续拒绝。定向 `generic-photo-ocr`、WeChat、application 与 app 单元套件 169 个任务全部强制执行通过。
+- 最终完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：71 executed、820 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `6595051668d9d9fd2d9186a12b79cd6214c48b9ea001d176abf772c71a47ecab`；x86_64 Release 为 128,419,330 bytes、SHA-256 `b61385b015b36c395015c368ac63730715f7e75cdd356a8fd9e1650a67e62b6f`。两包通过 `zipalign -c -P 16 4`。
 - 当前源码随后完成 891-task 全量 JVM/Lint/Debug/双 ABI Release/三组 AndroidTest APK 构建（71 executed、820 up-to-date）。arm64-v8a 未签名 Release 为 90,597,641 bytes、SHA-256 `5c6e58f02a38aef142130fc723983a7ce445020334a0aee04392e8b3d9a2bae1`；x86_64 为 128,419,330 bytes、SHA-256 `881ddc76dcebf7725d003a54fe3813ad2ff9a6d651dee302882327696b63ef0c`；两包通过 16 KiB ZIP 对齐。
 
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 4 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
@@ -143,7 +152,7 @@
 - 单条通知只在系统回调后工作；生产未命中元数据且 Debug 采样未由用户开启时，正文读取数、落盘数和解析数必须均为 0。禁止历史扫描、周期 Job/Alarm、前台服务、partial wakelock 与自动 OCR。命中候选最多进入容量 16 的内存队列，满队列必须丢弃而不是无界排队。Debug 研究文件允许用户自行决定保留时长和总量，但每条仍只有五个最多 1024 字符的字段；该例外不得进入 Release 或正式来源证据预算。
 - 命中通知的信封上限为 8 KiB，通知入口由单个 IO consumer 串行提交；每条未来真实模板都要验证更新/重启不重复建待复核项，并记录队列丢弃/失败健康状态。当前空目录不产生任何正文证据。
 - 结果页读取若以后实现，每个候选窗口必须有去抖、有限节点数/文本量和最大树读取次数；目标 App 不在前台时节点读取数必须为 0。
-- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发：截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入前以 CAS 线性化取消与本地提交，取消胜出时 Job 停止且不进入有副作用的准入路径。cancellation handle 注册期间的超时会先登记待取消；handle 返回后取消成功才报告超时，否则进入收尾未知态。提交胜出时先释放像素，再在独立 15 秒协作式截止内运行有界、无网络的 admit/stage/parse/Room 路径；挂起端口、内部取消或非致命异常都会返回“结果未确认”，由幂等与 staging recovery 处理可能的中间态。该截止依赖协程取消，不宣称能强杀不响应取消的底层阻塞 I/O；输入上限、像素预释放和暂存恢复共同限制其影响。断连、替换 service 或 90 秒到期若发现提交/既成结果不可取消，只启动一次 15 秒收尾宽限；仍无回调则显示“结果未确认”、释放单飞门并用 opaque request identity 隔离迟到回调。Photo Picker 每批只处理前 1–5 张，最大并发为 1，活动批次拒绝第二批，并只发布一次汇总。运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话；v2 只额外持久化每行归一化整数边界，旧 v1 可重放。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量，S24U-HK 合成三语推理与合成多金额空间链已通过；真实页面、系统截图/选图 UI、峰值内存、耗时、电量、ELF 页兼容与三台目标真机回归未通过前保持发布禁止。
+- 当前单次 PNG 收据分享只由用户动作触发：当次 `content://` 流最多读取 4 MiB，声明与解析 MIME 必须均为 `image/png`，只校验签名、IHDR、尺寸、分块 CRC、IDAT/IEND，不创建 Bitmap/HardwareBuffer、不预览、不运行 OCR；暂存完成或失败后擦除临时字节，不在后台重试或持续扫描。独立 Quick Settings/Photo Picker OCR 也只由用户动作触发：截图 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入前以 CAS 线性化取消与本地提交，取消胜出时 Job 停止且不进入有副作用的准入路径。cancellation handle 注册期间的超时会先登记待取消；handle 返回后取消成功才报告超时，否则进入收尾未知态。提交胜出时先释放像素，再在独立 15 秒协作式截止内运行有界、无网络的 admit/stage/parse/Room 路径；挂起端口、内部取消或非致命异常都会返回“结果未确认”，由幂等与 staging recovery 处理可能的中间态。该截止依赖协程取消，不宣称能强杀不响应取消的底层阻塞 I/O；输入上限、像素预释放和暂存恢复共同限制其影响。断连、替换 service 或 90 秒到期若发现提交/既成结果不可取消，只启动一次 15 秒收尾宽限；仍无回调则显示“结果未确认”、释放单飞门并用 opaque request identity 隔离迟到回调。Photo Picker 每批只处理前 1–5 张，最大并发为 1，活动批次拒绝第二批，并只发布一次汇总。运行时最多两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话；v2 只额外持久化每行归一化整数边界，旧 v1 可重放。未签名 Release 分包体积、权限、组件、ABI、模型和 16 KiB ZIP 对齐已经测量，S24U-HK 合成三语、合成多金额空间链、11 张本机私有真实繁中/英文过程页和简中四状态页已通过；真实简中微信页面、系统截图/选图 UI、Release 峰值/空闲内存、耗电、ELF 页兼容与三台目标真机回归未通过前保持发布禁止。
 - 结构化 CSV/TSV 当前硬拒绝超过 2 MiB、5000 数据行、64 列、1024 字符/单元格或 16 KiB/记录的输入；预览不阻塞主线程，导入可停止并按同一文件+映射继续。更大文件不进入当前版本，而不是无界加载。
 - 账本分页、按月汇总和草稿箱查询需有索引与基准测试。
 

@@ -2,7 +2,7 @@
 
 - 状态：自动生成
 - 所有者：`scripts/generate-repository-facts.ps1`
-- 最后核验：2026-07-31
+- 最后核验：2026-08-01
 - 事实来源：`settings.gradle.kts`、模块 `build.gradle.kts`、Room schema、源 Manifest 与测试源码
 - 生成命令：`cmd.exe /d /s /c powershell -NoProfile -ExecutionPolicy Bypass -File scripts\generate-repository-facts.ps1`
 
@@ -16,7 +16,7 @@
 | 源 Manifest | 9 |
 | 测试源码文件 | 64 |
 | 生成输入文件 | 104 |
-| 输入 SHA-256 | `05a845b319b169256e8e439cbd7abda3873b4adb2d8885b517e81c46f0599b30` |
+| 输入 SHA-256 | `abaebf402e6fea623deea6a233fddeff1eeda6087896b8e2f845319ceb681b92` |
 
 输入摘要按 UTF-8/LF 规范化后包含生成器及共享解析库的 SHA-256；生成逻辑、源码事实或输入文件任一变化，都要求重新生成。
 
@@ -77,9 +77,9 @@
 
 | 模块 | 测试集 | 源码文件 | `@Test` 注解 |
 |---|---|---:|---:|
-| `:app` | Android | 4 | 15 |
+| `:app` | Android | 4 | 16 |
 | `:app` | JVM | 13 | 72 |
-| `:application` | JVM | 5 | 75 |
+| `:application` | JVM | 5 | 76 |
 | `:core:ledger` | JVM | 2 | 23 |
 | `:core:model` | JVM | 2 | 4 |
 | `:data:local` | Android | 9 | 47 |
@@ -92,11 +92,11 @@
 | `:source:contract` | JVM | 5 | 22 |
 | `:source:generic-delimited-statement` | JVM | 3 | 18 |
 | `:source:generic-notification` | JVM | 4 | 22 |
-| `:source:generic-photo-ocr` | JVM | 1 | 19 |
+| `:source:generic-photo-ocr` | JVM | 1 | 27 |
 | `:source:generic-receipt-image` | JVM | 1 | 4 |
 | `:source:generic-share-text` | JVM | 2 | 9 |
 | `:source:pipeline` | JVM | 2 | 22 |
-| `:source:wechat` | JVM | 1 | 4 |
-| 合计 | — | 64 | 387 |
+| `:source:wechat` | JVM | 1 | 6 |
+| 合计 | — | 64 | 399 |
 
 计数口径：仅扫描各模块的 `src/test` 与 `src/androidTest` 下 `.kt`/`.java` 文件，并统计 `@Test` 或完全限定的 JUnit `@Test` 注解；参数化测试等其他注解不计入。

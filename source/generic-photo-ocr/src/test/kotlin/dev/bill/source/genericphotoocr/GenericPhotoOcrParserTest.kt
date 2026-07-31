@@ -181,6 +181,187 @@ class GenericPhotoOcrParserTest {
     }
 
     @Test
+    fun `completed transfer and red packet pages retain amount without ordinary direction`() {
+        listOf(
+            listOf("Red Packet transferred to Wallet", "0.01 CNY"),
+            listOf("红包", "0.01元", "领取成功，已存入余额"),
+            listOf("转账", "+0.01", "交易成功"),
+        ).forEach { lines ->
+            val result = parseSpatial(
+                spatial(lines.first(), 700, 1_000),
+                spatial(lines[1], 1_300, 2_200),
+                *lines.drop(2).mapIndexed { index, value ->
+                    spatial(value, 2_500 + index * 350, 2_750 + index * 350)
+                }.toTypedArray(),
+            ) as ParseResult.NeedsUserReview
+
+            assertEquals(1L, result.candidate?.amount?.value?.minorUnits)
+            assertNull(result.candidate?.moneyDirection)
+        }
+    }
+
+    @Test
+    fun `completed spatial pages recover a prominent decimal when OCR splits or drops currency`() {
+        listOf(
+            listOf("Red Packet transferred to Wallet", "0.01", "CNY"),
+            listOf("紅包", "0.01", "領取成功，已存入餘額"),
+        ).forEach { lines ->
+            val result = parseSpatial(
+                spatial(lines[0], 900, 1_150),
+                spatial(lines[1], 2_000, 3_000),
+                spatial(lines[2], 3_200, 3_450),
+            ) as ParseResult.NeedsUserReview
+
+            assertEquals(1L, result.candidate?.amount?.value?.minorUnits)
+            assertNull(result.candidate?.moneyDirection)
+        }
+
+        val contextless = parseSpatial(
+            spatial("0.01", 2_000, 3_000),
+            spatial("Details", 3_200, 3_450),
+        ) as ParseResult.NeedsUserReview
+        assertNull(contextless.candidate?.amount)
+    }
+
+    @Test
+    fun `selected signed amount supplies direction without scanning unrelated signs`() {
+        listOf(
+            Triple("- ￥13.70", 1_370L, ObservedMoneyDirection.OUTBOUND),
+            Triple("+0.01", 1L, ObservedMoneyDirection.INBOUND),
+        ).forEach { (amountLine, expectedAmount, expectedDirection) ->
+            val result = parseSpatial(
+                spatial("交易详情", 800, 1_050),
+                spatial(amountLine, 1_500, 2_300),
+                spatial("优惠 - ￥2.00", 3_000, 3_200),
+            ) as ParseResult.NeedsUserReview
+
+            assertEquals(expectedAmount, result.candidate?.amount?.value?.minorUnits)
+            assertEquals(expectedDirection, result.candidate?.moneyDirection?.value)
+        }
+    }
+
+    @Test
+    fun `promotional red packet does not block an otherwise completed payment`() {
+        val result = parseSpatial(
+            spatial("支付成功", 700, 950),
+            spatial("￥3.17", 1_300, 2_200),
+            spatial("恭喜获得无门槛红包+200能量", 3_000, 3_250),
+            spatial("优惠 - ￥0.33", 3_600, 3_850),
+        ) as ParseResult.NeedsUserReview
+
+        assertEquals(317L, result.candidate?.amount?.value?.minorUnits)
+        assertEquals(
+            ObservedMoneyDirection.OUTBOUND,
+            result.candidate?.moneyDirection?.value,
+        )
+    }
+
+    @Test
+    fun `unopened red packet pages never propose their displayed amount`() {
+        listOf(
+            "Red packet of ￥0.01 not yet opened",
+            "Red Packets not opened within 24 hrs will be refunded",
+            "0.01元红包尚未领取",
+            "紅包未打開",
+            "0.01 CNY 未受取",
+        ).forEach { statusLine ->
+            val result = parseSpatial(
+                spatial("Red Packet", 700, 1_000),
+                spatial("￥0.01", 1_300, 2_200),
+                spatial(statusLine, 2_500, 2_800),
+            ) as ParseResult.NeedsUserReview
+
+            assertNull(result.candidate?.amount)
+            assertNull(result.candidate?.moneyDirection)
+        }
+    }
+
+    @Test
+    fun `processing withdrawal pages fail closed even when future completion text is visible`() {
+        listOf(
+            "Bank is processing",
+            "Processing",
+            "PENDING...",
+            "Estimated to arrive by 22:38",
+            "Request Withdrawal",
+            "提现处理中",
+            "預計到帳",
+            "手続き中",
+        ).forEach { pendingLine ->
+            val result = parseSpatial(
+                spatial("Withdraw Balance", 600, 900),
+                spatial(pendingLine, 1_000, 1_350),
+                spatial("Withdrawal completed", 1_600, 1_900),
+                spatial("￥0.01", 2_200, 3_100),
+            ) as ParseResult.NeedsUserReview
+
+            assertNull(result.candidate?.amount)
+            assertNull(result.candidate?.moneyDirection)
+        }
+    }
+
+    @Test
+    fun `status words inside ordinary completed text do not suppress payment`() {
+        val result = parse(
+            "Payment successful",
+            "￥8.00",
+            "Processing fee waived",
+            "Pending Coffee membership",
+        ) as ParseResult.NeedsUserReview
+
+        assertEquals(800L, result.candidate?.amount?.value?.minorUnits)
+        assertEquals(
+            ObservedMoneyDirection.OUTBOUND,
+            result.candidate?.moneyDirection?.value,
+        )
+    }
+
+    @Test
+    fun `simplified and traditional Chinese status variants keep the same semantics`() {
+        listOf("入账成功", "入賬成功", "到账", "到賬", "到帳").forEach { status ->
+            val result = parse(status, "￥8.00") as ParseResult.NeedsUserReview
+            assertEquals(800L, result.candidate?.amount?.value?.minorUnits)
+            assertEquals(
+                ObservedMoneyDirection.INBOUND,
+                result.candidate?.moneyDirection?.value,
+            )
+        }
+
+        listOf(
+            "支付失败",
+            "支付失敗",
+            "付款失败",
+            "付款失敗",
+            "交易失败",
+            "交易失敗",
+            "正在处理",
+            "正在處理",
+        ).forEach { status ->
+            val result = parseSpatial(
+                spatial(status, 800, 1_100),
+                spatial("￥8.00", 1_500, 2_400),
+            ) as ParseResult.NeedsUserReview
+            assertNull(result.candidate?.amount)
+            assertNull(result.candidate?.moneyDirection)
+        }
+
+        listOf("提现", "提現", "还款", "還款", "零钱通", "零錢通").forEach { semantic ->
+            val result = parseSpatial(
+                spatial("支付成功", 700, 950),
+                spatial("￥8.00", 1_300, 2_200),
+                spatial(semantic, 2_500, 2_800),
+            ) as ParseResult.NeedsUserReview
+            assertEquals(800L, result.candidate?.amount?.value?.minorUnits)
+            assertNull(result.candidate?.moneyDirection)
+        }
+
+        listOf("商户：咖啡店", "商戶：咖啡店", "对方：咖啡店", "對方：咖啡店").forEach { line ->
+            val result = parse("支付成功", "￥8.00", line) as ParseResult.NeedsUserReview
+            assertEquals("咖啡店", result.candidate?.counterparty?.value)
+        }
+    }
+
+    @Test
     fun `failed rejected and cancelled pages never propose an amount`() {
         listOf(
             "支付失败",
