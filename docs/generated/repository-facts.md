@@ -14,9 +14,9 @@
 |---|---:|
 | Gradle 模块 | 23 |
 | 源 Manifest | 9 |
-| 测试源码文件 | 62 |
-| 生成输入文件 | 102 |
-| 输入 SHA-256 | `deab2084fce0290da82645345b94c63becc2c2866a4b3bd12aced7904597dfea` |
+| 测试源码文件 | 64 |
+| 生成输入文件 | 104 |
+| 输入 SHA-256 | `05a845b319b169256e8e439cbd7abda3873b4adb2d8885b517e81c46f0599b30` |
 
 输入摘要按 UTF-8/LF 规范化后包含生成器及共享解析库的 SHA-256；生成逻辑、源码事实或输入文件任一变化，都要求重新生成。
 
@@ -77,7 +77,7 @@
 
 | 模块 | 测试集 | 源码文件 | `@Test` 注解 |
 |---|---|---:|---:|
-| `:app` | Android | 2 | 13 |
+| `:app` | Android | 4 | 15 |
 | `:app` | JVM | 13 | 72 |
 | `:application` | JVM | 5 | 75 |
 | `:core:ledger` | JVM | 2 | 23 |
@@ -92,11 +92,11 @@
 | `:source:contract` | JVM | 5 | 22 |
 | `:source:generic-delimited-statement` | JVM | 3 | 18 |
 | `:source:generic-notification` | JVM | 4 | 22 |
-| `:source:generic-photo-ocr` | JVM | 1 | 11 |
+| `:source:generic-photo-ocr` | JVM | 1 | 19 |
 | `:source:generic-receipt-image` | JVM | 1 | 4 |
 | `:source:generic-share-text` | JVM | 2 | 9 |
 | `:source:pipeline` | JVM | 2 | 22 |
 | `:source:wechat` | JVM | 1 | 4 |
-| 合计 | — | 62 | 377 |
+| 合计 | — | 64 | 387 |
 
 计数口径：仅扫描各模块的 `src/test` 与 `src/androidTest` 下 `.kt`/`.java` 文件，并统计 `@Test` 或完全限定的 JUnit `@Test` 注解；参数化测试等其他注解不计入。

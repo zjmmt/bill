@@ -33,7 +33,7 @@ SourceConnector
 
 ## 当前实现：用户显式本地证据
 
-当前可运行的 provider-neutral 纵向切片有四个已过代码验证的显式证据入口，以及一个已过未签名 Release 静态门、尚未完成实际推理/真机/签名发布门的本地 OCR 切片：
+当前可运行的 provider-neutral 纵向切片有四个已过代码验证的显式证据入口，以及一个已过未签名 Release 静态门和港版 S24 Ultra 合成模型推理、尚未完成真实页面/资源/签名发布门的本地 OCR 切片：
 
 ```text
 ACTION_SEND text/plain       SAF OpenDocument(text/plain, CSV, TSV)       ACTION_SEND image/png
@@ -67,8 +67,8 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 
 - `source:contract` 定义 Evidence、RawEvent、parser identity、候选、导入批次端口和封闭诊断；`source:pipeline` 负责注册、读取、校验和追加式解析；`source:review-contract` 定义建议、证据链接和载荷生命周期端口；`source:generic-share-text` 实现最小分享文本与不透明用户文件解析，`source:generic-delimited-statement` 实现严格 CSV/TSV、显式映射与行证据 codec，`source:generic-receipt-image` 实现单张 PNG 收据的结构校验与手工复核建议，`source:generic-photo-ocr` 实现有界转录和保守候选解析。
 - `data:local` 的 Room schema v7 保存 `parse_attempts`、`source_draft_proposals`、`draft_source_evidence`、`source_evidence_payloads`、`source_evidence_staging`、`notification_observations`、`statement_import_batches`、`statement_import_rows`、对账链接/关系与单例保留策略；正式迁移链为 v1→v2→v3→v4→v5→v6→v7。导入批次表只保存文件/映射摘要、计数、状态和时间，行表只保存行号、指纹、RawEvent ID 或安全错误码；不保存文件名、URI、表头或单元格。通知观察表只保存安装私有 HMAC 摘要、opaque command/lease、状态和时间，绝不保存 Android notification key、包名、频道或正文。证据文件位于 `noBackupFilesDir/source-evidence`，使用 opaque 名称、原子写入、大小与 SHA-256 校验。
-- 自由文本在创建完整字符串/字节副本前检查字符上限，严格 UTF-8 编码后再次检查 64 KiB 字节上限。结构化 CSV/TSV 当次最多读取 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 Ki 字符/记录；用户必须显式选择必填列，预览计算以 250 ms 去抖在主线程外运行。确认后只把每个有效行的版本化证据接入私有链，停止后可用同文件+同映射续传缺失行。Sharesheet PNG 只在用户明确分享的当次 `content://` 临时授权中读取，要求声明与解析后 MIME 都为 `image/png`，最多 4 MiB，并校验签名、IHDR、尺寸、分块 CRC、非空 IDAT 与终止 IEND。该 Sharesheet 路径不解码像素、不预览、不读取图中文字、不运行 OCR。独立的磁贴/Photo Picker 路径会在用户动作后把一帧或每批前 1–5 张逐张像素作为瞬时输入，只持久化有界转录。截图 command 先持有 90 秒可取消租约；完成纯读取校验后，在任何 evidence admission、容量清理或写入之前以 `ACTIVE -> COMMITTING` CAS 线性化取消与提交。cancellation handle 注册中的超时只登记待取消，不能提前报告成功。CAS 胜出后，像素资源先释放，再在独立的 15 秒协作式截止内运行无网络的 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回 `COMMIT_STATUS_UNKNOWN`。提交或既成结果不可取消但回调缺失时，controller 只给一次 15 秒收尾宽限，再显示“结果未确认”并释放，opaque request identity 隔离迟到回调。Photo Picker 单飞串行、显示已处理数量且每批只汇总一次。PP-OCRv6 small 静态随包，运行时零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。畸形 Unicode、损坏/缺失文件、无效图像、哈希不一致和 ID 冲突均安全失败。
-- 自由文本解析器不提取或猜测金额、方向、账户、商户或 provider；映射 CSV/TSV 只采用用户确认的列、格式、方向值和币种，不按未知表头猜列或 provider。两类结果都始终 `WAITING_USER`，必须由用户核对并选择资金账户；没有自动确认路径。
+- 自由文本在创建完整字符串/字节副本前检查字符上限，严格 UTF-8 编码后再次检查 64 KiB 字节上限。结构化 CSV/TSV 当次最多读取 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 Ki 字符/记录；用户必须显式选择必填列，预览计算以 250 ms 去抖在主线程外运行。确认后只把每个有效行的版本化证据接入私有链，停止后可用同文件+同映射续传缺失行。Sharesheet PNG 只在用户明确分享的当次 `content://` 临时授权中读取，要求声明与解析后 MIME 都为 `image/png`，最多 4 MiB，并校验签名、IHDR、尺寸、分块 CRC、非空 IDAT 与终止 IEND。该 Sharesheet 路径不解码像素、不预览、不读取图中文字、不运行 OCR。独立的磁贴/Photo Picker 路径会在用户动作后把一帧或每批前 1–5 张逐张像素作为瞬时输入，只持久化有界转录。转录 v2 为每行保存可选的 0..10000 归一化整数矩形；原始像素、颜色、logo 和应用身份不进入证据，既有 v1 文本转录仍可重放。多金额页面只在一个独立金额相对正文与其他独立金额的高度明确占优时预填；等大、缺布局或退款/转账/红包等语义不推断普通收支，失败/拒绝/取消页连金额也不提议。截图 command 先持有 90 秒可取消租约；完成纯读取校验后，在任何 evidence admission、容量清理或写入之前以 `ACTIVE -> COMMITTING` CAS 线性化取消与提交。cancellation handle 注册中的超时只登记待取消，不能提前报告成功。CAS 胜出后，像素资源先释放，再在独立的 15 秒协作式截止内运行无网络的 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回 `COMMIT_STATUS_UNKNOWN`。提交或既成结果不可取消但回调缺失时，controller 只给一次 15 秒收尾宽限，再显示“结果未确认”并释放，opaque request identity 隔离迟到回调。Photo Picker 单飞串行、显示已处理数量且每批只汇总一次。PP-OCRv6 small 静态随包，运行时零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。畸形 Unicode、损坏/缺失文件、无效图像、哈希不一致和 ID 冲突均安全失败。
+- 自由文本解析器不提取或猜测金额、方向、账户、商户或 provider；映射 CSV/TSV 只采用用户确认的列、格式、方向值和币种，不按未知表头猜列或 provider。OCR 也不根据版式推断 provider，只保守提出金额/方向候选。三类结果都始终 `WAITING_USER`，必须由用户核对并选择资金账户；没有自动确认路径。
 - 同 `(connectorId, contentHash, captureScope)` 的既有观察只产生 `isPossibleDuplicate`，UI 提醒检查已有草稿/流水但不会自动合并。
 - 用户可将来源建议标记为 `DISMISSED`；该动作有幂等回执和审计，默认仍保留 RawEvent、ParseAttempt 与证据文件。
 - 设置页提供 7/30/90 天或永久保留、20 项 keyset 分页和逐项清除。清除采用 `AVAILABLE -> CLEAR_PENDING -> CLEARED`，文件失败保持可重试；待复核建议会被 dismiss，已完成 Draft/provenance 和结构化审计保留。
@@ -86,11 +86,11 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 - 4 条 route 来自用户授权的 21 条本地真实 callback：离线安全盘点只命中其中 5 条，代码与仓库只保留脱敏成功/缺字段/漂移/敏感反例。Alipay 两条 route 使用其默认通知频道；微信 route 的支付通知与普通消息共用同一频道和类别，因此启用时会在设备本地读取同频道的有界正文再以精确标题/完成词过滤，安全标签必须披露这一点。同名联系人若发送完全相同格式，现有元数据仍不能证明它是支付服务，所以该 route 永远只生成待复核建议。招商银行只使用 App 专用交易频道。Samsung 短信 route 被明确排除，因为读取正文前的元数据无法把银行短信与普通短信、OTP 或私人消息分开。
 - Debug 变体为模板研究提供独立、显式的采样控制器。用户从专用桌面入口选择精确包名并手动开始后，控制器保存 `active + startedAt + targetPackages`，只接收开始时间之后的新 callback；进程重建不改变活动状态，且不存在自动到期、条数或文件大小上限。每条候选仍共用容量 16 的单消费者队列，追加包名、channel/category、post time 与五个既有有界正文域到 app-private no-backup NDJSON；它不读取通知 key、历史、actions、RemoteViews 或消息数组，不进入 `RawEvent`/Draft。页面使用固定内存的反向逐行读取，每页最多返回 10 条，从新到旧显示实际字段并标出缺失域；预览不上传、不写日志，也不改变样本或账务状态。队列丢弃与正文不可读取只在当前进程计数，未收到系统 callback 的事件不可推断。重复开始保留旧样本并更新前向边界；停止保留文件，清除必须由用户另行点击。Release 是永久关闭的无操作控制器，且不打包采样 Activity、研究包名、文件名或研究文案。
 - 不读取历史通知、不修改外部通知、不开前台服务、不设周期任务或唤醒锁。通知无法反映没有通知的领取、发送或后台余额变动，也不能补历史；来源健康页必须把这些显示为覆盖缺口，而不是显示“自动同步正常”。
-- 当前仍缺这 4 条 route 的真实系统 callback、更新/重启回放和真机资源数据；设置页显示可逐条开启的安全标签、全暂停、系统权限缺失、listener 未连接、队列跳过与失败健康状态。S24U-HK/API 36 上既有 3 个 instrumentation 只验证独立测试偏好的跨实例启停、旧 ID 丢弃和损坏类型失败关闭；没有运行新 route 的系统 callback。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
+- 当前仍缺这 4 条 route 的真实系统 callback、更新/重启回放和真机资源数据；设置页显示可逐条开启的安全标签、全暂停、系统权限缺失、listener 未连接、队列跳过与失败健康状态。S24U-HK/API 36 的 app instrumentation 已验证独立测试偏好和当前 4-route catalog 默认关闭/opaque opt-in；没有运行新 route 的系统 callback。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
 
 ## 被动无障碍读取（研究门）
 
-当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。本地 OCR 的未签名 APK 静态门已完成，实际推理/真机/签名门尚未完成；用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
+当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。本地 OCR 的未签名 APK 静态门与港版 S24 Ultra 合成中/英/日模型加载推理已完成，真实支付页面、资源、签名和三台目标真机门尚未完成；用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
 
 当前没有可用的页面文字/节点观察 service。若项目负责人在有脱敏页面样本后明确选择被动读取路线，必须另建只读 `AccessibilityService`：系统只对微信/支付宝的明确目标包和最小窗口事件类型回调，服务只在疑似交易结果/账单详情窗口读取一次节点树并提交待复核证据。它不得取得截图、录屏、轮询、自动点击、打开页面、发起交易或保留非交易窗口内容；实现必须在事件回调外完成有界解析并清除临时节点/文本。
 
@@ -98,7 +98,7 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 
 ## 用户可见本地声明与资源边界
 
-每次新进程启动，App 先显示“纯本地 / 不走网络”的显著声明：当前 Manifest 不声明 Internet 权限，Bill 不向项目方服务器上传通知、截图、账户、余额或账本数据。声明使用 safe drawing insets 与纵向滚动，避免系统栏或大字体遮住确认操作。该声明不能替代第三方 SDK、签名发行与目标真机审计；当前截图/Photo Picker OCR 即使已过未签名 Release 静态门，也必须标为尚未完成发布门的 Experimental，不能被启动文案掩盖。简中/繁中披露统一区分“代码/AAR/未签名包的本地无网络静态检查已通过”和“实际推理、签名、目标真机仍待验”。设置页的三轨教程分别说明通知访问、未来只读结果页和单次截图/Photo Picker；磁贴不可用与无障碍服务详情的设置入口都回到该教程，教程明确图片 OCR 只创建本地待复核项、不证明 provider。
+每次新进程启动，App 先显示“纯本地 / 不走网络”的显著声明：当前 Manifest 不声明 Internet 权限，Bill 不向项目方服务器上传通知、截图、账户、余额或账本数据。声明使用 safe drawing insets 与纵向滚动，避免系统栏或大字体遮住确认操作。该声明不能替代第三方 SDK、签名发行与目标真机审计；当前截图/Photo Picker OCR 即使已过未签名 Release 静态门和一台设备的合成推理，也必须标为尚未完成发布门的 Experimental，不能被启动文案掩盖。简中/繁中披露统一区分“代码/AAR/未签名包的本地无网络静态检查及受限合成推理已通过”和“真实页面、签名、资源和完整目标真机仍待验”。设置页的三轨教程分别说明通知访问、未来只读结果页和单次截图/Photo Picker；磁贴不可用与无障碍服务详情的设置入口都回到该教程，教程明确图片 OCR 只创建本地待复核项、不证明 provider。
 
 通知、结果页和截图是物理分开的能力：普通通知路径不承担读屏/OCR 成本；未来读屏路线不能截图或操作 UI；截图/Photo Picker 只在用户动作后处理一次有界像素输入，当前只形成待复核转录证据。没有真实设备资源基线前，不以某个虚构的电量百分比承诺低耗电，也不默认要求忽略电池优化。
 

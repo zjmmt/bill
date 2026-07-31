@@ -9,7 +9,7 @@
 
 在不增加云端后端、Root、私有目录读取、全天截屏/录屏或周期性扫描的前提下，为通知、只读支付结果页和用户触发单次凭证建立独立采集路径。用户能看见每条路径的权限、覆盖范围、连接/回调健康与资源边界；任何自动识别最多形成可编辑的待复核项，绝不直接正式入账。持久“最后回调时间”尚未实现，不得从当前进程内健康状态推断。
 
-第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退；随后由 [ExecPlan 0007](0007-debug-notification-template-sampling.md) 以本地真实样本驱动 4 条默认关闭的实验通知 route。它们只覆盖支付宝支出/余额收款、微信英文付款完成和招商银行快捷支付退款，整体来源仍显示回退。用户也可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎与未签名 Release 静态门已完成但实际推理/真机/签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
+第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退；随后由 [ExecPlan 0007](0007-debug-notification-template-sampling.md) 以本地真实样本驱动 4 条默认关闭的实验通知 route。它们只覆盖支付宝支出/余额收款、微信英文付款完成和招商银行快捷支付退款，整体来源仍显示回退。用户也可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎、未签名 Release 静态门和 S24U-HK 合成三语推理已完成，但真实页面/资源/完整真机/签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
 
 ## 范围与非目标
 
@@ -170,4 +170,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付受控通知证据基础、4 条默认关闭的 provider 实验 route、Room v7 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 既有 3 个隔离偏好 instrumentation 不包含新 route 的系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付受控通知证据基础、4 条默认关闭的 provider 实验 route、Room v7 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 的 app 14/14 不包含新 route 的系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6、空间转录 v2，并通过本地无网络静态门、S24U-HK 合成三语推理和合成多金额空间链；真实支付页面、系统截图/选图 UI、签名发行和目标真机资源门仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。

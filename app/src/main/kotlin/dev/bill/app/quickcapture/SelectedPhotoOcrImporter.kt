@@ -71,7 +71,7 @@ class ContentResolverSelectedPhotoOcrImporter(
                         LocalOcrResult.Failed ->
                             return@withContext failure(SourceCaptureError.PARSE_REJECTED)
                     }
-                    val transcript = OcrTranscript.encode(lines)
+                    val transcript = OcrTranscript.encodeSpatial(lines)
                         ?: return@withContext failure(SourceCaptureError.CONTENT_TOO_LARGE)
                     capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
                 } catch (cancellation: CancellationException) {

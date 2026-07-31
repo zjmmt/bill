@@ -5,14 +5,18 @@ import android.graphics.Bitmap
 import com.paddle.ocr.EngineConfig
 import com.paddle.ocr.PaddleOCR
 import com.paddle.ocr.PaddleOCRConfig
+import com.paddle.ocr.model.OCRBox
 import com.paddle.ocr.util.OpenCVUtils
+import dev.bill.source.genericphotoocr.OcrTranscript
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
+import kotlin.math.ceil
+import kotlin.math.floor
 
 internal sealed interface LocalOcrResult {
-    data class Lines(val values: List<String>) : LocalOcrResult
+    data class Lines(val values: List<OcrTranscript.RecognizedLine>) : LocalOcrResult
 
     data object Empty : LocalOcrResult
 
@@ -57,8 +61,18 @@ internal object BundledLocalOcrEngine {
                     .recognize(bitmap)
                     .results
                     .asSequence()
-                    .map { it.text.trim() }
-                    .filter { it.isNotEmpty() }
+                    .mapNotNull { result ->
+                        result.text.trim().takeIf(String::isNotEmpty)?.let { value ->
+                            OcrTranscript.RecognizedLine(
+                                value = value,
+                                bounds = normalizedBounds(
+                                    box = result.box,
+                                    imageWidth = bitmap.width,
+                                    imageHeight = bitmap.height,
+                                ),
+                            )
+                        }
+                    }
                     .toList()
                 if (lines.isEmpty()) LocalOcrResult.Empty else LocalOcrResult.Lines(lines)
             } catch (cancellation: CancellationException) {
@@ -81,6 +95,37 @@ internal object BundledLocalOcrEngine {
         } finally {
             executionMutex.unlock()
         }
+    }
+
+    private fun normalizedBounds(
+        box: OCRBox,
+        imageWidth: Int,
+        imageHeight: Int,
+    ): OcrTranscript.Bounds? {
+        if (imageWidth <= 0 || imageHeight <= 0) return null
+        if (box.points.isEmpty()) return null
+        val xs = box.points.map { it.x }
+        val ys = box.points.map { it.y }
+        if (xs.any { !it.isFinite() } || ys.any { !it.isFinite() }) return null
+        val scale = OcrTranscript.COORDINATE_SCALE
+        val left = floor(xs.min() / imageWidth * scale)
+            .toInt()
+            .coerceIn(0, scale - 1)
+        val top = floor(ys.min() / imageHeight * scale)
+            .toInt()
+            .coerceIn(0, scale - 1)
+        val right = ceil(xs.max() / imageWidth * scale)
+            .toInt()
+            .coerceIn(left + 1, scale)
+        val bottom = ceil(ys.max() / imageHeight * scale)
+            .toInt()
+            .coerceIn(top + 1, scale)
+        return OcrTranscript.Bounds(
+            left = left,
+            top = top,
+            right = right,
+            bottom = bottom,
+        )
     }
 
     private const val OCR_CPU_THREADS = 2

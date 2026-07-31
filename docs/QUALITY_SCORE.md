@@ -19,12 +19,12 @@
 
 | 领域 | 产品规格 | 架构边界 | 测试证据 | 安全/隐私 | 实际支持 | 当前瓶颈 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| 本地账本与存储 | 2 | 3 | 3 | 1 | 1 | Room v7、失败关闭映射与原子仓储已实现；v1→v5 instrumentation 已通过，v5→v6→v7、导入批次/行与对账事务目前只编译了 Android 测试 APK，仍无数据库应用层加密和完整真机证据 |
+| 本地账本与存储 | 2 | 3 | 3 | 1 | 1 | Room v7、失败关闭映射与原子仓储已实现；S24U-HK 上完整 47-test Room suite 已覆盖 v1→v7、导入批次/行、对账、通知观察和证据仓储，仍无数据库应用层加密、真实系统强杀和完整真机矩阵 |
 | 受限 CNY/USD 手工账户与期初余额 | 2 | 3 | 3 | 1 | 2 | 现金/钱包仅 CNY，银行卡/信用卡可为 CNY/USD；逐币种平衡、分币种总览、混币失败关闭和 USD 回归已实现，CNY MuMu 冷启持久化及审查后回归已验证；USD Android instrumentation 仅已编译，完整真机矩阵仍待完成 |
-| 采集与导入框架 | 2 | 3 | 3 | 2 | 1 | 来源契约、受控证据读取、RawEvent/ParseAttempt/建议/Draft/载荷生命周期、租约暂存和结构化导入批次已实现；通知边界、4 条 provider 实验 route、route 控制面、listener 连接健康、持久观察去重和纵向单测已接通，S24U-HK 既有 3 个隔离偏好 instrumentation，但没有新 route 的系统 callback/OEM 存活或大数据门 |
+| 采集与导入框架 | 2 | 3 | 3 | 2 | 1 | 来源契约、受控证据读取、RawEvent/ParseAttempt/建议/Draft/载荷生命周期、租约暂存和结构化导入批次已实现；通知边界、4 条 provider 实验 route、route 控制面、listener 连接健康、持久观察去重和纵向单测已接通，S24U-HK app 14/14 与 Room 47/47 验证隔离偏好、当前 catalog 默认关闭及仓储路径，但没有系统 callback/OEM 存活或大数据门 |
 | 通用显式分享文本 | 2 | 3 | 3 | 2 | 1 | 64 KiB/严格 UTF-8、私有证据、两阶段清除、租约/孤儿恢复、保留/容量/分页和跨表失败关闭已通过自动化/MuMu；另有一次 S24U-HK 合成 `ACTION_SEND` 应用级冒烟。不证明 provider，压力/系统强杀/完整真机门未完成 |
-| 用户显式映射 CSV/TSV | 2 | 3 | 3 | 2 | 1 | 2 MiB/5000 行等硬门、严格 UTF-8、显式列映射、逐行证据、后台预览、批次幂等与停止/继续已有 JVM/ViewModel 回归；Room v7 instrumentation 只编译，SAF/大文件/真机门未完成，不证明银行或钱包格式 |
-| 用户触发的随包本地 OCR | 2 | 3 | 2 | 2 | 0 | Quick Settings 单帧与 Photo Picker 最多 5 张串行路径、模型哈希、词典和无网络静态边界已有代码；未签名 Release 分包的权限、组件、ABI、模型、体积及 16 KiB ZIP 对齐已有静态证据，实际中英/日英推理、ELF 页兼容、峰值资源与三台目标真机证据仍缺失，保持发布禁止 |
+| 用户显式映射 CSV/TSV | 2 | 3 | 3 | 2 | 1 | 2 MiB/5000 行等硬门、严格 UTF-8、显式列映射、逐行证据、后台预览、批次幂等与停止/继续已有 JVM/ViewModel 回归；S24U-HK 的 47/47 Room suite 已覆盖批次/行仓储，但 SAF UI、5000 行基准与完整真机门未完成，不证明银行或钱包格式 |
+| 用户触发的随包本地 OCR | 2 | 3 | 3 | 2 | 0 | Quick Settings 单帧与 Photo Picker 最多 5 张串行路径、空间转录 v2/v1 重放、保守主金额规则、模型哈希和无网络静态边界已有自动化；S24U-HK 合成三语模型 instrumentation 1/1，以及程序绘制多金额图片的 OCR→v2→主金额建议定向 app instrumentation 1/1 通过。真实支付截图、系统截图/选图 UI、ELF 页兼容、峰值资源、签名与三台目标真机仍缺失，保持发布禁止 |
 | 支付宝适配器 | 2 | 3 | 3 | 2 | 0 | 2 条默认关闭通知 route 与脱敏回放已实现；只覆盖支出和余额收款，文件、其他事件、真机 callback 与发布门缺失 |
 | 微信支付适配器 | 2 | 3 | 3 | 2 | 0 | 1 条默认关闭英文付款 route 与脱敏回放已实现；共享消息频道需本地正文过滤，红包/转账/提现/文件、真机 callback 与资源门缺失 |
 | 招商银行通知适配器 | 2 | 3 | 3 | 2 | 0 | 1 条默认关闭快捷支付退款 route 与脱敏回放已实现；SMS/登录明确排除，其他银行/事件/文件、真机 callback 与发布门缺失 |
@@ -44,7 +44,7 @@
 - `source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-delimited-statement` 与 `source:generic-notification` 已接通有界证据、不可变 RawEvent、追加 ParseAttempt、待补全建议、显式行映射和 Draft 证据链；`:source:alipay`、`:source:wechat` 与 `:source:bank:cmb` 提供 4 条生产实验 route。空目录/未命中 metadata/关闭 route 不读取正文；route 设置只显示安全标签，provider parser 在 transport 后复核规则并只产生单一 CNY 金额与方向建议。写盘失败关闭、最小权限授权/撤权入口和 listener 连接健康已有回归。
 - `data:local` 导出 Room schema v1/v2/v3/v4/v5/v6/v7，并为账户、Draft、Transaction、Entry、RawEvent、ParseAttempt、来源建议、Draft evidence、载荷生命周期/策略、暂存租约、通知观察摘要、导入批次/行、对账链接/关系、AuditEvent 和 command receipt 提供事务仓储；账本和来源跨表损坏均失败关闭。
 - [仓库生成事实](generated/repository-facts.md) 由脚本从 20 个 Gradle 模块、Room schema、9 份源 Manifest 和测试源码机械生成，并由输入/生成器摘要检测陈旧；架构、敏感边界与生成器的合成正反例已在本地聚合门和 [GitHub Actions run 30576542889](https://github.com/zjmmt/bill/actions/runs/30576542889) 通过。这里的测试源码计数不是测试执行结果，也不构成 provider 支持证据。
-- Android 界面面向本地状态展示总览、账户、草稿、流水、分享复核、CSV/TSV 映射、对账和证据设置；结构化导入、对账和 4 条 provider route 的针对性 JVM/ViewModel/纵向测试已通过，Room v5→v6→v7 迁移及新增仓储 Android 测试已编译。2026-07-31 的 891-task 全量 JVM/Lint/Debug/Release 与三组 AndroidTest APK 构建已通过；此前 MuMu API 32 的 32 个 v5 设备测试和覆盖升级/竖屏设置页手工验收均已通过。`S24U-HK` 另有受限应用级冒烟和同日的 3 个 route 偏好 instrumentation，但没有新 route 的通知 callback。自动化 Compose、真实系统强杀、v6→v7 设备 migration、OCR instrumentation 与完整设备回归仍待完成。
+- Android 界面面向本地状态展示总览、账户、草稿、流水、分享复核、CSV/TSV 映射、对账和证据设置；结构化导入、对账和 4 条 provider route 的针对性 JVM/ViewModel/纵向测试已通过。2026-07-31 的既有 891-task 全量 JVM/Lint/Debug/Release 与三组 AndroidTest APK 构建已通过；此前 MuMu API 32 的 32 个 v5 设备测试和覆盖升级/竖屏设置页手工验收均已通过。`S24U-HK` 另有受限应用级冒烟、14/14 app、47/47 Room、1/1 随包 OCR 合成 instrumentation，以及 1/1 空间 OCR app 定向 instrumentation；没有新 route 的系统 callback。自动化 Compose、真实系统强杀、真实支付页面、资源数据与完整设备回归仍待完成。
 - 支付宝、微信支付和招商银行已有真实采样驱动的窄范围适配器与仓库内脱敏夹具，但新 route 尚无真机 callback/资源/发布证据，实际支持仍为 `0`。UI 的 `FALLBACK_REQUIRED` 只表示可以转到共同的手工回退路径，不表示来源已稳定接入。
 - 分享证据已有用户逐项清除、保留期限、已提交/暂存共同容量、租约/孤儿恢复和 keyset 分页，但 exported share Activity 不能证明发送 App，压力、真实系统强杀和完整真机门仍未完成。这些限制把通用分享文本的实际支持保持在 `1`。
 

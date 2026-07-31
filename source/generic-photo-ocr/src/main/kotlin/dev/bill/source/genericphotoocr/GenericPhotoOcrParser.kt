@@ -40,13 +40,13 @@ class GenericPhotoOcrParser : SourceParser {
             SourceCapability.COUNTERPARTY,
         ),
         supportedCaptureMethods = setOf(CaptureMethod.PHOTO_OCR),
-        parserVersion = VersionId("parser-1"),
-        ruleVersion = VersionId("rules-1"),
+        parserVersion = VersionId("parser-2"),
+        ruleVersion = VersionId("rules-2"),
     )
 
     override fun parse(rawEvent: RawEvent, evidenceInput: EvidenceInput): ParseResult {
         if (!identity.accepts(rawEvent)) return rejected(DiagnosticCode.SOURCE_NOT_ACCEPTED)
-        if (evidenceInput.mediaType != OcrTranscript.MEDIA_TYPE) {
+        if (evidenceInput.mediaType !in OcrTranscript.SUPPORTED_MEDIA_TYPES) {
             return rejected(DiagnosticCode.UNSUPPORTED_MEDIA_TYPE)
         }
         if (evidenceInput.sizeBytes > OcrTranscript.MAX_EVIDENCE_BYTES) {
@@ -59,6 +59,9 @@ class GenericPhotoOcrParser : SourceParser {
         } finally {
             bytes.fill(0)
         } ?: return rejected(DiagnosticCode.MALFORMED_EVIDENCE)
+        if (transcript.mediaType != evidenceInput.mediaType) {
+            return rejected(DiagnosticCode.MALFORMED_EVIDENCE)
+        }
 
         val amount = uniqueAmount(transcript)
         val direction = direction(transcript)
@@ -84,6 +87,13 @@ class GenericPhotoOcrParser : SourceParser {
     private fun uniqueAmount(
         transcript: OcrTranscript.Decoded,
     ): FieldCandidate<Money>? {
+        if (
+            transcript.lines.any { line ->
+                nonPostingSemantics.any { token -> line.value.contains(token, ignoreCase = true) }
+            }
+        ) {
+            return null
+        }
         val matches = transcript.lines.flatMap { line ->
             amountPatterns.flatMap { pattern ->
                 pattern.findAll(line.value).mapNotNull { match ->
@@ -96,13 +106,18 @@ class GenericPhotoOcrParser : SourceParser {
                             startInclusive = line.startInclusive + match.range.first,
                             endExclusive = line.startInclusive + match.range.last + 1,
                         ),
+                        bounds = line.bounds,
                     )
                 }.toList()
             }
         }
         val distinctValues = matches.map(AmountMatch::minorUnits).distinct()
-        if (distinctValues.size != 1) return null
-        val selected = matches.first { it.minorUnits == distinctValues.single() }
+        val dominantSpatial = dominantSpatialAmount(transcript)
+        val selected = when (distinctValues.size) {
+            0 -> dominantSpatial ?: return null
+            1 -> dominantSpatial ?: matches.first { it.minorUnits == distinctValues.single() }
+            else -> dominantSpatial ?: return null
+        }
         return FieldCandidate(
             value = Money.cny(selected.minorUnits),
             confidence = 0.86,
@@ -110,11 +125,63 @@ class GenericPhotoOcrParser : SourceParser {
         )
     }
 
+    /**
+     * A screenshot may contain list price, discount and balance alongside one large result amount.
+     * We select only an otherwise standalone amount whose OCR box is both globally prominent and
+     * clearly taller than every competing standalone amount. Text-only v1 evidence cannot enter
+     * this path, and equally prominent values remain ambiguous.
+     */
+    private fun dominantSpatialAmount(transcript: OcrTranscript.Decoded): AmountMatch? {
+        val candidates = transcript.lines.mapNotNull { line ->
+            val bounds = line.bounds ?: return@mapNotNull null
+            val match = standaloneAmountPatterns.firstNotNullOfOrNull { pattern ->
+                pattern.matchEntire(line.value)
+            } ?: return@mapNotNull null
+            val amountGroup = match.groups["amount"] ?: return@mapNotNull null
+            val minorUnits = parseMinorUnits(amountGroup.value) ?: return@mapNotNull null
+            if (minorUnits <= 0L || bounds.top >= MAX_HERO_TOP) {
+                return@mapNotNull null
+            }
+            AmountMatch(
+                minorUnits = minorUnits,
+                locator = EvidenceLocator.TextRange(
+                    startInclusive = line.startInclusive + match.range.first,
+                    endExclusive = line.startInclusive + match.range.last + 1,
+                ),
+                bounds = bounds,
+            )
+        }
+        val strongestByValue = candidates
+            .groupBy(AmountMatch::minorUnits)
+            .values
+            .mapNotNull { sameValue -> sameValue.maxByOrNull { it.bounds?.height ?: 0 } }
+            .sortedByDescending { it.bounds?.height ?: 0 }
+        val strongest = strongestByValue.firstOrNull() ?: return null
+        val strongestHeight = strongest.bounds?.height ?: return null
+        val medianHeight = transcript.lines
+            .mapNotNull { it.bounds?.height }
+            .sorted()
+            .let(::medianOrNull)
+            ?: return null
+        if (strongestHeight * HERO_MEDIAN_DENOMINATOR < medianHeight * HERO_MEDIAN_NUMERATOR) {
+            return null
+        }
+        val runnerUpHeight = strongestByValue.getOrNull(1)?.bounds?.height
+        if (
+            runnerUpHeight != null &&
+            strongestHeight * HERO_RUNNER_UP_DENOMINATOR <
+            runnerUpHeight * HERO_RUNNER_UP_NUMERATOR
+        ) {
+            return null
+        }
+        return strongest
+    }
+
     private fun direction(
         transcript: OcrTranscript.Decoded,
     ): FieldCandidate<ObservedMoneyDirection>? {
         val semanticBlocker = transcript.lines.firstOrNull { line ->
-            blockedMoneySemantics.any(line.value::contains)
+            blockedMoneySemantics.any { token -> line.value.contains(token, ignoreCase = true) }
         }
         if (semanticBlocker != null) return null
 
@@ -166,7 +233,7 @@ class GenericPhotoOcrParser : SourceParser {
     ): EvidenceLocator.TextRange? {
         transcript.lines.forEach { line ->
             tokens.forEach { token ->
-                val start = line.value.indexOf(token)
+                val start = line.value.indexOf(token, ignoreCase = true)
                 if (start >= 0) {
                     return EvidenceLocator.TextRange(
                         startInclusive = line.startInclusive + start,
@@ -178,11 +245,15 @@ class GenericPhotoOcrParser : SourceParser {
         return null
     }
 
-    private fun parseMinorUnits(value: String): Long? = runCatching {
+    private fun parseMinorUnits(value: String): Long? = try {
         BigDecimal(value.replace(",", ""))
             .movePointRight(2)
             .toLongExactCompat()
-    }.getOrNull()
+    } catch (_: NumberFormatException) {
+        null
+    } catch (_: ArithmeticException) {
+        null
+    }
 
     private fun rejected(code: DiagnosticCode) = ParseResult.Rejected(
         SafeDiagnostic(code = code, recoverable = false),
@@ -191,6 +262,7 @@ class GenericPhotoOcrParser : SourceParser {
     private data class AmountMatch(
         val minorUnits: Long,
         val locator: EvidenceLocator.TextRange,
+        val bounds: OcrTranscript.Bounds?,
     )
 
     private data class CounterpartyMatch(
@@ -200,13 +272,46 @@ class GenericPhotoOcrParser : SourceParser {
 
     private companion object {
         const val MAX_COUNTERPARTY_CHARS = 80
+        const val MAX_HERO_TOP = 7_500
+        const val HERO_MEDIAN_NUMERATOR = 14
+        const val HERO_MEDIAN_DENOMINATOR = 10
+        const val HERO_RUNNER_UP_NUMERATOR = 5
+        const val HERO_RUNNER_UP_DENOMINATOR = 4
+        val moneyNumber = "\\d{1,12}(?:,\\d{3})*(?:\\.\\d{1,2})?"
         val amountPatterns = listOf(
-            Regex("""(?:人民币\s*)?[¥￥]\s*(?<amount>\d{1,12}(?:,\d{3})*(?:\.\d{1,2})?)"""),
-            Regex("""(?:RMB|CNY)\s*(?<amount>\d{1,12}(?:,\d{3})*(?:\.\d{1,2})?)"""),
-            Regex("""(?<amount>\d{1,12}(?:,\d{3})*(?:\.\d{1,2})?)\s*元"""),
+            Regex("""(?:人民币\s*)?[¥￥]\s*(?<amount>$moneyNumber)"""),
+            Regex("""(?:RMB|CNY)\s*(?<amount>$moneyNumber)""", RegexOption.IGNORE_CASE),
+            Regex("""(?<amount>$moneyNumber)\s*元"""),
+            Regex("""(?<amount>$moneyNumber)\s*(?:RMB|CNY)""", RegexOption.IGNORE_CASE),
         )
-        val outboundTokens = listOf("支付成功", "付款成功", "已付款", "扣款成功", "支出")
-        val inboundTokens = listOf("收款成功", "已收款", "入账成功", "到账", "收入")
+        val standaloneAmountPatterns = listOf(
+            Regex("""[+-]?\s*(?:人民币\s*)?[¥￥]\s*(?<amount>$moneyNumber)(?:\s*元)?"""),
+            Regex("""(?:RMB|CNY)\s*(?<amount>$moneyNumber)""", RegexOption.IGNORE_CASE),
+            Regex("""(?<amount>$moneyNumber)\s*(?:元|RMB|CNY)""", RegexOption.IGNORE_CASE),
+            Regex("""[+-]\s*(?<amount>$moneyNumber)"""),
+        )
+        val outboundTokens = listOf(
+            "支付成功",
+            "付款成功",
+            "已付款",
+            "扣款成功",
+            "支出",
+            "Payment successful",
+            "Payment complete",
+            "支払い完了",
+            "支払完了",
+        )
+        val inboundTokens = listOf(
+            "收款成功",
+            "已收款",
+            "入账成功",
+            "到账",
+            "收入",
+            "领取成功",
+            "Payment received",
+            "Received successfully",
+            "受取完了",
+        )
         val blockedMoneySemantics = listOf(
             "退款",
             "退回",
@@ -218,9 +323,40 @@ class GenericPhotoOcrParser : SourceParser {
             "信用卡",
             "零钱通",
             "基金",
+            "Refund",
+            "Transfer",
+            "Red Packet",
+            "Withdraw",
+            "Withdrawal",
+            "Credit Card",
+        )
+        val nonPostingSemantics = listOf(
+            "支付失败",
+            "付款失败",
+            "交易失败",
+            "已取消",
+            "取消支付",
+            "Rejected",
+            "Payment failed",
+            "Transaction failed",
+            "Cancelled",
+            "Canceled",
+            "支払い失敗",
+            "取引失敗",
+            "キャンセル",
         )
         val counterpartyPattern = Regex(
             """(?:商户|收款方|付款方|对方|收款人|付款人)\s*[:：]\s*(?<value>\S.{0,79})""",
         )
+    }
+}
+
+private fun medianOrNull(sortedValues: List<Int>): Int? {
+    if (sortedValues.isEmpty()) return null
+    val middle = sortedValues.size / 2
+    return if (sortedValues.size % 2 == 1) {
+        sortedValues[middle]
+    } else {
+        (sortedValues[middle - 1] + sortedValues[middle]) / 2
     }
 }

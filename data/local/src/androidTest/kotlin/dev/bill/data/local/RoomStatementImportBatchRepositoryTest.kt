@@ -20,6 +20,9 @@ import dev.bill.source.contract.StatementImportBatchState
 import dev.bill.source.contract.StatementImportRowRecord
 import dev.bill.source.contract.StatementImportRowState
 import dev.bill.source.contract.StatementImportRowWriteResult
+import dev.bill.source.review.EvidenceStagingLeaseId
+import dev.bill.source.review.EvidenceStagingReservation
+import dev.bill.source.review.EvidenceStagingReserveStatus
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -75,7 +78,7 @@ class RoomStatementImportBatchRepositoryTest {
         val rawEvent = rawEvent("statement-row-2", rowIndex = 2)
         assertEquals(
             RawEventAppendResult.Inserted,
-            RoomRawEventRepository(database).append(rawEvent),
+            appendStaged(rawEvent),
         )
         assertEquals(
             StatementImportRowWriteResult.Inserted,
@@ -132,7 +135,7 @@ class RoomStatementImportBatchRepositoryTest {
             .copy(contentHash = hash("different-row"))
         assertEquals(
             RawEventAppendResult.Inserted,
-            RoomRawEventRepository(database).append(rawEvent),
+            appendStaged(rawEvent),
         )
 
         assertEquals(
@@ -140,6 +143,26 @@ class RoomStatementImportBatchRepositoryTest {
             repository.recordRow(readyRow(index = 2, rawEventId = rawEvent.id)),
         )
         assertTrue(repository.listRows(BatchId).isEmpty())
+    }
+
+    private suspend fun appendStaged(event: RawEvent): RawEventAppendResult {
+        val reservation = EvidenceStagingReservation(
+            rawEventId = event.id,
+            payloadId = event.payloadId,
+            contentHash = event.contentHash,
+            payloadSizeBytes = requireNotNull(event.payloadSizeBytes),
+            leaseId = EvidenceStagingLeaseId("lease-${event.id.value}"),
+            createdAt = event.capturedAt,
+            expiresAt = event.capturedAt.plusSeconds(300),
+        )
+        assertEquals(
+            EvidenceStagingReserveStatus.RESERVED,
+            RoomSourceEvidenceStagingRepository(database).reserve(
+                requested = reservation,
+                now = event.capturedAt,
+            ).status,
+        )
+        return RoomRawEventRepository(database).append(event)
     }
 
     private fun request() = StatementImportBatchRequest(

@@ -84,11 +84,114 @@ class GenericPhotoOcrParserTest {
     }
 
     @Test
+    fun `spatial transcript selects only a clearly dominant standalone amount`() {
+        val result = parseSpatial(
+            spatial("Payment successful", 900, 1_200),
+            spatial("￥3.17", 1_500, 2_400),
+            spatial("商品金额 ￥3.50", 2_700, 2_950),
+            spatial("- ￥0.33", 3_100, 3_350),
+        ) as ParseResult.NeedsUserReview
+
+        assertEquals(317L, result.candidate?.amount?.value?.minorUnits)
+        assertEquals(
+            ObservedMoneyDirection.OUTBOUND,
+            result.candidate?.moneyDirection?.value,
+        )
+    }
+
+    @Test
+    fun `spatial transcript rejects equally prominent competing amounts`() {
+        val result = parseSpatial(
+            spatial("支付成功", 800, 1_100),
+            spatial("￥18.00", 1_400, 2_000),
+            spatial("￥15.00", 2_200, 2_760),
+        ) as ParseResult.NeedsUserReview
+
+        assertNull(result.candidate?.amount)
+    }
+
+    @Test
+    fun `signed hero amount can outrank a smaller labelled balance`() {
+        val result = parseSpatial(
+            spatial("交易成功", 800, 1_100),
+            spatial("+0.01", 1_400, 2_300),
+            spatial("余额 ￥211.04", 2_600, 2_850),
+        ) as ParseResult.NeedsUserReview
+
+        assertEquals(1L, result.candidate?.amount?.value?.minorUnits)
+        assertNull(result.candidate?.moneyDirection)
+    }
+
+    @Test
+    fun `legacy text evidence remains readable but cannot use spatial tie breaking`() {
+        val evidence = OcrTranscript.encodeLegacy(
+            listOf("支付成功", "￥18.00", "优惠后实付 ￥15.00"),
+        )!!
+        val result = parser.parse(
+            rawEvent(evidence),
+            EvidenceInput(OcrTranscript.LEGACY_MEDIA_TYPE, evidence),
+        ) as ParseResult.NeedsUserReview
+        evidence.fill(0)
+
+        assertNull(result.candidate?.amount)
+        assertEquals(
+            ObservedMoneyDirection.OUTBOUND,
+            result.candidate?.moneyDirection?.value,
+        )
+    }
+
+    @Test
+    fun `transcript header must agree with its media type`() {
+        val evidence = OcrTranscript.encode(listOf("￥1.00"))!!
+        val result = parser.parse(
+            rawEvent(evidence),
+            EvidenceInput(OcrTranscript.LEGACY_MEDIA_TYPE, evidence),
+        )
+        evidence.fill(0)
+
+        assertRejected(result, DiagnosticCode.MALFORMED_EVIDENCE)
+    }
+
+    @Test
+    fun `invalid spatial bounds are rejected`() {
+        val malformed = "BILL-OCR/2\n500,500,400,600\t￥1.00".toByteArray()
+        val result = parser.parse(
+            rawEvent(malformed),
+            EvidenceInput(OcrTranscript.MEDIA_TYPE, malformed),
+        )
+        malformed.fill(0)
+
+        assertRejected(result, DiagnosticCode.MALFORMED_EVIDENCE)
+    }
+
+    @Test
     fun `refund transfer and red packet semantics never become ordinary direction`() {
-        listOf("退款成功", "转账已收款", "红包已收款").forEach { semanticLine ->
+        listOf(
+            "退款成功",
+            "转账已收款",
+            "红包已收款",
+            "Refund completed",
+            "RED PACKET received",
+        ).forEach { semanticLine ->
             val result = parse(semanticLine, "￥20.00") as ParseResult.NeedsUserReview
 
             assertEquals(2_000L, result.candidate?.amount?.value?.minorUnits)
+            assertNull(result.candidate?.moneyDirection)
+        }
+    }
+
+    @Test
+    fun `failed rejected and cancelled pages never propose an amount`() {
+        listOf(
+            "支付失败",
+            "REJECTED",
+            "Payment failed",
+            "支払い失敗",
+            "キャンセル",
+        ).forEach { statusLine ->
+            val result = parse(statusLine, "￥20.00") as ParseResult.NeedsUserReview
+
+            assertNull(result.candidate?.amount)
             assertNull(result.candidate?.moneyDirection)
         }
     }
@@ -161,6 +264,19 @@ class GenericPhotoOcrParserTest {
         assertFalse(result.toString().contains(marker))
     }
 
+    @Test
+    fun `transcript value objects redact recognized text from strings`() {
+        val marker = "sensitive-ocr-value-marker"
+        val recognized = OcrTranscript.RecognizedLine(marker, bounds = null)
+        val evidence = OcrTranscript.encodeSpatial(listOf(recognized))!!
+        val decoded = requireNotNull(OcrTranscript.decode(evidence))
+        evidence.fill(0)
+
+        assertFalse(recognized.toString().contains(marker))
+        assertFalse(decoded.lines.single().toString().contains(marker))
+        assertFalse(decoded.toString().contains(marker))
+    }
+
     private fun parse(vararg lines: String): ParseResult {
         val evidence = OcrTranscript.encode(lines.toList())!!
         return parser.parse(
@@ -170,6 +286,30 @@ class GenericPhotoOcrParserTest {
             evidence.fill(0)
         }
     }
+
+    private fun parseSpatial(vararg lines: OcrTranscript.RecognizedLine): ParseResult {
+        val evidence = OcrTranscript.encodeSpatial(lines.toList())!!
+        return parser.parse(
+            rawEvent(evidence),
+            EvidenceInput(OcrTranscript.MEDIA_TYPE, evidence),
+        ).also {
+            evidence.fill(0)
+        }
+    }
+
+    private fun spatial(
+        value: String,
+        top: Int,
+        bottom: Int,
+    ) = OcrTranscript.RecognizedLine(
+        value = value,
+        bounds = OcrTranscript.Bounds(
+            left = 1_000,
+            top = top,
+            right = 9_000,
+            bottom = bottom,
+        ),
+    )
 
     private fun rawEvent(evidence: ByteArray = "fixture".toByteArray()) = RawEvent(
         id = RawEventId("event-ocr-1"),

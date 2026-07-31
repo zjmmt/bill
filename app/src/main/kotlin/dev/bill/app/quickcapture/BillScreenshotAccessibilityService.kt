@@ -300,7 +300,7 @@ private class OnDeviceScreenshotOcrProcessor(
                 LocalOcrResult.Failed -> return failed(QuickCaptureFailure.OCR_FAILED)
             }
             cancellation.throwIfCancelled()
-            transcriptBytes = OcrTranscript.encode(lines)
+            transcriptBytes = OcrTranscript.encodeSpatial(lines)
                 ?: return failed(QuickCaptureFailure.OCR_OUTPUT_TOO_LARGE)
         } finally {
             ocrBitmap?.recycle()

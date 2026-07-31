@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：[去重、关联与资金流设计](../../design-docs/reconciliation.md)、[采集确认规格](../../product-specs/capture-review-reconcile.md)、[统一领域模型](../../design-docs/domain-model.md)、项目负责人“先做对账”的实现顺序
 
 ## 目的与用户可见结果
@@ -45,7 +45,8 @@
 - [x] 2026-07-26 - 增加应用层候选投影、稳定确认命令与竖屏对账工作台。
 - [x] 2026-07-26 - 针对性 `core:ledger`、`application`、App 单测通过，Room Android 测试源码与迁移查询编译通过。
 - [x] 2026-07-30 - 使用 `code-review` 复审并完成全量 JVM、Lint、Debug/未签名 Release 和 AndroidTest APK 构建；ViewModel 确认路由新增回归。
-- [ ] 设备验收轮 - 在 Room instrumentation 中执行 v6→v7、确认→撤销→再次确认、退款上限与数据库关闭重开；当前只完成测试源码/APK 编译。
+- [x] 2026-07-31 - 港版 S24 Ultra/API 36 的完整 `data:local` instrumentation 47/47 通过，包含 v6→v7、转账确认→撤销→再次确认、退款上限、持久数据库重开相关仓储路径。
+- [ ] 设备验收轮 - 执行真实来源 Draft、Compose 对账面板、进程中断与完整关闭重开用户链；仓储 instrumentation 通过不替代 UI/真实来源验收。
 
 ## 意外发现
 
@@ -90,4 +91,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-进行中。领域、应用、Room、竖屏 UI、ViewModel 路由、全量 JVM/Lint/Debug/Release、AndroidTest APK 编译与指定 `code-review` 已完成；设备端 Room v6→v7、确认/撤销/重确认、关闭重开和真实来源 Draft 验收仍未执行。真机 instrumentation 保持独立授权门。
+进行中。领域、应用、Room、竖屏 UI、ViewModel 路由、全量 JVM/Lint/Debug/Release、指定 `code-review` 与港版 S24 Ultra 上 47/47 Room instrumentation 已完成；真实来源 Draft、Compose 对账面板、进程中断和完整用户链仍未验收。真机业务内容测试保持独立授权门。

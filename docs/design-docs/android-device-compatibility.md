@@ -1,9 +1,9 @@
 # Android 设备兼容与真机验收
 
-- 状态：已确认测试范围；`S24U-HK` 已有受限的应用级合成冒烟和 3 个 route 偏好 instrumentation，完整真机、通知 callback 与来源结论待验证
+- 状态：已确认测试范围；`S24U-HK` 已有受限应用级冒烟、14 个 app、47 个 Room 与 1 个随包 OCR 合成 instrumentation；空间 OCR 端到端、完整真机、通知 callback 与来源结论待验证
 - 所有者：项目维护者
 - 最后核验：2026-07-31
-- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求、2026-07-25 的脱敏 `S24U-HK` 应用级冒烟，以及 2026-07-31 的隔离 route 偏好 instrumentation
+- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求、2026-07-25 的脱敏 `S24U-HK` 应用级冒烟，以及 2026-07-31 的 app/Room/OCR 合成 instrumentation
 
 本文是地区版本、OEM 行为和真机验收的唯一事实来源。它定义要验证什么；除逐项明确记录的受限证据外，不声明任何设备已通过完整真机用例、来源适配或发布门。页面视觉规则见 [UI 设计系统](ui-design-system.md)，通知与导入边界见 [来源适配器设计](ingestion-and-source-adapters.md)，通用测试原则见 [RELIABILITY.md](../RELIABILITY.md)。
 
@@ -23,7 +23,7 @@
 
 | 设备代号 | 已知信息 | 执行前必须补齐 | 当前角色 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟和 3 个 route 偏好 instrumentation，未完成任一完整真机用例 |
+| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟、14/14 app、47/47 Room、1/1 随包 OCR 合成与 1/1 空间 OCR app 定向 instrumentation，未完成任一完整真机用例 |
 | `S24U-CN` | 国行 Samsung Galaxy S24 Ultra | 型号代码、CSC/地区、Android 与 One UI 完整构建、安全补丁、RAM/存储档、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | 无 GMS 核心路径主验证、One UI 后台与竖屏主视觉验证 | 待建档、未实测 |
 | `XIAOMI-CN` | 国行小米，具体型号未知 | **具体型号**、SoC/RAM/存储档、Android 与 HyperOS 完整构建、安全补丁、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | HyperOS 权限、后台、文件入口和竖屏主视觉压力验证 | **研究门未满足，不得声称代表任何小米机型或性能档** |
 | `MUMU-API32` | MuMu 模拟器；当前 ADB 建档为 API 32、`x86_64`，上报型号 `SM-S9280` | MuMu 版本、镜像版本、分辨率/密度、sw/window dp、旋转与窗口设置 | 快速安装、竖屏布局和合成流程冒烟 | 仅模拟器；不是 Samsung 硬件、国行固件、One UI 或真 S24 Ultra 证据 |
@@ -106,9 +106,22 @@ MuMu 上报 `SM-S9280` 只是设备属性仿真；API 32、`x86_64` 镜像既不
 | 仪器测试 | `:app:connectedDebugAndroidTest` 共运行 3 个用例，3/3 通过：启停状态跨新实例保留且只保存 opaque route ID；旧/已移除 route ID 不会打开运行时门；损坏为错误类型的偏好默认全关而不崩溃。 |
 | 测试数据隔离 | One UI 上 test APK context 没有可写 app data 目录，因此改用 target app context 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件；Before/After 只删除该测试文件，不触碰生产 `bill.notification-route-enablement`。测试中断最多遗留无功能 fixture ID。 |
 | 启动冒烟 | 测试包安装后从 Bill 的设置深链冷启动进入 `MainActivity`，Activity 正常启动且进程保持；没有打开系统通知设置或真实来源 App。 |
-| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。执行这 3 个用例时生产 catalog 为空；随后加入的 4 条实验 route 尚未在设备回放。 |
+| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。执行这 3 个用例时生产 catalog 为空；当前 4 条实验 route 后续只补了默认关闭/opaque opt-in 的设备测试，仍未运行系统 callback。 |
 
 因此本轮只把“route 偏好控制面在这台 One UI 设备可持久化并失败关闭”记为局部证据；通知、后台、省电和真实来源用例仍是未执行。
+
+## 2026-07-31 `S24U-HK` App、Room 与随包 OCR 合成回归
+
+这组结果均使用测试专用偏好、合成数据库或程序绘制文本；没有打开来源 App、读取通知历史、读取真实支付截图、账号或账本。设备序列号不进入文档。
+
+| 范围 | 执行结果 | 能证明 | 不能证明 |
+| --- | --- | --- | --- |
+| App instrumentation | `:app:connectedDebugAndroidTest` 14/14 通过：10 条 Debug 采样持久化/停止/分页、3 条隔离 route 偏好、1 条当前 4-route catalog 默认关闭与 opaque opt-in | 当前工作树的研究文件和偏好隔离边界在 One UI/API 36 上可执行；生产 route 默认关闭 | 系统 callback、真实模板、通知更新/重启、OEM 后台、资源或 provider 支持 |
+| Room instrumentation | `:data:local:connectedDebugAndroidTest` 47/47 通过 | v1→v7 migration、导入批次/行、对账确认/撤销、通知观察、证据生命周期、暂存与账本仓储在该设备通过合成回归 | SAF 文件选择器、5000 行基准、真实系统强杀、真实来源 Draft 或 UI 完整链 |
+| 随包 OCR instrumentation | `:ocr:paddle:connectedDebugAndroidTest` 1/1 通过 | OpenCV、ONNX Runtime、PP-OCRv6 检测/统一识别模型可在 arm64/API 36 加载，识别合成中/英/日支付文本并释放 | 真实页面准确率、主金额选择、耗时/峰值/电量、ELF 16 KiB 页兼容、签名发行或三台设备 |
+| 空间 OCR App instrumentation | 定向 `:app:connectedDebugAndroidTest` 1/1 通过 | 程序绘制多金额图像可经随包 OCR 框、v2 转录进入保守主金额建议 | 未经过系统截图/Photo Picker UI、真实支付页面、证据入库、资源测量或 provider 识别 |
+
+Room 套件首次运行有 2 条旧夹具失败：夹具绕过了生产要求的 `STATEMENT_IMPORT` staging reservation，生产仓储按设计失败关闭。夹具改为先建立活动暂存租约后，完整 47-test 套件通过；没有放宽生产不变量。此处记录的是合成组件证据，不把任何支付来源或完成门升级为通过。
 
 ## 完成门
 

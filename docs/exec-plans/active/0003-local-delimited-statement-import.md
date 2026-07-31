@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：项目负责人“先自动草稿、后人工确认”的本地优先约束、[来源覆盖矩阵](../../product-specs/source-coverage.md)、[采集确认规格](../../product-specs/capture-review-reconcile.md)、[采集适配器设计](../../design-docs/ingestion-and-source-adapters.md)、[统一领域模型](../../design-docs/domain-model.md)
 
 ## 目的与用户可见结果
@@ -44,13 +44,15 @@
 - [x] 2026-07-27 - 完成逐行 `GENERIC/STATEMENT_IMPORT` 来源建议；复核投影区分“映射账单行”和不透明文本文件，并预填金额、方向、对方与按当前设备时区解析的发生时间。用户仍须选择同币种资金账户并确认。
 - [x] 2026-07-30 - 完成全量 JVM、Lint、Debug/未签名 Release 分包及 Room/OCR AndroidTest APK 构建；结构化导入、ViewModel 状态机和来源投影回归通过，AndroidTest 仍只是编译证据。
 - [x] 2026-07-30 - 使用 `code-review` 复审并修复取消传播、行索引/顺序校验、READY RawEvent 身份/指纹一致性和逐行 O(n²) 汇总问题；来源覆盖、可靠性、安全和质量评分已同步。
-- [ ] 设备验收轮 - 执行 Room v6→v7/导入 instrumentation 与真实 SAF 文档选择器验收，记录 OEM 差异和 5000 行性能基线。
+- [x] 2026-07-31 - 在港版 S24 Ultra/API 36 执行完整 `data:local` instrumentation，47/47 通过；覆盖 v6→v7 migration、导入批次/行、对账事务、通知观察、证据与账本仓储。修正了一处绕过暂存租约的旧测试夹具，生产仓储继续对未登记 `STATEMENT_IMPORT` 失败关闭。
+- [ ] 设备验收轮 - 执行真实 SAF 文档选择器、5000 行性能与进程中断恢复验收，记录 OEM 差异；Room instrumentation 已完成，不等于 SAF UI 或大文件发布门。
 
 ## 意外发现
 
 - 当前 `SourceEvidencePayloadEntity` 以 `rawEventId` 为主键且 `payloadId` 唯一，因此原始文件不能未经迁移就直接供多条 RawEvent 共用；简单循环调用现有服务会造成证据生命周期错误或无意义的整份文件复制。
 - 实施前发现来源复核 UI 只预填金额和对手方；本计划因此先透传 `moneyDirection` 与 `occurredAt`，避免导入器正确解析后仍要求用户逐条重填关键事实。
 - 初版 Room 行写入在每一行前执行三项全局完整性扫描，并重新统计整个批次；5000 行会接近 O(n²)。现改为行插入与计数/终态的同事务 O(1) 增量更新，全局扫描仅在打开、恢复读取和最终刷新执行。
+- 设备回归首次暴露一个过期测试夹具直接向 RawEvent 仓储追加 `STATEMENT_IMPORT`，没有先建立 staging reservation；生产代码按设计返回 ID collision。夹具改为通过活动租约暂存，随后完整 47-test 套件通过，未放宽生产不变量。
 
 ## 决策日志
 
@@ -108,4 +110,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-进行中。结构化解析、Room v7 批次/行状态、竖屏映射 UI、来源建议预填、JVM/全量 Lint/Debug/Release、Android 测试 APK 编译和指定 `code-review` 已完成；设备端 Room/SAF、真实文件和 5000 行性能验收尚未完成，因此不能升级为发布级银行或 provider 支持。
+进行中。结构化解析、Room v7 批次/行状态、竖屏映射 UI、来源建议预填、JVM/全量 Lint/Debug/Release、指定 `code-review` 与港版 S24 Ultra 上 47/47 Room instrumentation 已完成；真实 SAF UI、真实文件、5000 行性能和进程中断恢复验收尚未完成，因此不能升级为发布级银行或 provider 支持。

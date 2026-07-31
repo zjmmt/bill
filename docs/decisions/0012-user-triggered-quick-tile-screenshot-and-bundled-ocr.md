@@ -1,8 +1,8 @@
 # ADR-0012：用户触发的下拉磁贴截图与随包离线 OCR
 
-- 状态：部分实现；本地引擎替换与未签名 Release 静态审计完成，实际推理、签名发行与真机发布门未完成
+- 状态：部分实现；本地引擎替换、空间转录 v2、未签名 Release 静态审计与 S24U-HK 合成三语推理完成；真实页面、资源、签名发行与完整真机发布门未完成
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-07-31
 - 事实来源：项目负责人 2026-07-26 的一键补录要求、Android `TileService`/`AccessibilityService.takeScreenshot` 平台边界、当前 Android/依赖审计、`ocr/paddle/MODEL_PROVENANCE.md`、[PaddleOCR Android deployment](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/cross_platform/android_deployment.html)、ADR-0001、ADR-0010、ADR-0011
 
 ## 背景
@@ -19,7 +19,7 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 早期原型依赖 bundled Chinese ML Kit Text Recognition，因官方数据披露和传输/调度组件未通过本项目发布门而被移除。当前实现改用静态随包的 PP-OCRv6 small ONNX 检测与统一多语言识别模型、ONNX Runtime Android 1.24.3 和 OpenCV Android 4.12.0；模型与许可哈希固定，建会话前显式关闭 ONNX Runtime telemetry，AAR 静态审计未发现网络权限、Android 组件或传输依赖。
 
-引擎替换已通过源码、依赖和当前未签名 Release 分包的静态门：包内模型/ABI、权限、组件、体积、哈希与 16 KiB ZIP 对齐已审计。它仍不是签名发行或运行证据；在实际中英/日英推理、ELF 页兼容和三台目标设备资源验收完成前，截图/OCR 只能作为开发中实验，不能作为支付宝、微信支付、银行支持的对外承诺。发布版必须继续证明没有运行时模型/规则下载或上传、没有网络权限和遥测传输/调度组件，并实测准确性、内存、耗时和空闲释放。
+引擎替换已通过源码、依赖和当前未签名 Release 分包的静态门：包内模型/ABI、权限、组件、体积、哈希与 16 KiB ZIP 对齐已审计。S24U-HK 上的一组合成中/英/日支付文本 instrumentation 还证明模型和原生运行时可加载、推理并释放，但它仍不是真实页面、签名发行或资源证据；在真实支付截图、空间主金额端到端、ELF 页兼容和三台目标设备资源验收完成前，截图/OCR 只能作为开发中实验，不能作为支付宝、微信支付、银行支持的对外承诺。发布版必须继续证明没有运行时模型/规则下载或上传、没有网络权限和遥测传输/调度组件，并实测准确性、内存、耗时和空闲释放。
 
 ### 用户动作和权限边界
 
@@ -33,9 +33,9 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 1. 发布版 OCR 使用随 APK 静态打包的 PP-OCRv6 small 与本地 ONNX Runtime/OpenCV，不在运行时下载模型、规则或上传截图；未签名 Release 已复核该静态边界，签名发行包仍须再次复核。
 2. 每次只处理当前显示的一帧。HardwareBuffer、Bitmap、PNG/转录临时字节均有尺寸、像素和并发上限，并在成功、失败或取消后尽快释放；没有摄像流、轮询 OCR 或图库扫描。
-3. 首片将原始截图作为瞬时输入，持久化一个版本化、严格 UTF-8、有界的 OCR 转录证据；原始 Bitmap 和截图文件不落公共目录、不进入日志、崩溃报告或遥测。转录证据进入既有 app-private、容量、保留期限、逐项清除和 RawEvent/ParseAttempt 链。
+3. 首片将原始截图作为瞬时输入，持久化一个版本化、严格 UTF-8、有界的 OCR 转录证据；v2 为每行保留文本与 0..10000 归一化整数矩形，v1 文本证据继续可重放。原始 Bitmap、截图文件、颜色、logo 和 provider 身份不落证据、公共目录、日志、崩溃报告或遥测。转录证据进入既有 app-private、容量、保留期限、逐项清除和 RawEvent/ParseAttempt 链。
 4. 通用 OCR 规则只能生成 `GENERIC/PHOTO_OCR` 待复核建议。它可从合成样本中保守提出金额、方向和对手方候选，但不得据此声称支付宝、微信或某银行已支持，不得自动选择资金账户、自动关联转账/退款或自动正式入账。
-5. 多个金额、方向冲突、退款/红包/转账语义不明确、OCR 空结果或格式未知时保留证据并要求用户补全，不取第一个数字冒充交易金额。
+5. 多个金额时不取第一个数字：只有一个独立金额的布局高度相对正文中位数和第二独立金额都明确占优，且不处于页面下部，才提出主金额候选；等大、缺少布局、方向冲突、退款/红包/转账语义、OCR 空结果或格式未知都保留证据并要求用户补全。
 
 ### 图片选择回退
 
@@ -43,7 +43,7 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 ### 资源与兼容性门
 
-在港版 S24 Ultra、国行 S24 Ultra 和国行小米上分别记录单次截图到草稿的耗时、Bitmap/OCR 峰值、失败码和处理后空闲状态。没有真机结果前只标记为 Experimental；发现持续 CPU、保活、后台 OCR、异常内存或无法释放 HardwareBuffer 时保持关闭。候选引擎固定零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务关闭会话；这些代码约束仍须由目标设备和 release APK 证明。
+在港版 S24 Ultra、国行 S24 Ultra 和国行小米上分别记录单次截图到草稿的耗时、Bitmap/OCR 峰值、失败码和处理后空闲状态。S24U-HK 合成模型推理已通过，但没有真实页面与资源结果，仍只标记为 Experimental；发现持续 CPU、保活、后台 OCR、异常内存或无法释放 HardwareBuffer 时保持关闭。候选引擎固定零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务关闭会话；这些代码约束仍须由目标设备和 release APK 证明。
 
 ## 结果
 
