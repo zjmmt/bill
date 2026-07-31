@@ -2,7 +2,7 @@
 
 - 状态：已确认
 - 所有者：项目维护者
-- 最后核验：2026-07-26
+- 最后核验：2026-08-01
 - 事实来源：已接受 ADR
 
 | ADR | 决定 | 状态 |
@@ -20,5 +20,6 @@
 | [0011-local-resource-budget-first-capture.md](0011-local-resource-budget-first-capture.md) | 纯本地三轨采集以设备资源、权限与可测负担为先 | 已接受，4 条默认关闭通知 route 与本地 OCR 候选已实现，真机发布门未完成 |
 | [0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md](0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md) | 下拉磁贴只触发一次专用无障碍截图，OCR 模型随包本地运行 | 已接受，实现与真机资源验收进行中 |
 | [0013-bank-card-only-usd-without-fx.md](0013-bank-card-only-usd-without-fx.md) | USD 只允许银行卡/信用卡；钱包固定 CNY，分币种展示且不做汇率换算 | 已接受，实现进行中 |
+| [0014-investment-position-snapshots-and-confirmed-events.md](0014-investment-position-snapshots-and-confirmed-events.md) | 基金持仓由手工/OCR 人工确认；通知只提出已确认投资事件，受理和行情提醒不入账 | 已接受，实现进行中 |
 
 ADR 记录长期决定，不替代详细产品规格或设计文档。被新决定取代时保留原文件并互相链接。
