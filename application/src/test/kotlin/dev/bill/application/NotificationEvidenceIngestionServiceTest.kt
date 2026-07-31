@@ -1,5 +1,6 @@
 package dev.bill.application
 
+import dev.bill.source.alipay.AlipayNotificationRoutes
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.ConnectorId
 import dev.bill.source.contract.EvidenceHash
@@ -7,6 +8,7 @@ import dev.bill.source.contract.EvidenceInput
 import dev.bill.source.contract.EvidenceReadResult
 import dev.bill.source.contract.EvidenceReader
 import dev.bill.source.contract.NotificationField
+import dev.bill.source.contract.ObservedMoneyDirection
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.RawEvent
 import dev.bill.source.contract.RawEventAppendResult
@@ -25,6 +27,7 @@ import dev.bill.source.genericnotification.NotificationRouteParser
 import dev.bill.source.genericnotification.NotificationTemplate
 import dev.bill.source.genericnotification.VerifiedNotificationRoute
 import dev.bill.source.pipeline.DraftProposal
+import dev.bill.source.pipeline.DraftProposalReviewState
 import dev.bill.source.pipeline.ParseAttempt
 import dev.bill.source.pipeline.ParseAttemptId
 import dev.bill.source.pipeline.ParseCommitResult
@@ -41,10 +44,69 @@ import java.time.ZoneOffset
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NotificationEvidenceIngestionServiceTest {
+    @Test
+    fun `sample backed Alipay route reaches RawEvent parser and review candidate`() = runBlocking {
+        val route = AlipayNotificationRoutes.routes.first()
+        val catalog = NotificationRouteCatalog(listOf(route))
+        val rawEvents = InMemoryRawEvents()
+        val evidenceStore = InMemoryEvidenceStore()
+        val commitStore = InMemoryCommitStore()
+        val clock = Clock.fixed(Instant.parse("2026-07-31T12:00:00Z"), ZoneOffset.UTC)
+        val service = NotificationEvidenceIngestionService(
+            rawEventRepository = rawEvents,
+            evidenceStore = evidenceStore,
+            sourceIngestionService = SourceIngestionService(
+                rawEventRepository = rawEvents,
+                evidenceReader = evidenceStore,
+                parserRegistry = ParserRegistry(catalog.parsers()),
+                commitStore = commitStore,
+                clock = clock,
+                maxEvidenceBytes = NotificationEvidenceIngestionService.MAX_NOTIFICATION_EVIDENCE_BYTES,
+            ),
+            routeCatalog = catalog,
+            isRouteEnabled = { true },
+            clock = clock,
+        )
+        val content = checkNotNull(
+            NotificationContent.from(
+                mapOf(
+                    NotificationField.TITLE to "交易提醒",
+                    NotificationField.TEXT to "你有一笔￥12.34的支出，请在支付宝内核对",
+                ),
+            ),
+        )
+
+        val result = service.ingest(
+            commandId = "sample-backed-alipay",
+            route = route,
+            envelope = NotificationEnvelope(
+                templateId = route.routeId,
+                templateVersion = route.template.version,
+                postedAtEpochMillis = 1_700_000_000_000L,
+                content = content,
+            ),
+        )
+
+        assertTrue(result is NotificationCaptureResult.ReadyForReview)
+        val event = rawEvents.events.values.single()
+        assertEquals(SourceFamily.ALIPAY, event.sourceFamily)
+        assertEquals(route.routeId, event.connectorId.value)
+        val proposal = checkNotNull(commitStore.commits.values.single().proposal)
+        assertEquals(DraftProposalReviewState.WAITING_USER, proposal.reviewState)
+        assertEquals(1_234L, proposal.candidate?.amount?.value?.minorUnits)
+        assertEquals(
+            ObservedMoneyDirection.OUTBOUND,
+            proposal.candidate?.moneyDirection?.value,
+        )
+        assertNull(proposal.candidate?.counterparty)
+        assertNull(proposal.candidate?.fundingHint)
+    }
+
     @Test
     fun `notification envelope creates only review work with bounded private evidence`() = runBlocking {
         val fixture = Fixture()

@@ -19,7 +19,16 @@ class VerifiedNotificationRoute(
     val sourceIdentity: SourceIdentity,
     val template: NotificationTemplate,
     val safeLabel: String,
+    parserFactory: ((VerifiedNotificationRoute) -> SourceParser)? = null,
 ) {
+    private val resolvedParser: SourceParser by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        (parserFactory?.invoke(this) ?: NotificationRouteParser(this)).also { parser ->
+            require(parser.identity == sourceIdentity) {
+                "Notification route parser identity must equal its route identity"
+            }
+        }
+    }
+
     init {
         require(routeId.matches(OPAQUE_TOKEN)) { "Notification route id is invalid" }
         require(template.id == routeId) { "Notification template id must equal its route id" }
@@ -41,6 +50,8 @@ class VerifiedNotificationRoute(
 
     override fun toString(): String = "VerifiedNotificationRoute(routeId=$routeId)"
 
+    internal fun parser(): SourceParser = resolvedParser
+
     private companion object {
         val OPAQUE_TOKEN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         const val MAX_SAFE_LABEL_LENGTH = 80
@@ -54,8 +65,8 @@ data class NotificationRoutePresentation(
 )
 
 /**
- * The single source of truth for routes, parser registration and safe labels. The production
- * catalog intentionally starts empty; tests can provide synthetic `fixture.*` routes.
+ * The single source of truth for routes, parser registration and safe labels. Every production
+ * route is locally bundled, sample-backed and inert until its individual local opt-in is enabled.
  */
 class NotificationRouteCatalog(routes: Iterable<VerifiedNotificationRoute>) {
     internal val routes: List<VerifiedNotificationRoute> = routes.toList().also { loaded ->
@@ -79,6 +90,7 @@ class NotificationRouteCatalog(routes: Iterable<VerifiedNotificationRoute>) {
         ) {
             "Notification routes must not collide with the generic notification parser"
         }
+        loaded.forEach(VerifiedNotificationRoute::parser)
     }
 
     fun hasVerifiedRoutes(): Boolean = routes.isNotEmpty()
@@ -87,7 +99,7 @@ class NotificationRouteCatalog(routes: Iterable<VerifiedNotificationRoute>) {
         NotificationRoutePresentation(route.routeId, route.safeLabel)
     }
 
-    fun parsers(): List<SourceParser> = routes.map(::NotificationRouteParser)
+    fun parsers(): List<SourceParser> = routes.map(VerifiedNotificationRoute::parser)
 
     /** A capture hand-off must be an exact member of this static catalog, not a caller-built lookalike. */
     fun contains(route: VerifiedNotificationRoute): Boolean = routes.any { candidate ->
@@ -117,6 +129,9 @@ class NotificationRouteParser(
         if (!identity.accepts(rawEvent)) return rejected(DiagnosticCode.SOURCE_NOT_ACCEPTED)
         if (evidenceInput.mediaType != NotificationEvidenceMediaTypes.ENVELOPE) {
             return rejected(DiagnosticCode.UNSUPPORTED_MEDIA_TYPE)
+        }
+        if (evidenceInput.sizeBytes > NotificationEnvelopeCodec.MAX_ENCODED_BYTES) {
+            return rejected(DiagnosticCode.EVIDENCE_TOO_LARGE)
         }
         val bytes = evidenceInput.copyBytes()
         val decoded = try {

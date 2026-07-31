@@ -26,7 +26,6 @@ import dev.bill.source.genericdelimited.GenericDelimitedStatementParser
 import dev.bill.source.genericphotoocr.GenericPhotoOcrParser
 import dev.bill.source.genericreceiptimage.GenericSharedReceiptImageParser
 import dev.bill.source.genericnotification.GenericNotificationParser
-import dev.bill.source.genericnotification.NotificationRouteCatalog
 import dev.bill.source.genericnotification.NotificationTemplateGate
 import dev.bill.app.notification.NotificationCaptureCoordinator
 import dev.bill.app.notification.AppPrivateNotificationObservationIdDeriver
@@ -84,12 +83,8 @@ class AppContainer(context: Context) {
         AppPrivateEvidenceStore(context.applicationContext)
     }
 
-    /**
-     * This remains empty until an individual provider/version has sanitized replay fixtures.
-     * The same catalog is used for metadata gating, parser registration and safe UI labels so
-     * a route cannot reach storage without a matching parser.
-     */
-    private val notificationRouteCatalog = NotificationRouteCatalog.empty()
+    /** One catalog owns metadata gating, parser registration and safe UI labels. */
+    private val notificationRouteCatalog = ProductionNotificationRoutes.catalog
 
     private val notificationRouteEnablement by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         SharedPreferencesNotificationRouteEnablement(context, notificationRouteCatalog)

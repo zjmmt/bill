@@ -19,5 +19,6 @@ dependencies {
     api(project(":source:review-contract"))
     implementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.junit)
+    testImplementation(project(":source:alipay"))
     testImplementation(project(":source:generic-share-text"))
 }

@@ -12,11 +12,11 @@
 
 | 项目 | 当前值 |
 |---|---:|
-| Gradle 模块 | 20 |
+| Gradle 模块 | 23 |
 | 源 Manifest | 9 |
-| 测试源码文件 | 57 |
-| 生成输入文件 | 94 |
-| 输入 SHA-256 | `30dbed3b6aa8712e9010e82258ab7aa4d1429a3db41dabad57e1ee3d4695a780` |
+| 测试源码文件 | 62 |
+| 生成输入文件 | 102 |
+| 输入 SHA-256 | `deab2084fce0290da82645345b94c63becc2c2866a4b3bd12aced7904597dfea` |
 
 输入摘要按 UTF-8/LF 规范化后包含生成器及共享解析库的 SHA-256；生成逻辑、源码事实或输入文件任一变化，都要求重新生成。
 
@@ -24,8 +24,8 @@
 
 | 模块 | 构建文件 | 直接项目依赖 |
 |---|---|---|
-| `:app` | `app/build.gradle.kts` | `:application`<br>`:core:designsystem`<br>`:data:local`<br>`:feature:accounts`<br>`:feature:ledger`<br>`:feature:overview`<br>`:feature:review`<br>`:ocr:paddle`<br>`:source:generic-delimited-statement`<br>`:source:generic-notification`<br>`:source:generic-photo-ocr`<br>`:source:generic-receipt-image`<br>`:source:generic-share-text`<br>`:source:pipeline` |
-| `:application` | `application/build.gradle.kts` | `:core:domain`<br>`:core:ledger`<br>`:core:model`<br>`:source:contract`<br>`:source:generic-delimited-statement`<br>`:source:generic-notification`<br>`:source:generic-photo-ocr`<br>`:source:generic-receipt-image`<br>`:source:generic-share-text`<br>`:source:pipeline`<br>`:source:review-contract` |
+| `:app` | `app/build.gradle.kts` | `:application`<br>`:core:designsystem`<br>`:data:local`<br>`:feature:accounts`<br>`:feature:ledger`<br>`:feature:overview`<br>`:feature:review`<br>`:ocr:paddle`<br>`:source:alipay`<br>`:source:bank:cmb`<br>`:source:generic-delimited-statement`<br>`:source:generic-notification`<br>`:source:generic-photo-ocr`<br>`:source:generic-receipt-image`<br>`:source:generic-share-text`<br>`:source:pipeline`<br>`:source:wechat` |
+| `:application` | `application/build.gradle.kts` | `:core:domain`<br>`:core:ledger`<br>`:core:model`<br>`:source:alipay`<br>`:source:contract`<br>`:source:generic-delimited-statement`<br>`:source:generic-notification`<br>`:source:generic-photo-ocr`<br>`:source:generic-receipt-image`<br>`:source:generic-share-text`<br>`:source:pipeline`<br>`:source:review-contract` |
 | `:core:designsystem` | `core/designsystem/build.gradle.kts` | `:core:model` |
 | `:core:domain` | `core/domain/build.gradle.kts` | `:core:model` |
 | `:core:ledger` | `core/ledger/build.gradle.kts` | `:core:domain`<br>`:core:model` |
@@ -36,6 +36,8 @@
 | `:feature:overview` | `feature/overview/build.gradle.kts` | `:application`<br>`:core:designsystem`<br>`:core:model` |
 | `:feature:review` | `feature/review/build.gradle.kts` | `:application`<br>`:core:designsystem` |
 | `:ocr:paddle` | `ocr/paddle/build.gradle.kts` | — |
+| `:source:alipay` | `source/alipay/build.gradle.kts` | `:source:contract`<br>`:source:generic-notification` |
+| `:source:bank:cmb` | `source/bank/cmb/build.gradle.kts` | `:source:contract`<br>`:source:generic-notification` |
 | `:source:contract` | `source/contract/build.gradle.kts` | `:core:model` |
 | `:source:generic-delimited-statement` | `source/generic-delimited-statement/build.gradle.kts` | `:source:contract` |
 | `:source:generic-notification` | `source/generic-notification/build.gradle.kts` | `:source:contract` |
@@ -44,6 +46,7 @@
 | `:source:generic-share-text` | `source/generic-share-text/build.gradle.kts` | `:source:contract` |
 | `:source:pipeline` | `source/pipeline/build.gradle.kts` | `:source:contract` |
 | `:source:review-contract` | `source/review-contract/build.gradle.kts` | `:core:domain`<br>`:source:contract` |
+| `:source:wechat` | `source/wechat/build.gradle.kts` | `:source:contract`<br>`:source:generic-notification` |
 
 ## Room schema
 
@@ -75,8 +78,8 @@
 | 模块 | 测试集 | 源码文件 | `@Test` 注解 |
 |---|---|---:|---:|
 | `:app` | Android | 2 | 13 |
-| `:app` | JVM | 12 | 71 |
-| `:application` | JVM | 5 | 74 |
+| `:app` | JVM | 13 | 72 |
+| `:application` | JVM | 5 | 75 |
 | `:core:ledger` | JVM | 2 | 23 |
 | `:core:model` | JVM | 2 | 4 |
 | `:data:local` | Android | 9 | 47 |
@@ -84,13 +87,16 @@
 | `:feature:overview` | JVM | 1 | 4 |
 | `:feature:review` | JVM | 1 | 2 |
 | `:ocr:paddle` | Android | 1 | 1 |
+| `:source:alipay` | JVM | 1 | 4 |
+| `:source:bank:cmb` | JVM | 1 | 4 |
 | `:source:contract` | JVM | 5 | 22 |
 | `:source:generic-delimited-statement` | JVM | 3 | 18 |
-| `:source:generic-notification` | JVM | 3 | 17 |
+| `:source:generic-notification` | JVM | 4 | 22 |
 | `:source:generic-photo-ocr` | JVM | 1 | 11 |
 | `:source:generic-receipt-image` | JVM | 1 | 4 |
 | `:source:generic-share-text` | JVM | 2 | 9 |
 | `:source:pipeline` | JVM | 2 | 22 |
-| 合计 | — | 57 | 358 |
+| `:source:wechat` | JVM | 1 | 4 |
+| 合计 | — | 62 | 377 |
 
 计数口径：仅扫描各模块的 `src/test` 与 `src/androidTest` 下 `.kt`/`.java` 文件，并统计 `@Test` 或完全限定的 JUnit `@Test` 注解；参数化测试等其他注解不计入。

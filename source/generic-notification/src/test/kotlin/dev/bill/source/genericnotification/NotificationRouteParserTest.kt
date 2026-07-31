@@ -8,12 +8,14 @@ import dev.bill.source.contract.EvidenceHash
 import dev.bill.source.contract.EvidenceInput
 import dev.bill.source.contract.NotificationField
 import dev.bill.source.contract.ParserId
+import dev.bill.source.contract.ParseResult
 import dev.bill.source.contract.PayloadId
 import dev.bill.source.contract.ProviderId
 import dev.bill.source.contract.RawEvent
 import dev.bill.source.contract.RawEventId
 import dev.bill.source.contract.SourceFamily
 import dev.bill.source.contract.SourceIdentity
+import dev.bill.source.contract.SourceParser
 import dev.bill.source.contract.VersionId
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -108,6 +110,61 @@ class NotificationRouteParserTest {
             return
         }
         error("A route must not collide with the generic notification parser")
+    }
+
+    @Test
+    fun `catalog rejects a provider parser whose identity differs from its route`() {
+        val mismatchedRoute = VerifiedNotificationRoute(
+            routeId = "fixture-mismatch",
+            sourceIdentity = route.sourceIdentity.copy(
+                parserId = ParserId("fixture-mismatch"),
+                connectorId = ConnectorId("fixture-mismatch"),
+            ),
+            template = NotificationTemplate(
+                id = "fixture-mismatch",
+                version = "v1",
+                packageName = "fixture.payment",
+                channelId = "transaction",
+                category = "status",
+                contentMatcher = { true },
+            ),
+            safeLabel = "Fixture mismatched notification",
+            parserFactory = {
+                object : SourceParser {
+                    override val identity = route.sourceIdentity
+
+                    override fun parse(rawEvent: RawEvent, evidenceInput: EvidenceInput): ParseResult =
+                        ParseResult.Rejected(
+                            dev.bill.source.contract.SafeDiagnostic(
+                                code = DiagnosticCode.SOURCE_NOT_ACCEPTED,
+                                recoverable = false,
+                            ),
+                        )
+                }
+            },
+        )
+
+        try {
+            NotificationRouteCatalog(listOf(mismatchedRoute))
+        } catch (_: IllegalArgumentException) {
+            return
+        }
+        error("A provider parser must not impersonate another route identity")
+    }
+
+    @Test
+    fun `oversized notification evidence is rejected before decoding`() {
+        val evidence = EvidenceInput(
+            NotificationEvidenceMediaTypes.ENVELOPE,
+            ByteArray(NotificationEnvelopeCodec.MAX_ENCODED_BYTES + 1),
+        )
+
+        val result = NotificationRouteParser(route).parse(rawEvent(), evidence)
+
+        assertEquals(
+            DiagnosticCode.EVIDENCE_TOO_LARGE,
+            (result as ParseResult.Rejected).diagnostic.code,
+        )
     }
 
     private fun rawEvent(connectorId: ConnectorId = route.sourceIdentity.connectorId) = RawEvent(

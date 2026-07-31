@@ -30,6 +30,8 @@ include(
     ":feature:review",
     ":ocr:paddle",
     ":source:contract",
+    ":source:alipay",
+    ":source:bank:cmb",
     ":source:generic-photo-ocr",
     ":source:generic-delimited-statement",
     ":source:generic-receipt-image",
@@ -37,4 +39,5 @@ include(
     ":source:generic-share-text",
     ":source:pipeline",
     ":source:review-contract",
+    ":source:wechat",
 )

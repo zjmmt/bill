@@ -106,7 +106,7 @@ MuMu 上报 `SM-S9280` 只是设备属性仿真；API 32、`x86_64` 镜像既不
 | 仪器测试 | `:app:connectedDebugAndroidTest` 共运行 3 个用例，3/3 通过：启停状态跨新实例保留且只保存 opaque route ID；旧/已移除 route ID 不会打开运行时门；损坏为错误类型的偏好默认全关而不崩溃。 |
 | 测试数据隔离 | One UI 上 test APK context 没有可写 app data 目录，因此改用 target app context 下独立的 `bill.notification-route-enablement.instrumentation-test` 文件；Before/After 只删除该测试文件，不触碰生产 `bill.notification-route-enablement`。测试中断最多遗留无功能 fixture ID。 |
 | 启动冒烟 | 测试包安装后从 Bill 的设置深链冷启动进入 `MainActivity`，Activity 正常启动且进程保持；没有打开系统通知设置或真实来源 App。 |
-| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。生产 catalog 仍为空。 |
+| 结论边界 | 不是 `NLS-01` 通过，不证明系统授权/撤销、listener 连接/断连、通知更新、重启恢复、OEM 后台存活、资源消耗或任一 provider 模板。执行这 3 个用例时生产 catalog 为空；随后加入的 4 条实验 route 尚未在设备回放。 |
 
 因此本轮只把“route 偏好控制面在这台 One UI 设备可持久化并失败关闭”记为局部证据；通知、后台、省电和真实来源用例仍是未执行。
 

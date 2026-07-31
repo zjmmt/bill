@@ -26,8 +26,8 @@ class NotificationMetadata(
 }
 
 /**
- * A locally bundled, source-specific rule. Production starts with an empty catalog until there
- * are sanitized fixtures; tests may supply synthetic templates.
+ * A locally bundled, source-specific rule. Production routes require sanitized fixtures and stay
+ * inert until the owning app explicitly enables them; tests may supply synthetic templates.
  */
 class NotificationTemplate(
     val id: String,
@@ -101,7 +101,11 @@ class NotificationTemplateGate(
 
         val content = readContent() ?: return NotificationGateDecision.IgnoredContent
         val matches = candidates.filter { route ->
-            runCatching { route.template.matchesContent(content) }.getOrDefault(false)
+            try {
+                route.template.matchesContent(content)
+            } catch (_: RuntimeException) {
+                false
+            }
         }
         return when (matches.size) {
             0 -> NotificationGateDecision.IgnoredContent
@@ -123,7 +127,13 @@ class NotificationTemplateGate(
 
     private fun candidatesFor(metadata: NotificationMetadata): List<VerifiedNotificationRoute> =
         catalog.routes.filter { route ->
-            runCatching { isRouteEnabled(route.routeId) }.getOrDefault(false) &&
+            (
+                try {
+                    isRouteEnabled(route.routeId)
+                } catch (_: RuntimeException) {
+                    false
+                }
+            ) &&
                 route.template.matchesMetadata(metadata)
         }
 }

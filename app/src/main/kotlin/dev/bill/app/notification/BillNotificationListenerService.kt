@@ -20,10 +20,11 @@ import kotlinx.coroutines.launch
  * System-event entry point for future verified notification templates.
  *
  * It does not read historical/active notifications, alter external notifications, start UI or use
- * a foreground service. Release builds with the current empty template catalog return after
- * metadata gating and never ask for a title, message body or other `extras` value. A debug build
- * may additionally copy the same bounded fields only while its user-controlled, forward-only,
- * package-scoped template-sampling window is active.
+ * a foreground service. Production routes are disabled by default, so a fresh install returns
+ * after metadata gating and never asks for a title, message body or other `extras` value until the
+ * user explicitly enables an individual safe-labelled route. A debug build may additionally copy
+ * the same bounded fields only while its user-controlled, forward-only, package-scoped
+ * template-sampling window is active.
  */
 class BillNotificationListenerService : NotificationListenerService() {
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

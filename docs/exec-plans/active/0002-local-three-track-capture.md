@@ -9,7 +9,7 @@
 
 在不增加云端后端、Root、私有目录读取、全天截屏/录屏或周期性扫描的前提下，为通知、只读支付结果页和用户触发单次凭证建立独立采集路径。用户能看见每条路径的权限、覆盖范围、连接/回调健康与资源边界；任何自动识别最多形成可编辑的待复核项，绝不直接正式入账。持久“最后回调时间”尚未实现，不得从当前进程内健康状态推断。
 
-第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退：默认没有来源模板，因此不会读取任何支付 App 的正文，也不会声称支付宝、微信或银行已接入。它建立以后可由脱敏样本驱动的指定 App 模板安全接入。用户可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。后续磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎与未签名 Release 静态门已完成但实际推理/真机/签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
+第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退；随后由 [ExecPlan 0007](0007-debug-notification-template-sampling.md) 以本地真实样本驱动 4 条默认关闭的实验通知 route。它们只覆盖支付宝支出/余额收款、微信英文付款完成和招商银行快捷支付退款，整体来源仍显示回退。用户也可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎与未签名 Release 静态门已完成但实际推理/真机/签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
 
 ## 范围与非目标
 
@@ -24,7 +24,7 @@
 
 不包含：
 
-- 真实支付宝、微信或银行模板、万能金额正则、自动确认/过账、账户余额推断或通知历史补齐。
+- 4 条已验证候选以外的支付宝、微信或银行模板、万能金额正则、自动确认/过账、账户余额推断或通知历史补齐。
 - 直接读取短信箱、读取其他 App 私有目录、Root、抓包、任何云端解析/遥测/热更新。
 - 常驻截图、MediaProjection、自动 UI 操作、轮询 OCR 或默认电池优化豁免。
 - 未完成独立隐私、商店政策、图像证据生命周期和真机峰值测试前，把任何 Accessibility/OCR 实现标为正式支付来源能力。后续开发原型的状态与发布门由 ExecPlan 0004 维护。
@@ -134,8 +134,8 @@
 5. 让来源复核 UI 能呈现 `NOTIFICATION` 证据来源而不回显原文，并展示“此模板尚未验证/需补全”的安全状态。
 6. 将只读结果页与截图 OCR 作为后续独立计划步骤：前者限制来源包和事件；现有截图回退只接收用户用系统 Sharesheet 明确交付的一张 PNG，不订阅窗口事件、读取节点、解码像素或运行 OCR。任一新增服务或 OCR 都需重新过隐私、资源和真机门。
 7. 有用户授权后执行设备对照；若 OEM 仅在关闭电池优化后回调，记录为可选设备配置而非默认要求。任何真实内容只产出脱敏测试结论，不写入 Git、日志或对话摘要。
-8. 当前迭代：新增静态 route catalog 与 app-private enablement；gate 在读取 extras 前同时要求目录命中、route 已启用、包名/频道/类别精确匹配。Prepared capture 把 route identity 交给 ingress，后者以 route 的 `SourceFamily` 和 connector 建立 RawEvent；同一 route 的 parser 验证 template/version 后仅生成待复核项。复核 UI 只由 opaque connector 映射本地安全标签，绝不显示包名、频道或正文。测试使用虚构 `fixture.*` route，生产目录保持空。
-9. 当前控制面切片：以 catalog presentation 建立只读设置快照，通过单飞串行后台命令启停 route；开关不可越过 catalog，开启不得在持久化失败时放行，关闭失败则只保证本进程立即收紧并要求在重启前重试或撤销系统授权。设置页仅在 route 已开启时提供授权入口；若应用级系统授权已存在，则无论 route 是否暂停或 catalog 是否为空都保留管理/撤销入口。健康状态还要求 listener 实际连接后才能显示就绪。fixture catalog、损坏偏好和跨实例 Android 回归覆盖控制面；生产 catalog 仍为空。
+8. 当前 provider 切片：静态 catalog 包含 4 条默认关闭 route；gate 在读取 extras 前同时要求目录命中、route 已启用、包名/频道/类别精确匹配。Prepared capture 把 route identity 交给 ingress，后者以 route 的 `SourceFamily` 和 connector 建立 RawEvent；provider parser 在 transport 后再次验证 identity、template/version、正文规则与单一 CNY 金额，只生成金额/方向来源建议。复核 UI 只由 opaque connector 映射本地安全标签，绝不显示包名、频道或正文。仓库只使用脱敏夹具，原始样本不提交。
+9. 当前控制面切片：以 catalog presentation 建立只读设置快照，通过单飞串行后台命令启停 route；开关不可越过 catalog，开启不得在持久化失败时放行，关闭失败则只保证本进程立即收紧并要求在重启前重试或撤销系统授权。设置页仅在 route 已开启时提供授权入口；若应用级系统授权已存在，则无论 route 是否暂停都保留管理/撤销入口。健康状态还要求 listener 实际连接后才能显示就绪。fixture catalog、损坏偏好和跨实例 Android 回归覆盖控制面；新 provider route 的 callback/更新/重启仍待真机验证。
 
 ## 具体命令
 
@@ -170,4 +170,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付空模板通知证据基础、Room v7 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。S24U-HK 只验证了 3 个隔离偏好 instrumentation 和 Bill 冷启动，不包含通知授权、系统 callback、真实 provider 或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录真实模板、设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付受控通知证据基础、4 条默认关闭的 provider 实验 route、Room v7 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 既有 3 个隔离偏好 instrumentation 不包含新 route 的系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6 并通过本地无网络静态门，但实际推理、签名发行和目标真机门仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。

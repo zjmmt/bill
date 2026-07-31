@@ -17,7 +17,7 @@
 | [0008-leased-source-evidence-staging-and-orphan-recovery.md](0008-leased-source-evidence-staging-and-orphan-recovery.md) | Room v5 租约暂存、事务消费、有界孤儿扫描与安全回滚 | 已接受，核心恢复切片已实现，压力与系统强杀矩阵未完成 |
 | [0009-wallet-balance-not-inferred-from-bank.md](0009-wallet-balance-not-inferred-from-bank.md) | 电子钱包余额独立于银行卡，钱包内部收付不得由银行流水反推 | 已接受，provider 采集待验证 |
 | [0010-notification-first-capture-and-single-receipt-fallback.md](0010-notification-first-capture-and-single-receipt-fallback.md) | 通知自动草稿为主路径，无通知收款用单次凭证补充 | 已接受，空模板基础已实现；provider 模板、持久去重与真机验证待完成 |
-| [0011-local-resource-budget-first-capture.md](0011-local-resource-budget-first-capture.md) | 纯本地三轨采集以设备资源、权限与可测负担为先 | 已接受，空模板通知基础已实现，其他两轨为研究门 |
+| [0011-local-resource-budget-first-capture.md](0011-local-resource-budget-first-capture.md) | 纯本地三轨采集以设备资源、权限与可测负担为先 | 已接受，4 条默认关闭通知 route 与本地 OCR 候选已实现，真机发布门未完成 |
 | [0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md](0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md) | 下拉磁贴只触发一次专用无障碍截图，OCR 模型随包本地运行 | 已接受，实现与真机资源验收进行中 |
 | [0013-bank-card-only-usd-without-fx.md](0013-bank-card-only-usd-without-fx.md) | USD 只允许银行卡/信用卡；钱包固定 CNY，分币种展示且不做汇率换算 | 已接受，实现进行中 |
 

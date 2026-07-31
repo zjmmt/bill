@@ -68,6 +68,9 @@ foreach ($module in $sourceModules) {
         ':source:contract' { @(':core:model') }
         ':source:pipeline' { @(':source:contract') }
         ':source:review-contract' { @(':core:domain', ':source:contract') }
+        ':source:alipay' { @(':source:contract', ':source:generic-notification') }
+        ':source:bank:cmb' { @(':source:contract', ':source:generic-notification') }
+        ':source:wechat' { @(':source:contract', ':source:generic-notification') }
         default { @(':source:contract') }
     }
 }

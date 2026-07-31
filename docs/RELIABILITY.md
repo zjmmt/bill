@@ -1,6 +1,6 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、空模板通知边界/控制面、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟和 13 个通知控制/采样 instrumentation；真实 provider callback、完整设备矩阵与发布门待完成
+- 状态：部分实现；账本、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、4 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化，另有受限 S24U-HK 应用级冒烟和 13 个通知控制/采样 instrumentation；新 route 的真实 callback、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
 - 最后核验：2026-07-31
 - 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
@@ -29,7 +29,7 @@
 
 证据生命周期用例提供 7/30/90 天或永久保留、已提交与暂存共用的 16 MiB/512 份预算、未知大小测量、缺失文件诊断、20 项 keyset 分页和两阶段清除。删除失败保持 `CLEAR_PENDING` 并可在启动维护或设置页重试；自动保留/容量只选择无待复核建议的最旧证据。当前 Room v7 延续 v5 引入的 5 分钟租约，在写入前登记预提交文件，由 RawEvent 事务原子消费登记；启动维护接管到期租约并有界扫描 10 分钟以上的旧孤儿。
 
-空模板通知路径增加 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。测试证明生产空目录、未知 metadata，以及关闭 runtime 均不会调用正文读取器；合成通知的信封严格有界、重试幂等、改写证据安全冲突、容量超限和意外仓储错误拒绝。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；已捕获摘要和超过 90 天的失效活动租约只在后续候选回调中小批量清理，不新增后台维护。listener 用一个容量 16 的 IO 队列，而非每 callback 启动协程。route 控制面以安全标签展示静态 catalog，开启先持久化、关闭先收紧本进程门禁；失败会冻结其他变更并要求重试或在重启前撤销系统通知使用权。授权存在与 listener 实际连接分别建模，只有两者及启用 route 同时满足才显示就绪。它的 parser 只能产生来源待复核项，不会在没有 provider 样本时猜测交易字段或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
+受控通知路径包含 `:source:generic-notification`、通知专用 evidence ingress、当前 Room v7 中由 v6 引入的持久观察租约，以及最薄 Android listener。生产 catalog 由 `:source:alipay`、`:source:wechat` 和 `:source:bank:cmb` 提供 4 条默认关闭 route。测试证明空目录、未知 metadata 和关闭 runtime 均不会调用正文读取器；provider 单测覆盖脱敏成功、缺字段、漂移、敏感反例、竞争金额、错误频道/类别和 transport 后复核，application 测试覆盖一条 `RawEvent -> proposal` 纵向路径。信封严格有界，parser identity 与 route 强绑定，单一 CNY 金额解析拒绝符号金额、竞争金额和超限输入。观察租约在两分钟过期后复用原 command，`CAPTURED` 后阻止同实例更新重复建草稿；listener 使用容量 16 的单消费者 IO 队列。route 控制面以安全标签展示 catalog，开启先持久化、关闭先收紧本进程门禁。provider parser 只生成金额与方向的来源建议，不猜商户/账户或自动过账。结果页 observer 当前没有屏幕内容能力，不能计入无障碍采集可靠性。
 
 结构化 CSV/TSV 路径把当次 SAF 输入限制在 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 KiB/记录；严格 UTF-8 与语法校验发生在持久化前。未知表头不自动猜列或 provider，用户必须显式映射日期、金额、方向、对方与可选参考号。预览在后台 dispatcher 上以 250 ms 去抖执行；确认按行建立独立证据、来源建议和安全结果码，停止后以文件摘要和映射摘要继续尚未完成的行。Room v7 只保存批次/行身份、计数、RawEvent ID 或封闭错误码，不保存 URI、文件名、表头或单元格。
 
@@ -73,7 +73,15 @@
 - listener 断连以及用户点击 Debug“开始”时会向 Android 请求一次重新绑定，采样页分别显示系统授权与 listener 实际连接状态，活动采样状态则由 app-private 偏好跨进程恢复。设备内预览以固定 64 KiB 单行缓冲从文件末尾读取，每页最多解码 10 条；合成测试覆盖最新优先分页、完整元数据/正文投影以及空 NDJSON 记录失败关闭。页面显示跨进程写入数、本进程队列丢弃/正文不可读计数，并明确说明系统未交付的 callback 无法反推。它不使用轮询、前台服务、Alarm、WorkManager 或唤醒锁，也不承诺绕过用户强行停止、撤权、卸载或 OEM 平台拒绝重绑。Debug 原始文件没有自动时间、条数或文件大小限制；单条字段与队列仍有界，磁盘写入失败会关闭运行时门。
 - `code-review` 随后发现并修复三个问题：重开/恢复不再全文件扫描计数，而是从有界尾部记录恢复最后序号；清除原始样本增加不可撤销确认并使过期预览请求失效；页面明确要求停止前先确认队列项目已经显示。修复后的离线 `:app:testDebugUnitTest :app:compileDebugKotlin :app:compileReleaseKotlin :app:assembleDebugAndroidTest :app:lintDebug` 成功（489 个 actionable tasks：17 executed、472 up-to-date）。该轮发生在用户断开 S24U-HK 之后，因此新的测试 APK只完成编译，新增尾部恢复断言和清除交互尚未在设备上执行；此前 13/13 设备结果不能冒充最终工作树的再次运行。
 
-质量状态仍为“部分实现”：支付宝、微信支付和银行适配器仍不存在，来源健康固定为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力，不证明 provider 覆盖。大量/恶意 Intent、自动化 Compose、真实系统强杀切点和完整设备矩阵未完成。没有真实脱敏样本、解析回放和真机证据时，不执行或声称任何 provider 采集成功。
+2026-07-31 的首批 provider route 结果：
+
+- 用户授权导出的 21 条真实 callback 与 11 张过程截图只保存在两份 Git 忽略的本机私有副本，设备端原始数据未删除。离线安全盘点只将 5/21 归入 4 条严格候选；仓库测试只使用脱敏成功/缺字段/漂移/敏感反例，不包含真实账号、商户或原文。
+- 新增 `:source:alipay` 两条 route、`:source:wechat` 一条 route、`:source:bank:cmb` 一条 route；它们默认关闭，只产生整条通知内无冲突、无外币标记的单一 CNY 金额和方向建议。Samsung 短信、微信红包/转账/提现、支付宝其他事件及招商银行登录/普通交易保持拒绝。微信共享消息频道仍存在同名联系人完全仿照格式的误触发风险，因此只允许待复核。
+- 定向 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks` 已实际执行并 173/173 通过。完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：80 executed、811 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `d76a2c91013bc2991cf8e61d71e52a0083edf33a6bb8ac8b74c253918cfad74e`；x86_64 Release 为 128,419,330 bytes、SHA-256 `62ec182dfed546540d68536458de181abe55e99ff32cab6dd63da7f2b44c1e4e`，两包通过 16 KiB ZIP 对齐。
+- 最终 `code-review` 未发现开放 P0/P1；已修复 parser 身份错配、超限载荷复制、致命错误被吞、带符号/多金额/跨字段冲突/混入外币的 CNY 误判，并以纵向测试确认 provider 建议保持 `WAITING_USER` 且不猜交易对手或资金账户。微信普通消息与支付通知共享频道是平台残余风险：同名联系人完全仿照正文仍可能产生待复核建议，因此该 route 保持默认关闭、实验性且不得自动入账。
+- 用户本轮重新接入手机后，本项目 ADB server 在沙箱外成功启动，但设备列表仍为空；没有安装、读取通知或运行 connected 测试。因此 4 条新 route 的系统 callback、更新/重启、OEM 后台与资源证据仍全部开放。
+
+质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 4 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
 ## 来源漂移
 
