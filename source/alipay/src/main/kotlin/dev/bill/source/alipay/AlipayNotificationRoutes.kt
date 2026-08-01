@@ -35,7 +35,7 @@ object AlipayNotificationRoutes {
     val routes: List<VerifiedNotificationRoute> = listOf(
         route(
             id = "alipay.notification.outbound-cny.v1",
-            safeLabel = "支付宝支出通知（实验性）",
+            safeLabel = "支付宝 · 支出",
             amountField = NotificationField.TEXT,
             direction = ObservedMoneyDirection.OUTBOUND,
             matcher = { content ->
@@ -52,7 +52,7 @@ object AlipayNotificationRoutes {
         ),
         route(
             id = "alipay.notification.balance-receipt-cny.v1",
-            safeLabel = "支付宝余额收款通知（实验性）",
+            safeLabel = "支付宝 · 余额收款",
             amountField = NotificationField.TITLE,
             direction = ObservedMoneyDirection.INBOUND,
             matcher = { content ->
@@ -77,7 +77,7 @@ object AlipayNotificationRoutes {
                 category = null,
                 contentMatcher = ::matchesConfirmedFundBuy,
             ),
-            safeLabel = "支付宝基金申购确认通知（实验性）",
+            safeLabel = "支付宝 · 基金申购",
             parserFactory = ::AlipayConfirmedFundBuyParser,
         ),
     )

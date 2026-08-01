@@ -1558,7 +1558,7 @@ private fun LocalDelimitedStatementSession.initialMappingState(): StatementImpor
         columns = header.mapIndexed { index, label ->
             StatementImportColumnUi(
                 index = index,
-                label = label.safePreviewText(fallback = "列 ${index + 1}"),
+                label = label.safePreviewText(fallback = "#${index + 1}"),
             )
         },
         sampleRows = previewRows.take(MAX_UI_SAMPLE_ROWS).map { row ->

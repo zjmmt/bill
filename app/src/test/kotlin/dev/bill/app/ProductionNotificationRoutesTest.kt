@@ -20,7 +20,9 @@ class ProductionNotificationRoutesTest {
             setOf(SourceFamily.ALIPAY, SourceFamily.WECHAT, SourceFamily.BANK),
             parsers.map { it.identity.sourceFamily }.toSet(),
         )
-        assertTrue(presentations.all { "实验性" in it.safeLabel })
+        assertTrue(presentations.all { notificationRouteLabelResourceId(it.routeId) != null })
+        assertTrue(presentations.all { " · " in it.safeLabel })
+        assertFalse(presentations.any { "实验性" in it.safeLabel })
         assertFalse(
             presentations.any { presentation ->
                 presentation.safeLabel.contains("com.") || presentation.safeLabel.contains("cmb.pb")

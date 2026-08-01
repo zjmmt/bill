@@ -52,7 +52,7 @@ object CmbNotificationRoutes {
                         } == true
                 },
             ),
-            safeLabel = "招商银行快捷支付退款通知（实验性）",
+            safeLabel = "招商银行 · 退款",
             parserFactory = { route ->
                 FinancialNotificationParser(
                     route = route,

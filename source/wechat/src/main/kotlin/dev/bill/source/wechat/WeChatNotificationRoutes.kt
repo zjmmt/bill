@@ -54,7 +54,7 @@ object WeChatNotificationRoutes {
                         ) != null
                 },
             ),
-            safeLabel = "微信支付付款通知（中文正文待样本；会本地检查同频道消息，实验性）",
+            safeLabel = "微信支付 · 付款",
             parserFactory = { route ->
                 FinancialNotificationParser(
                     route = route,

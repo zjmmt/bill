@@ -1299,11 +1299,6 @@ private fun LocalOnlyStartupDeclaration(
                     style = MaterialTheme.typography.displaySmall,
                     fontWeight = FontWeight.ExtraBold,
                 )
-                Text(
-                    text = stringResource(R.string.local_only_body),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 PosterPanel(
                     modifier = Modifier.fillMaxWidth(),
                     contentPadding = PaddingValues(20.dp),
@@ -1554,11 +1549,6 @@ private fun CapturePermissionTutorialPanel(
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Text(
-                text = stringResource(R.string.capture_tutorial_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             HorizontalDivider()
             Text(
                 text = stringResource(R.string.capture_tutorial_notification_title),
@@ -1576,7 +1566,31 @@ private fun CapturePermissionTutorialPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (notificationRouteSettings.hasVerifiedRoutes) {
+                Text(
+                    text = stringResource(R.string.notification_access_scope_notice),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (
+                    notificationRouteSettings.routes.any { route ->
+                        route.routeId == WECHAT_PAYMENT_NOTIFICATION_ROUTE_ID
+                    }
+                ) {
+                    Text(
+                        text = stringResource(R.string.notification_wechat_scope_notice),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             notificationRouteSettings.routes.forEach { route ->
+                val labelResourceId = notificationRouteLabelResourceId(route.routeId)
+                val routeLabel = if (labelResourceId == null) {
+                    route.safeLabel
+                } else {
+                    stringResource(labelResourceId)
+                }
                 val routeToggleEnabled =
                     notificationRouteSettings.updatingRouteId == null &&
                         !notificationRouteSettings.lastUpdateFailed
@@ -1602,7 +1616,7 @@ private fun CapturePermissionTutorialPanel(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            text = route.safeLabel,
+                            text = routeLabel,
                             modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
@@ -1634,11 +1648,6 @@ private fun CapturePermissionTutorialPanel(
                 notificationRouteSettings.hasEnabledRoutes ||
                 notificationHealth.hasSystemAccess
             ) {
-                Text(
-                    text = stringResource(R.string.notification_access_scope_notice),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 OutlinedButton(
                     onClick = onOpenNotificationAccessSettings,
                     modifier = Modifier.fillMaxWidth(),
@@ -1671,17 +1680,6 @@ private fun CapturePermissionTutorialPanel(
                     NotificationCaptureHealthState.RECENT_FAILURE,
                     -> MaterialTheme.colorScheme.error
                 },
-            )
-            HorizontalDivider()
-            Text(
-                text = stringResource(R.string.capture_tutorial_accessibility_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = stringResource(R.string.capture_tutorial_accessibility_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             HorizontalDivider()
             Text(

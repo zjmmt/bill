@@ -126,7 +126,8 @@ class AppContainer(context: Context) {
             repository = RoomLedgerRepository(database),
             sourceReviewRepository = sourceRepository,
             notificationRouteLabelResolver = NotificationRouteLabelResolver { connectorId ->
-                notificationRouteCatalog.safeLabelForConnector(connectorId)
+                notificationRouteLabelResourceId(connectorId)?.let(context::getString)
+                    ?: notificationRouteCatalog.safeLabelForConnector(connectorId)
             },
         )
     }
