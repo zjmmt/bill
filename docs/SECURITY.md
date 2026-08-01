@@ -1,8 +1,8 @@
 # 安全、隐私与权限模型
 
-- 状态：部分实现；通用显式文本、用户映射 CSV/TSV 行证据、单次 PNG 收据证据、默认关闭的首批 provider 通知 route、Debug 通知模板采样隔离、持久观察去重、逐项载荷生命周期与租约暂存已加固；单次截图/Photo Picker 本地 OCR 已完成未签名 Release 静态审计，小范围侧载签名接线已验证，固定内部测试密钥、真机发布门、发布级威胁模型和全量删除未完成
+- 状态：部分实现；通用显式文本、用户映射 CSV/TSV 行证据、单次 PNG 收据证据、默认关闭的首批 provider 通知 route、Debug 通知模板采样隔离、持久观察去重、逐项载荷生命周期与租约暂存已加固；单次截图/Photo Picker 本地 OCR 已完成未签名 Release 静态审计，固定内部测试密钥与首个双 ABI 签名包已在仓库外创建并验签，密钥备份、真机发布门、发布级威胁模型和全量删除未完成
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：本地优先承诺、Android 平台边界、当前 Manifest/来源证据/持仓实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012、ADR-0014
 
 ## 保护目标
@@ -16,7 +16,7 @@
 - 不可信：通知文本、任意导入/分享内容、文件名/MIME、外部 Intent、外部存储、剪贴板、第三方 App、备份目的地。Sharesheet 是产品上的显式入口，不提供发送 App 或用户手势的密码学证明。
 - 默认不存在的可信方：项目方服务器。引入任何远程处理都需要新的 ADR、明确同意和删除协议。
 
-小范围侧载使用独立、长期固定的内部测试签名，不使用 Android 默认 Debug key 维持测试数据升级，也不冒充未来商店生产身份。`app/build.gradle.kts` 只从当前进程环境读取版本、外部 keystore 路径、alias 和密码；四项签名参数必须全有或全无，显式签名时 keystore 必须存在且位于仓库外。`scripts/release.cmd` 不打印秘密或用户提供的版本文本，以 `--no-daemon` 运行单次构建并用 SDK `apksigner` 验证双 ABI APK。`*.jks`、`*.keystore`、密码、签名 APK 和本机启动器不得提交。一次性一日测试证书仅用于验证流程，随后连同所签 APK 一并删除；项目负责人已选择固定内部测试签名，但长期密钥与备份尚未创建。
+小范围侧载使用独立、长期固定的内部测试签名，不使用 Android 默认 Debug key 维持测试数据升级，也不冒充未来商店生产身份。`scripts/internal-signing.cmd` 只在真实本机控制台接受隐藏密码；首次创建使用固定 alias、拒绝覆盖并把 keystore 放在仓库同级隔离目录，日常构建先校验密码和仓库内公开证书 SHA-256 pin，再只通过当次子进程环境交给发行链。pin 不含私钥或密码，可提交并防止 keystore 丢失后误生成同名新身份；pin 已存在而 keystore 缺失时必须从备份恢复。Java 启动器的命令参数、Git 和日志均不包含密码；字符缓冲在使用后擦除，但 Java/Gradle 环境字符串无法宣称可原地清零，因此 `release.cmd` 使用 `--no-daemon`，Gradle 返回后立即清掉密码变量，子 CMD 随即退出。`app/build.gradle.kts` 只从当前进程环境读取版本、外部 keystore 路径、alias 和密码；四项签名参数必须全有或全无，显式签名时 keystore 必须存在且位于仓库外。`scripts/release.cmd` 不打印秘密或用户提供的版本文本，并用 SDK `apksigner` 验证双 ABI APK。`*.jks`、`*.keystore`、`*.p12`、`*.pfx`、密码、签名 APK 和本机私有文件不得提交。一次性一日测试证书已销毁；固定内部测试 keystore 和首个 `1/0.1.0-internal.1` 双 ABI 包已在本机创建，两个 APK 的单一签名证书一致。keystore 离线/异盘备份仍是维护者必须完成的人工门。
 
 ## 数据处理规则
 
@@ -37,7 +37,7 @@
 
 当前分享文本入口只接受 `ACTION_SEND` + `text/plain`；SAF 入口只接受用户当次选择的 `content://`、`text/plain`、CSV 或 TSV。不透明文本证据路径仍以 64 KiB 和严格 UTF-8 为界。结构化 CSV/TSV 路径最多读取 2 MiB，严格 UTF-8，并限制为 5000 数据行、64 列、1024 字符/单元格和 16 Ki 字符/记录；CSV 引号状态机拒绝尾随字符、未闭合引号、NUL 和超限输入。映射会话只在进程内保留有界表头/行，确认后按行重编码证据，不复制整份文件到证据区。另一个 Sharesheet 路径只接受当次 `content://`、声明和 `ContentResolver` 解析后均为 `image/png` 的单张图片，最多复制 4 MiB，并在不解码像素的前提下校验 PNG 签名、头信息、分块与 CRC。所有 URI 只在读取边界使用，不调用持久 URI 授权，也不保存 URI/原文件名；临时文件字节在解析/暂存完成或失败后擦除。证据使用 opaque 文件名、原子写入和 SHA-256 读取校验。错误只暴露封闭诊断和修复动作，不回显正文、单元格或图像内容。Manifest 设置 `allowBackup=false` 与 `usesCleartextTraffic=false`，当前应用不声明网络或危险权限。这些措施不等于证据已应用层加密。
 
-开发中的 Quick Settings/Photo Picker OCR 是独立于 Sharesheet PNG 的路径：专用无障碍 service 只在用户点磁贴后调用一次 `takeScreenshot`，`canRetrieveWindowContent=false`、无手势、无目标包/窗口读取。单次 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入之前，capture lease 以一次 `ACTIVE -> COMMITTING` CAS 交出取消权。CAS 前的超时/断连会取消 Job 且不得进入有副作用的准入路径；cancellation handle 仍在注册时只登记待取消并进入收尾，不会提前宣称取消成功。CAS 后先释放 HardwareBuffer/Bitmap，再在独立的 15 秒协作式截止内运行有界、无网络的本地 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回中性的“结果未确认”，不把可能已经落盘的工作误报成 OCR 失败。若提交或既成结果未及时回调，再等一次 15 秒收尾宽限后释放单飞门，opaque request identity 隔离其后任何迟到回调且不让处理 Job 持有已销毁的 service。编码后的转录字节在所有取消、异常和成功路径都会擦除；本地提交未知态产生的暂存中间态由既有 5 分钟 staging recovery 回收。Photo Picker 每批只取得用户明确选择的前 1–5 张图片并逐张处理，活动批次拒绝第二批，只发布一次汇总。两条路径将原始像素作为瞬时输入，仅把有界 OCR 转录接入既有私有证据链。转录 v2 只保留每行文本与 0..10000 归一化整数矩形；不保留像素、颜色、logo 或 provider 身份，v1 仍可重放。OCR 值对象的字符串表示会遮蔽识别文本，生产代码也不得记录转录。当前运行时是随包 PP-OCRv6 small、ONNX Runtime Android 1.24.3 与 OpenCV Android 4.12.0；模型哈希固定，任务零排队、两条 CPU 线程、batch 1、最长边 1600，建会话前显式关闭 telemetry，并在任务结束释放会话。依赖 AAR 与当前未签名 Release 分包的静态审计只发现应用自身签名级权限，没有网络、短信、媒体库权限或传输/调度组件；港版 S24 Ultra 合成三语推理已通过，但真实支付页面、ELF 页兼容、签名发行和目标真机资源门尚未完成，因此仍标为 Experimental。
+开发中的 Quick Settings/Photo Picker OCR 是独立于 Sharesheet PNG 的路径：专用无障碍 service 只在用户点磁贴后调用一次 `takeScreenshot`，`canRetrieveWindowContent=false`、无手势、无目标包/窗口读取。单次 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入之前，capture lease 以一次 `ACTIVE -> COMMITTING` CAS 交出取消权。CAS 前的超时/断连会取消 Job 且不得进入有副作用的准入路径；cancellation handle 仍在注册时只登记待取消并进入收尾，不会提前宣称取消成功。CAS 后先释放 HardwareBuffer/Bitmap，再在独立的 15 秒协作式截止内运行有界、无网络的本地 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回中性的“结果未确认”，不把可能已经落盘的工作误报成 OCR 失败。若提交或既成结果未及时回调，再等一次 15 秒收尾宽限后释放单飞门，opaque request identity 隔离其后任何迟到回调且不让处理 Job 持有已销毁的 service。编码后的转录字节在所有取消、异常和成功路径都会擦除；本地提交未知态产生的暂存中间态由既有 5 分钟 staging recovery 回收。Photo Picker 每批只取得用户明确选择的前 1–5 张图片并逐张处理，活动批次拒绝第二批，只发布一次汇总。两条路径将原始像素作为瞬时输入，仅把有界 OCR 转录接入既有私有证据链。转录 v2 只保留每行文本与 0..10000 归一化整数矩形；不保留像素、颜色、logo 或 provider 身份，v1 仍可重放。OCR 值对象的字符串表示会遮蔽识别文本，生产代码也不得记录转录。当前运行时是随包 PP-OCRv6 small、ONNX Runtime Android 1.24.3 与 OpenCV Android 4.12.0；模型哈希固定，任务零排队、两条 CPU 线程、batch 1、最长边 1600，建会话前显式关闭 telemetry，并在任务结束释放会话。依赖 AAR 与未签名 Release 分包的静态审计只发现应用自身签名级权限，没有网络、短信、媒体库权限或传输/调度组件；固定内部测试签名 APK 已构建并完成身份/对齐验证，arm64 正式签名包已在港版 S24 Ultra 覆盖安装并冷启动。合成三语推理已通过，但真实支付页面、ELF 页兼容、签名 Release 资源和目标设备矩阵尚未完成，因此仍标为 Experimental。
 
 通知服务是另一条边界：它不调用 `getActiveNotifications()`，不读 history、不取消/点击外部通知、不启动 UI、前台服务、周期任务或唤醒锁。生产 catalog 现有 5 条默认关闭 route；空目录、不匹配 metadata、关闭 runtime 都不调用正文读取器。用户开启后，只有包名、具体 channel 和 category 精确匹配才读取五个有界字段；正文规则不匹配即在内存丢弃。微信支付与普通微信消息共用频道，因此微信 route 的安全标签明确披露会在本机检查同频道消息；同名联系人发送完全相同格式时仍可能生成待复核建议，绝不能自动过账。支付宝基金 route 只输出唯一确认金额、方向和 `INVEST_BUY` 提示，不从通知提取或猜测标的，必须由用户绑定既有持仓。Samsung 短信 route 因无法在正文前排除普通短信、OTP 和私人消息而未加入。候选最多进入容量 16 的单消费者队列，满队列直接丢弃。观察去重在证据前取得独立租约，进程死亡恢复时复用 command。匹配信封只生成可证明的来源建议并进入待复核链，不能直接正式入账。首次启动和设置页明确声明本地、不走网络，并把通知、读屏和单次截图权限拆开说明。
 
@@ -49,13 +49,13 @@ Room v5 在文件写入前登记不含原文的 5 分钟租约，RawEvent 事务
 
 ## 权限策略
 
-- 通知访问：系统授权后，生产路径仍必须命中已验证的包名、具体 Android 通知渠道和类别模板；禁止包级通配。4 条 route 默认关闭且可逐条暂停，未命中 metadata 不读取正文；已启用但共享频道的 route 会在本机读取有界正文后过滤，必须在开关标签披露。Debug 研究入口是独立、显式且仅用于新样本的开发边界，不得进入 Release 或被宣传为完整自动记账。
+- 通知访问：系统授权后，生产路径仍必须命中已验证的包名、具体 Android 通知渠道和类别模板；禁止包级通配。5 条 route 默认关闭且可逐条暂停，未命中 metadata 不读取正文；已启用但共享频道的 route 会在本机读取有界正文后过滤，必须在开关标签披露。Debug 研究入口是独立、显式且仅用于新样本的开发边界，不得进入 Release 或被宣传为完整自动记账。
 - 通知发送：只用于待确认、导入结果和安全提醒；拒绝后核心账本仍可用。
 - 文件：通过 SAF 由用户逐次选择；不申请广泛存储访问、不持久化 URI/原文件名。
 - 分享文本：通过 exported Activity 接收外部 Intent；不信任发送方、MIME 声明或正文，不推断 provider，不自动过账。
 - 收据截图（Sharesheet）：通过同一 exported Activity 接收一次系统 Sharesheet `image/png`；不信任发送方或声明 MIME，要求 `ContentResolver` 再确认类型，读取后不保留 URI/原文件名或临时字节，不申请 Photo Picker/相册权限，不解码、预览或 OCR，也不自动过账。
 - 悬浮窗：非 MVP 默认路径；如未来提供，必须独立开关和解释。
-- 无障碍：当前有一个专用、用户可撤销的单次截图 service，声明 `canTakeScreenshot=true` 与 `canRetrieveWindowContent=false`，不读取页面节点、包名、窗口标题或事件文字，不执行手势、点击或滚动；它仅响应用户点磁贴后的单一请求。service 按 [Android 官方配置要求](https://developer.android.com/guide/topics/ui/accessibility/service) 导出给系统设置，但同时强制 `android.permission.BIND_ACCESSIBILITY_SERVICE`，普通第三方 App 不能绑定；无障碍详情页使用的导出 relay 不接收或回传数据，只把用户带到 Bill 内的权限教程。本地引擎、未签名 Release 静态门与一台设备的合成三语推理已通过，但真实支付页面、资源、完整真机和签名发布门尚未通过。未来若研究被动读取结果页，必须另用最小事件/包名范围、明确同意和本地处理的 service；不得顺带取得截图、录屏、轮询、自动点击、发起交易或在非目标页面提取内容。任何实验版本都必须先完成政策、最小用途、耗电和风险评审。
+- 无障碍：当前有一个专用、用户可撤销的单次截图 service，声明 `canTakeScreenshot=true` 与 `canRetrieveWindowContent=false`，不读取页面节点、包名、窗口标题或事件文字，不执行手势、点击或滚动；它仅响应用户点磁贴后的单一请求。service 按 [Android 官方配置要求](https://developer.android.com/guide/topics/ui/accessibility/service) 导出给系统设置，但同时强制 `android.permission.BIND_ACCESSIBILITY_SERVICE`，普通第三方 App 不能绑定；无障碍详情页使用的导出 relay 不接收或回传数据，只把用户带到 Bill 内的权限教程。本地引擎、未签名 Release 静态门、固定签名 APK 身份验证与一台设备的合成三语推理已通过，但真实支付页面、签名包资源/安装和完整真机门尚未通过。未来若研究被动读取结果页，必须另用最小事件/包名范围、明确同意和本地处理的 service；不得顺带取得截图、录屏、轮询、自动点击、发起交易或在非目标页面提取内容。任何实验版本都必须先完成政策、最小用途、耗电和风险评审。
 - 短信/通话记录：Play 主线不申请；银行短信解析只能作为单独研究，不得偷偷降级启用。
 - 网络：核心功能不需要网络。未来价格更新或可选同步必须按域名、用途和数据类别披露。
 

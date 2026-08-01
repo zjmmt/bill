@@ -1,8 +1,8 @@
 # ExecPlan 0009：基金持仓与支付宝基金通知纵向切片
 
-- 状态：进行中；代码、离线构建和本地提交完成，真机验收与远端推送待完成
+- 状态：进行中；代码、离线构建、提交与远端推送完成，真机验收待完成
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：项目负责人确认的手工/OCR 持仓方案、2026-07-31 本地私有通知样本、ADR-0014、当前 Room v9 与本地 OCR 实现
 
 ## 目的与用户可见结果
@@ -51,7 +51,7 @@
 - [x] 2026-08-01 - 补脱敏成功/受理/涨幅/漂移、简体/繁体别名、candidate v1 兼容、应用、UI 和仓储回归；定向 208-task 套件通过。
 - [x] 2026-08-01 - 完成 `code-review`、完整 JVM/Lint 与 Debug/Release/AndroidTest APK 构建；修复“投资账户不一定对应真实持仓”的完整性缺口和生产 catalog 仍断言 4 条 route 的陈旧测试。
 - [x] 2026-08-01 - 代码、测试和 Room schema 已提交为 `5fb456e`；暂存清单不含 `evidence.local/`。
-- [ ] 推送本地提交；远端同步取决于本机到 `github.com:443` 的网络恢复。
+- [x] 2026-08-01 - 已确认提交 `5fb456e` 是当前 `origin/main` 的祖先，基金切片已经随主分支推送；不再保留陈旧网络阻塞项。
 - [ ] 真机验收轮 - 在项目负责人重新明确连接设备后验证选图、OCR、通知 callback 与升级；历史连接不构成本轮授权。
 
 ## 意外发现
@@ -105,4 +105,4 @@ cmd.exe /d /s /c git diff --check
 
 ## 结果与复盘
 
-代码纵向切片和离线质量门已完成，并以 `5fb456e` 提交。修复陈旧 4-route 断言后，`test lint` 成功（569 个 actionable tasks：30 executed、539 up-to-date）；`assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（711 个 actionable tasks：77 executed、1 from cache、633 up-to-date）；文档检查与 `git diff --check` 通过。审查还把投资草稿的目标从“看起来像投资账户”收紧为“必须存在对应的用户确认持仓”。真实设备发布门保持待办，不以 APK 编译替代；本机 Git 提交不等于远端推送成功。
+代码纵向切片和离线质量门已完成，并以 `5fb456e` 提交且已进入 `origin/main`。修复陈旧 4-route 断言后，`test lint` 成功（569 个 actionable tasks：30 executed、539 up-to-date）；`assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（711 个 actionable tasks：77 executed、1 from cache、633 up-to-date）；文档检查与 `git diff --check` 通过。审查还把投资草稿的目标从“看起来像投资账户”收紧为“必须存在对应的用户确认持仓”。真实设备发布门保持待办，不以 APK 编译或远端同步替代。

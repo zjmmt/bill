@@ -1,8 +1,8 @@
 # ADR-0012：用户触发的下拉磁贴截图与随包离线 OCR
 
-- 状态：部分实现；本地引擎替换、空间转录 v2、未签名 Release 静态审计、S24U-HK 合成三语/简中状态回归与 11 张本机私有真实页面回放完成；真实简中微信页面、Release 资源、签名发行与完整真机发布门未完成
+- 状态：部分实现；本地引擎替换、空间转录 v2、未签名 Release 静态审计、固定内部签名 APK 身份/对齐及 arm64 安装冷启动、S24U-HK 合成三语/简中状态回归与 11 张本机私有真实页面回放完成；真实简中微信页面、签名 Release 资源与完整真机发布门未完成
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：项目负责人 2026-07-26 的一键补录要求、Android `TileService`/`AccessibilityService.takeScreenshot` 平台边界、当前 Android/依赖审计、`ocr/paddle/MODEL_PROVENANCE.md`、[PaddleOCR Android deployment](https://www.paddleocr.ai/latest/en/version3.x/inference_deployment/cross_platform/android_deployment.html)、ADR-0001、ADR-0010、ADR-0011
 
 ## 背景
@@ -19,7 +19,7 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 早期原型依赖 bundled Chinese ML Kit Text Recognition，因官方数据披露和传输/调度组件未通过本项目发布门而被移除。当前实现改用静态随包的 PP-OCRv6 small ONNX 检测与统一多语言识别模型、ONNX Runtime Android 1.24.3 和 OpenCV Android 4.12.0；模型与许可哈希固定，建会话前显式关闭 ONNX Runtime telemetry，AAR 静态审计未发现网络权限、Android 组件或传输依赖。
 
-引擎替换已通过源码、依赖和当前未签名 Release 分包的静态门：包内模型/ABI、权限、组件、体积、哈希与 16 KiB ZIP 对齐已审计。S24U-HK 上的一组合成中/英/日支付文本 instrumentation 证明模型和原生运行时可加载、推理并释放；11 张本机私有真实繁中/英文支付过程截图在解析规则修正后金额与预期语义均为 11/11，程序绘制的简中四状态页也通过定向真机回归。这仍不是真实简中微信页面、签名发行或完整资源证据；在系统截图/选图 UI、ELF 页兼容和三台目标设备 Release 资源验收完成前，截图/OCR 只能作为开发中实验，不能作为支付宝、微信支付、银行支持的对外承诺。发布版必须继续证明没有运行时模型/规则下载或上传、没有网络权限和遥测传输/调度组件，并实测准确性、内存、耗时和空闲释放。
+引擎替换已通过源码、依赖和当前未签名 Release 分包的静态门：包内模型/ABI、权限、组件、体积、哈希与 16 KiB ZIP 对齐已审计；固定内部测试签名的双 ABI 包另已完成单一证书身份与 ZIP 对齐验证，arm64 正式签名包已在 S24U-HK 覆盖安装并冷启动。S24U-HK 上的一组合成中/英/日支付文本 instrumentation 证明模型和原生运行时可加载、推理并释放；11 张本机私有真实繁中/英文支付过程截图在解析规则修正后金额与预期语义均为 11/11，程序绘制的简中四状态页也通过定向真机回归。这仍不是真实简中微信页面、签名 Release 资源或完整资源证据；在系统截图/选图 UI、ELF 页兼容和三台目标设备 Release 资源验收完成前，截图/OCR 只能作为开发中实验，不能作为支付宝、微信支付、银行支持的对外承诺。发布版必须继续证明没有运行时模型/规则下载或上传、没有网络权限和遥测传输/调度组件，并实测准确性、内存、耗时和空闲释放。
 
 ### 用户动作和权限边界
 
@@ -31,7 +31,7 @@ Android API 30 起，用户显式启用的 `AccessibilityService` 可以声明�
 
 ### 本地 OCR 与证据
 
-1. 发布版 OCR 使用随 APK 静态打包的 PP-OCRv6 small 与本地 ONNX Runtime/OpenCV，不在运行时下载模型、规则或上传截图；未签名 Release 已复核该静态边界，签名发行包仍须再次复核。
+1. 发布版 OCR 使用随 APK 静态打包的 PP-OCRv6 small 与本地 ONNX Runtime/OpenCV，不在运行时下载模型、规则或上传截图；未签名 Release 已复核静态边界，固定内部签名包已通过身份/ZIP 对齐，仍须在签名包上复核资源、Manifest/依赖边界和真机运行。
 2. 每次只处理当前显示的一帧。HardwareBuffer、Bitmap、PNG/转录临时字节均有尺寸、像素和并发上限，并在成功、失败或取消后尽快释放；没有摄像流、轮询 OCR 或图库扫描。
 3. 首片将原始截图作为瞬时输入，持久化一个版本化、严格 UTF-8、有界的 OCR 转录证据；v2 为每行保留文本与 0..10000 归一化整数矩形，v1 文本证据继续可重放。原始 Bitmap、截图文件、颜色、logo 和 provider 身份不落证据、公共目录、日志、崩溃报告或遥测。转录证据进入既有 app-private、容量、保留期限、逐项清除和 RawEvent/ParseAttempt 链。
 4. 通用 OCR 规则只能生成 `GENERIC/PHOTO_OCR` 待复核建议。它可从合成样本中保守提出金额、方向和对手方候选，但不得据此声称支付宝、微信或某银行已支持，不得自动选择资金账户、自动关联转账/退款或自动正式入账。

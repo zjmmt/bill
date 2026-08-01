@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-08-02
 - 事实来源：MVP、架构、当前 Gradle 工程、构建与测试结果
 
 ## 目的与用户可见结果
@@ -74,9 +74,9 @@
 - [ ] 补大量/恶意 Intent、自动化 Compose 清除确认，以及真实 Android 系统强杀切点/新旧 command 乱序恢复测试。
 - [ ] 确认国行小米具体型号和系统构建，为三台设备完成清单；若均为高端设备，再补一台低内存中端设备。
 - [ ] 在港版 S24 Ultra、国行 S24 Ultra 和已建档国行小米上执行兼容文档的首批必测用例并保存脱敏证据。
-- [ ] 获取并脱敏三类来源样本；确定首批具体银行名单。
-- [ ] 将现有 RawEvent 表与来源契约接入真实 Capture/Parse/Normalize → Draft 流水线；在此之前三类来源保持 `FALLBACK_REQUIRED`。
-- [ ] 建立适配器测试工具，分别跑通支付宝、微信和一个银行样本的解析到草稿。
+- [x] 2026-08-01 - 以本机私有真实通知研究出支付宝、微信支付与招商银行的首批窄范围，并只把 5 条脱敏 fixture/route 提交到仓库；其他银行按项目负责人决定延期，原始样本继续留在 Git 外。
+- [x] 2026-08-01 - 将通知 callback 后的共享 transport、不可变 RawEvent、ParseAttempt、proposal 与 Draft 纵向流水线接入生产注册表；5 条 route 默认关闭且仍为 `FALLBACK_REQUIRED`，因为真实系统 callback/OEM 存活与发布资源门未完成。
+- [x] 2026-08-01 - 建立生产注册表回放测试，分别把支付宝 3 条、微信 1 条和招商银行 1 条脱敏通知从目录/元数据门送到待复核草稿；未知格式失败关闭，不把回放冒充真机 callback。
 - [x] 2026-07-30 - 建立 GitHub Actions 文档 CI，在 push/PR 上运行 `scripts/check-docs.ps1`。
 - [x] 2026-07-31 - 建立架构依赖/敏感边界 CI、本地 CMD 聚合门和正反例；生成器维护 Gradle 依赖、Room schema 版本、源 Manifest 与测试源码事实。真实 provider 支持矩阵仍须由注册表和脱敏回放证据另行生成，不得手工伪造。
 
@@ -112,7 +112,7 @@
 - 预提交文件所有权不能只靠文件年龄推断。Room v5 先登记租约、RawEvent 事务消费、恢复者 CAS 接管后，16 MiB/512 份预算可同时覆盖已提交与暂存行；遗留目录扫描仍必须有界，截断时拒绝新输入，不能宣传为对任意文件系统状态的绝对配额证明。
 - Activity 重建和 `singleTop` 新 Intent 会让“处理完成后直接清空当前 Intent”产生竞态；结果事件必须携带 command ID，只能消费匹配的 Intent，且过期结果不得抢回当前复核 UI，忙碌状态也不能静默丢掉新分享。
 - 证据概览 Flow 只刷新聚合计数，不会自动替换 keyset 历史页；MuMu 手工验收因此发现新分享已入库但列表仍指向旧首项。捕获、完成/忽略来源复核和证据操作成功后必须显式重载第一页，并用 generation 丢弃被取消请求的迟到结果。
-- 相同证据哈希不等于相同经济事件。当前只把它显示为“可能重复”，不自动合并；真正的去重要等待 `TxRelation`、真实样本和可撤销解释。
+- 相同证据哈希不等于相同经济事件。普通重复仍只显示“可能重复”且不自动合并；转账、还款、退款和 `FUNDED_BY` 已有可撤销、幂等的用户确认关系，低置信度跨来源事件继续留给人工复核。
 - 来源证据与建议目前会持续累积。单独加入硬配额会在没有删除入口时最终锁死用户，因此保留、删除、容量和分页必须作为同一发布门设计。
 - MuMu 的手工回归发现首条合成分享在关闭工作表后仍是待办，第二条触发了重复提示；两条随后均通过正式“忽略”动作清理，证明关闭与忽略语义必须保持不同。
 
@@ -146,19 +146,19 @@
 
 ### 里程碑 A：Android 与领域基线
 
-已创建 Kotlin/Compose 工程和 `core:model`、`core:domain`、`core:ledger`、`application`、`data:local`、`source:contract` 等模块，并实现手工账户/期初余额/草稿/确认/撤销闭环。审查后的自动化与 MuMu Room instrumentation 已通过；当前先补 provider-neutral evidence spine，再接由脱敏样本驱动的真实来源适配器。
+已创建 Kotlin/Compose 工程和 `core:model`、`core:domain`、`core:ledger`、`application`、`data:local`、`source:contract` 等模块，并实现手工账户/期初余额/草稿/确认/撤销闭环。当前 Room v11、S24U-HK 55/55 Room suite 与受限应用/OCR instrumentation 已通过；完整设备矩阵和真实系统强杀仍是独立发布门。
 
 ### 里程碑 A2：来源证据骨架
 
-已完成 opaque payload ID、SHA-256 证据哈希、结构化 locator、封闭安全诊断和 parser identity；实现 RawEvent 不可变仓储的安全重放/碰撞/重复观察语义、纯 Kotlin `SourceIngestionService` 与通用分享文本 parser。Room v3 将 ParseAttempt、来源建议与 Draft evidence 落库，并通过跨表检查失败关闭。这一阶段只证明 provider-neutral 编排和复核，不生成“已支持支付宝/微信/银行”的产品声明。
+已完成 opaque payload ID、SHA-256 证据哈希、结构化 locator、封闭安全诊断和 parser identity；实现 RawEvent 不可变仓储的安全重放/碰撞/重复观察语义、`SourceIngestionService`、通用文本/文件/OCR入口和 5 条默认关闭的通知 route。Room v11 保存 ParseAttempt、来源建议、Draft evidence、通知观察摘要与关联关系，并通过跨表检查失败关闭。这些证据只证明本地编排和窄范围回放，不生成“已发布支持支付宝/微信/银行”的产品声明。
 
 ### 里程碑 B：样本与适配器试验
 
-建立不进入生产构建的脱敏 fixture 规范。为支付宝、微信和首批银行各选最小通知/文件样本，验证来源身份、解析版本、错误分类和幂等键；任何未知格式安全失败。
+已建立不包含真实原文/账号的脱敏 fixture 规范，并以真实研究确定支付宝支出、支付宝余额收款、支付宝基金确认、微信付款和招商银行快捷退款 5 条窄 route；生产注册表回放验证身份门、解析版本、错误分类、持久观察去重和待复核草稿。文件格式与未列事件仍未知并安全失败。
 
 ### 里程碑 C：关联纵向切片
 
-用合成数据实现支付渠道 + 银行资金腿、通知 + 文件重复、转账和还款四类关系。所有自动关联可撤销并保留证据。
+已用合成/脱敏证据实现转账、信用卡还款、退款和 `FUNDED_BY` 的候选、解释、用户确认、幂等与撤销。系统不自动合并低置信度重复；无法识别的事件继续由用户手工补录。
 
 ### 里程碑 D：工程反馈回路
 
@@ -196,6 +196,6 @@ cmd.exe /d /s /c git diff --check
 
 ## 结果与复盘
 
-截至 2026-07-31，基础已扩展为 Room v7 的受限 CNY/USD 账本、通用分享/SAF 文本证据、显式映射 CSV/TSV 行、单张 PNG 收据、空目录通知安全底座、用户确认的转账/还款/退款对账，以及实验性随包 OCR。最近一次已确认的完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（879 个 actionable tasks），覆盖全部 JVM、Lint、Debug/未签名 Release 分包和三组 AndroidTest APK 编译；AndroidTest 编译不等于设备执行。MuMu API 32 的 32 个设备测试仍只覆盖 v1→v5 的迁移/证据/租约/恢复，v5→v6→v7、结构化导入、对账和 OCR instrumentation 尚未在设备执行。港版 S24 Ultra 另有一次不触碰支付内容的合成应用级冒烟和通知控制/采样合成用例；其受限范围和未完成用例记录在设备兼容文档中。
+截至 2026-08-01，基础已扩展为 Room v11 的受限 CNY/USD 账本、普通账户余额快照、CNY 投资持仓、通用分享/SAF 文本证据、显式映射 CSV/TSV 行、单张 PNG 收据、用户触发 OCR、5 条默认关闭的生产通知 route，以及用户确认的转账/还款/退款/`FUNDED_BY` 对账。最终工作树已有完整 JVM/Lint/Debug/双 ABI 未签名 Release/三组 AndroidTest APK 构建证据；S24U-HK 的 app 16/16 与 Room 55/55 已覆盖 v10→v11、通知目录/仓储、余额快照、投资和关联路径，OCR 另有合成三语、空间链、11 张私有真实过程页与简中合成状态页证据。编译和定向回放仍不等于真实系统 callback 或完整设备发布验收。
 
-计划仍保持进行中：支付宝、微信支付和银行真实适配器/脱敏样本、一般重复与跨 provider 自动关联、投资、大量/恶意 Intent、自动化 Compose/真实系统强杀和三台完整真实设备证据均未完成。已实现的用户确认对账与通用证据入口只能作为 provider-unverified 的部分实现，不能替代三类来源的发布支持。
+计划仍保持进行中：5 条 provider route 的真实系统 callback/OEM 存活、真实简中微信页、自动化 Compose/真实系统强杀、资源门和三台完整真实设备证据尚未完成；其他银行与事件按当前范围延期。一般重复与低置信度跨 provider 关系有意保持用户确认或手工补录，不再把“自动合并”列为基础可用性的必需条件。现有脱敏回放和用户确认对账不能替代三类来源的发布支持。

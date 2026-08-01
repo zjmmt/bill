@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：项目负责人 2026-07-25 的自动草稿与本地负担要求、ADR-0001、ADR-0009、ADR-0010、ADR-0011、当前 Android/Room 工程
 
 ## 目的与用户可见结果
@@ -61,7 +61,7 @@
 - [x] 2026-08-01 - 增加不访问设备数据库或私有真实样本的生产接线回放门：5 条脱敏 route 逐条经过生产 catalog、metadata/content gate、观察租约、通知证据 ingress、包含通用通知 parser 的生产 registry 和来源 proposal，并断言金额、方向、有限事件提示与 `WAITING_USER` 语义。定向六模块命令 `BUILD SUCCESSFUL`（173 个 actionable tasks 全部执行）；该回放只证明 Android callback 之后的生产接线，不替代真实系统 callback。
 - [ ] 2026-07-26 - 补真实系统 callback 更新回放、容量和敏感日志回归；没有这组设备验证时不得开放真实 provider 模板或把 listener 声称为完整账单覆盖。
 - [ ] 待项目负责人明确授权真实内容范围后 - 在 S24U-HK、国行 S24U、已建档小米执行通知资源基线；记录 OEM 回调存活与可选省电设置，不能用模拟器替代。
-- [ ] 待通知基线、商店政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 换成静态随包 PP-OCRv6 small，并通过代码/AAR/未签名 Release 的本地无网络静态检查；实际三语推理、签名发行、ELF 页兼容与目标真机资源门未完成前仍不得发布。
+- [ ] 待通知基线、政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 换成静态随包 PP-OCRv6 small，并通过代码/AAR/未签名 Release 的本地无网络静态检查、S24U-HK 合成三语/私有真实页回放和固定内部签名 APK 身份/对齐验证；ELF 页兼容、签名包资源/安装和目标真机门未完成前仍不得发布。
 
 ## 意外发现
 
@@ -180,4 +180,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付受控通知证据基础、5 条默认关闭的 provider 实验 route、同一生产 catalog/registry 的五路整链回放、Room v11 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 的最新 app 16/16 是合成 instrumentation 与启动验证，不包含这 5 条 route 的真实系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6、空间转录 v2，并通过本地无网络静态门、S24U-HK 合成三语推理和合成多金额空间链；真实系统 callback、签名发行和当前范围要求的发布收口仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付受控通知证据基础、5 条默认关闭的 provider 实验 route、同一生产 catalog/registry 的五路整链回放、Room v11 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 的最新 app 16/16 是合成 instrumentation 与启动验证，不包含这 5 条 route 的真实系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6、空间转录 v2，并通过本地无网络静态门、S24U-HK 合成三语/空间推理、私有真实页回放、固定内部签名 APK 身份/对齐及 arm64 安装冷启动验证；真实系统 callback、签名 Release 资源和当前范围要求的发布收口仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。

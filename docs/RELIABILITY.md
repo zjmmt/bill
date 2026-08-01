@@ -2,7 +2,7 @@
 
 - 状态：部分实现；账本、不可变余额快照、CNY 投资持仓、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、5 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、最终工作树 16 个 app、55 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，真实 callback、真实简中页面、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ADR-0015、ADR-0016、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、ExecPlan 0010、ExecPlan 0011、Android 设备兼容与真机验收
 
 ## 正确性不变量
@@ -127,11 +127,16 @@
 - 强制重跑 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks --console=plain` 成功（173 个 actionable tasks 全部执行）。测试证据、RawEvent、proposal 与观察仓储均为内存实现，没有连接目标数据库、设备或 `evidence.local/**`。
 - 指定 `code-review` 未发现开放 P0–P2；审查修正了仍声称生产 catalog 为空和发布门始终关闭的两处过期注释。该结果只覆盖 Android callback 之后的生产接线，不能替代真实系统 callback、更新/重启与 OEM 资源验证。
 
-2026-08-01 的小范围侧载签名接线：
+2026-08-01 至 2026-08-02 的小范围侧载签名接线：
 
 - 不设置签名环境时，强制重跑 `:app:assembleRelease --rerun-tasks --console=plain` 成功（342 个 actionable tasks 全部执行），输出仍是两个 `release-unsigned` 审计 APK；默认版本保持 `1/0.1.0`，既有构建和 CI 行为未被偷偷改成签名发行。
 - 使用仓库外、有效期一天的一次性 PKCS12 测试密钥，把版本覆盖为 `2/0.1.0-test.1` 后两次完整运行 `scripts\release.cmd` 均成功；最终脚本以 `--no-daemon` 执行（343 个 actionable tasks：5 executed、338 up-to-date），SDK `apksigner` 验证 arm64-v8a 与 x86_64 APK 均通过。临时 keystore、测试包装脚本和两个不可继续升级的临时签名 APK随后均已删除，没有创建长期或生产身份。
-- 缺必填变量、只提供部分签名参数、非法 `versionCode` 和把现有文件冒充仓库内 keystore 的失败测试均按预期拒绝；错误只给安全变量名或修复提示。指定 `code-review` 修复了 CMD 括号内提前展开导致 SDK 路径丢失、签名秘密可能留在常驻 Gradle daemon、回显不可信版本文本和新构建前先删除上一份好包四项问题，未发现开放 P0–P2。项目负责人选择固定内部测试签名用于小范围覆盖安装；该长期密钥、备份与首个真实侧载包仍待单独创建。
+- 缺必填变量、只提供部分签名参数、非法 `versionCode` 和把现有文件冒充仓库内 keystore 的失败测试均按预期拒绝；错误只给安全变量名或修复提示。指定 `code-review` 修复了 CMD 括号内提前展开导致 SDK 路径丢失、签名秘密可能留在常驻 Gradle daemon、回显不可信版本文本和新构建前先删除上一份好包四项问题，未发现开放 P0–P2。项目负责人随后选择固定内部测试签名用于小范围覆盖安装；长期身份的创建与首包证据见下两项，备份仍保持人工门。
+- `scripts/internal-signing.cmd self-test` 实际验证项目 JDK/keytool、仓库外默认路径、版本输入和缺秘密的 `release.cmd` 失败关闭；非交互 create 明确拒绝且未生成 keystore。随后项目负责人只在可见本机 CMD 隐藏输入密码，固定内部测试 keystore 成功在 Git 外创建；脚本拒绝覆盖，密码不进入命令参数或输出。密码最小兼容 keytool 的 6 位并建议至少 12 位。
+- 使用该固定身份构建首个 `1/0.1.0-internal.1` 双 ABI 包：arm64-v8a 为 90,795,333 bytes、SHA-256 `84911a4d05eec5460fd5b2a2a2d393b5f044a652f56c54ffe9d662950e7d43c1`，x86_64 为 128,617,022 bytes、SHA-256 `88e6a4c28849ca3f8d0a27d3908f9b092262065648c78978eb9e247e89ec2b2c`。两包均通过 v2 `apksigner verify`、只有 1 个 signer、证书 SHA-256 同为 `5993e6a5358948ee90061b26c3bf5a4db71ddc6fea44f31b86837581b88ac079`，并通过 16 KiB ZIP 对齐。keystore、密码和 APK 均未加入 Git；密钥离线/异盘备份仍待人工门。
+- `code-review` 随后识别出“固定文件名不等于固定身份”：若本机 keystore 丢失，旧入口可生成同名新证书并让覆盖安装永久断裂。仓库现提交上述公开证书 SHA-256 pin；交互构建在调用 Gradle 前用 Java PKCS12 API验证 alias、私钥条目和证书摘要，pin 已存在而本机 keystore 缺失时，`create` 失败并要求从备份恢复。子进程环境也先清掉会话遗留的全部签名变量，再只注入本次值。
+- 产物级复审又补上第二道门：`release.cmd` 在普通验签后调用仓库内 Java 校验器，以 SDK `apksigner.jar` 独立要求每个 APK 恰有 1 个 signer 且证书摘要等于公开 pin，避免 Gradle 复用一份签名有效但身份错误的旧产物。项目负责人完成 pin 后的交互重跑；两包摘要未变，并再次通过身份、v2 签名与 16 KiB 对齐复验。
+- 2026-08-02 将 `3/0.1.0-internal.3` arm64-v8a APK（90,770,509 bytes，SHA-256 `925292dcb097e6aa2aa7b8045aab83c2150b28f9d8539c03b589d66f3fe1b929`）以 `adb install --no-streaming -r` 覆盖安装到 `S24U-HK` 成功；PackageManager 显示 `flags=0x0` 且无 `DEBUGGABLE`，冷启动 `Status: ok`、`TotalTime: 462 ms`。启动声明、总览与设置页完成繁体中文目视检查，未打开通知使用权或来源开关。当前工作树随后仅把两条详细通知范围说明移到开关之前；项目负责人明确选择不为这一处文案位置单独生成 v4，所交付 v3 不包含该后续源码调整。
 
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 

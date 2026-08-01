@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-08-02
 - 事实来源：项目负责人 2026-07-26 的账户币种约束、ADR-0013、当前 CNY-first 账本实现
 
 ## 目的与用户可见结果
@@ -37,7 +37,8 @@
 - [x] 2026-07-30 - 为严格的 `GenericDelimitedStatement` + `STATEMENT_IMPORT` 显式映射例外透传用户确认的 CNY/USD；其他 `GENERIC` 捕获方式仍固定 CNY，且 USD 最终只能选择银行卡或信用卡资金账户。
 - [x] 2026-07-26 - 补 JVM、application、Room integrity 和 Android test APK 编译回归；混币分录、USD 钱包和来源 USD 绕过均失败关闭。
 - [x] 2026-07-30 - 完整 JVM/Lint/Debug/Release 与 AndroidTest APK 构建通过；`code-review` 复核确认支付宝/微信仍为 CNY、USD 只经银行卡/信用卡或严格来源中立文件映射进入，未发现币种绕过。
-- [ ] 设备验收轮 - 执行旧数据库升级、USD 开账/确认和混币篡改 instrumentation；APK 编译不能替代真机。
+- [x] 2026-08-01 - S24U-HK 最终 55/55 Room v11 suite 已在真机执行，覆盖正式迁移链、USD 银行账户/余额快照、USD 钱包拒绝和混币数据库篡改失败关闭；不再把这些后端路径写成仅编译。
+- [ ] 设备验收收口 - 在升级后的真实应用数据上执行 USD 手工草稿确认和 Compose 分币种显示；既有 Room instrumentation 不替代用户界面与进程恢复验收。
 
 ## 实施步骤
 
@@ -61,5 +62,5 @@
 
 - 2026-07-26 - 静态审计发现旧校验只要求每一种币种各自归零，可能允许单笔交易同时带 CNY/USD。现已在 `LedgerValidator`、Room 写入校验和 SQLite 完整性查询三层拒绝 `distinct currency > 1`，并添加 JVM 与篡改数据库回归。
 - 2026-07-26 - 来源仓储原本已在最终写入时拒绝支付宝/微信/普通通用 USD；本轮将同一策略放到来源契约、application 和复核 UI。2026-07-30 又加入严格例外：只有 `GenericDelimitedStatement` 解析器、严格 connector 与 `STATEMENT_IMPORT` 捕获方式同时匹配时，才采用显式映射的 CNY/USD；异常或其他通用候选不会显示美元输入框，也不会等到落库才返回笼统失败。
-- 2026-07-26 - 旧 CNY 系统账户的规范化名称保持不变；USD 隐藏系统账户仅在后续写入时幂等补齐，未引入 schema 迁移或历史账重写。完整旧 v6 数据库→USD 开账/确认的 connected instrumentation 仍待设备执行。
+- 2026-07-26 - 旧 CNY 系统账户的规范化名称保持不变；USD 隐藏系统账户仅在后续写入时幂等补齐，未引入 schema 迁移或历史账重写。2026-08-01 的 S24U-HK 55/55 已执行正式迁移链和 USD/混币仓储回归；升级后真实 UI 的 USD 草稿确认仍待设备验收。
 - 2026-07-26 - `:core:ledger:test :application:test :data:local:test :feature:review:compileDebugKotlin :app:testDebugUnitTest :data:local:assembleDebugAndroidTest` 成功（202 个 actionable Gradle tasks）；最后一项仅编译 Android 测试 APK，未接触真机或支付 App。

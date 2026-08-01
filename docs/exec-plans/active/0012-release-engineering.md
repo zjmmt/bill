@@ -2,7 +2,7 @@
 
 - 状态：进行中
 - 所有者：项目维护者
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：当前 Android 构建、README 发布承诺、SECURITY、RELIABILITY 与项目负责人当前发布范围
 
 ## 目的与用户可见结果
@@ -20,7 +20,7 @@
 - `app/build.gradle.kts` 默认保持 `versionCode = 1`、`versionName = "0.1.0"`，显式环境可覆盖版本并只在四项签名参数完整时创建 release signing config。
 - `scripts/android.cmd` 是仓库统一 JDK/Gradle 入口；新增命令仍从 CMD 调用它。
 - 既有 Release 双 ABI APK 只用于本地静态审计，文档明确标记为未签名。
-- 签名密钥是 Android 覆盖安装的长期身份；项目负责人已选择固定内部测试签名而非商店发布，但创建密码、仓库外保存和离线备份仍须单独收口。
+- 签名密钥是 Android 覆盖安装的长期身份；项目负责人已选择固定内部测试签名而非商店发布，并已在本机隐藏输入密码后于仓库外创建固定身份。离线/异盘备份仍须单独收口。
 
 ## 进度
 
@@ -29,7 +29,12 @@
 - [x] 2026-08-01 - 增加不回显秘密的 `scripts/release.cmd`，要求显式版本与外部 keystore，以单次 Gradle 进程构建并用 `apksigner` 验证两个 ABI APK。
 - [x] 2026-08-01 - 覆盖缺参、部分签名参数、无效版本、仓库内 keystore 和成功的临时测试密钥路径；临时密钥及其 APK 已清理，不使用或生成生产密钥。
 - [x] 2026-08-01 - 运行未签名/临时签名 Release 构建、差异和指定 `code-review`，实现已独立提交并推送；文档结构检查在本记录提交前执行。
-- [ ] 待项目负责人安全输入并备份长期秘密 - 在仓库外创建固定内部测试 keystore，递增版本后产出首个可持续覆盖安装的侧载包。
+- [x] 2026-08-02 - 增加 `scripts/internal-signing.cmd` 本机交互入口：只接受真实 Console 隐藏密码、固定 alias/仓库外路径、拒绝覆盖，创建和构建均不把秘密放入参数或日志；无密码自检通过。
+- [x] 2026-08-02 - 项目负责人在本机隐藏输入秘密，创建固定内部测试 keystore，并产出/独立验签版本 `1/0.1.0-internal.1` 的 arm64-v8a 与 x86_64 APK；密钥、密码和 APK 不进入 Git。
+- [x] 2026-08-02 - 将首个包的公开证书 SHA-256 固定进仓库；交互构建在 Gradle 前核对 alias、私钥条目和指纹，pin 已存在而 keystore 缺失时拒绝生成新身份。
+- [x] 2026-08-02 - 在底层发行入口补上产物级 pin：每个 APK 必须恰有一个 signer 且证书摘要命中仓库 pin；项目负责人完成交互重跑，双 ABI 产物再次独立验签、核对摘要和 16 KiB 对齐。
+- [x] 2026-08-02 - 将 `3/0.1.0-internal.3` arm64-v8a 正式签名包覆盖安装到 S24U-HK；版本、非调试标志、冷启动、启动声明、总览与设置页目视检查通过，未代替完整设备/资源门。
+- [ ] 项目负责人把固定 keystore 复制到离线或异盘的加密备份，并与密码分开保存；没有可恢复备份前不得把单机文件称为已妥善保管。
 
 ## 意外发现
 
@@ -49,7 +54,9 @@
 2. 只有四项签名变量全部存在且 keystore 文件可读时才创建 release signing config；部分提供或显式要求签名但缺参时失败，并且错误只列变量名。
 3. 新增 CMD 入口检查必填变量、调用 Android 构建，再使用当前 Android SDK 的 `apksigner` 验证两个 ABI APK；不输出密码或证书私钥材料。
 4. 用仓库外临时测试 keystore 验证成功路径，随后删除临时文件和所签 APK；这不创建或替代固定内部测试密钥。
-5. 更新 README、SECURITY、RELIABILITY 与发布计划结果；签名包、keystore 和私有配置保持 Git 忽略。
+5. 提供只在真实本机 CMD 使用的交互入口；固定身份创建一次后拒绝覆盖，后续构建提示递增版本和同一隐藏密码。
+6. 提交固定身份的公开证书 SHA-256，并在交互构建前及双 ABI 产物生成后分别核对；密钥丢失必须恢复备份，不能按同一文件名重建。
+7. 更新 README、SECURITY、RELIABILITY 与发布计划结果；签名包、keystore 和私有配置保持 Git 忽略。
 
 ## 具体命令
 
@@ -57,6 +64,9 @@
 
 ```bat
 scripts\android.cmd :app:assembleRelease --console=plain
+scripts\internal-signing.cmd self-test
+scripts\internal-signing.cmd create
+scripts\internal-signing.cmd build
 scripts\release.cmd
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\check-docs.ps1
 git diff --check
@@ -78,4 +88,4 @@ git diff --check
 
 ## 结果与复盘
 
-进行中。外部版本/签名配置、CMD 入口、双 ABI 验签和失败关闭已经实现并推送；默认未签名构建 342-task 通过，仓库外一次性密钥的最终单次进程构建 343-task 通过。指定 `code-review` 未发现开放 P0–P2，并修复 SDK 路径提前展开、常驻 daemon 保密、版本文本回显和失败前删除旧包问题。一次性密钥和临时签名 APK 已删除，未上传任何产物。固定内部测试 keystore、备份和首个可持续覆盖安装的侧载包仍待创建。
+进行中。外部版本/签名配置、低层 CMD 发行入口、双 ABI 验签和失败关闭已经实现并推送；默认未签名构建 342-task 通过，仓库外一次性密钥的最终单次进程构建 343-task 通过。指定 `code-review` 修复 SDK 路径提前展开、常驻 daemon 保密、版本文本回显和失败前删除旧包问题。其后新增的交互入口通过无秘密自检；项目负责人已在本机创建固定内部测试 keystore，首个 `1/0.1.0-internal.1` 双 ABI 包通过同证书 v2 验签和 16 KiB ZIP 对齐。复审又补上公开证书 pin、构建前 keystore 身份核验及产物级单 signer/pin 核验，防止丢失后误生成同名新密钥，也防止复用签名有效但身份错误的旧 APK；子进程不再继承无关签名变量。维护者完成 pin 后交互重跑，两包再次独立复验通过。`3/0.1.0-internal.3` arm64 包随后在 S24U-HK 覆盖安装、非调试标志、冷启动和受限目视检查通过。固定 keystore、密码和 APK 未上传；离线/异盘备份、签名 Release 资源和完整设备矩阵仍待完成。

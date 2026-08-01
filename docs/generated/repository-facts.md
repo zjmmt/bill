@@ -2,7 +2,7 @@
 
 - 状态：自动生成
 - 所有者：`scripts/generate-repository-facts.ps1`
-- 最后核验：2026-08-01
+- 最后核验：2026-08-02
 - 事实来源：`settings.gradle.kts`、模块 `build.gradle.kts`、Room schema、源 Manifest 与测试源码
 - 生成命令：`cmd.exe /d /s /c powershell -NoProfile -ExecutionPolicy Bypass -File scripts\generate-repository-facts.ps1`
 
@@ -14,9 +14,9 @@
 |---|---:|
 | Gradle 模块 | 23 |
 | 源 Manifest | 9 |
-| 测试源码文件 | 66 |
-| 生成输入文件 | 110 |
-| 输入 SHA-256 | `f1f4f9203ba69d60d1a32a05315aeec2fd1e8bac0a784b278aed2628119f4da6` |
+| 测试源码文件 | 67 |
+| 生成输入文件 | 111 |
+| 输入 SHA-256 | `c95f6ee34d9e4b304d4796c5c8fe869f98e12192a361d7d45d06867be0ce75d9` |
 
 输入摘要按 UTF-8/LF 规范化后包含生成器及共享解析库的 SHA-256；生成逻辑、源码事实或输入文件任一变化，都要求重新生成。
 
@@ -78,7 +78,7 @@
 | 模块 | 测试集 | 源码文件 | `@Test` 注解 |
 |---|---|---:|---:|
 | `:app` | Android | 4 | 16 |
-| `:app` | JVM | 13 | 73 |
+| `:app` | JVM | 14 | 74 |
 | `:application` | JVM | 6 | 95 |
 | `:core:domain` | JVM | 1 | 6 |
 | `:core:ledger` | JVM | 2 | 26 |
@@ -98,6 +98,6 @@
 | `:source:generic-share-text` | JVM | 2 | 9 |
 | `:source:pipeline` | JVM | 2 | 22 |
 | `:source:wechat` | JVM | 1 | 6 |
-| 合计 | — | 66 | 445 |
+| 合计 | — | 67 | 446 |
 
 计数口径：仅扫描各模块的 `src/test` 与 `src/androidTest` 下 `.kt`/`.java` 文件，并统计 `@Test` 或完全限定的 JUnit `@Test` 注解；参数化测试等其他注解不计入。

@@ -2,7 +2,7 @@
 
 - 状态：已确认
 - 所有者：项目维护者
-- 最后核验：2026-07-30
+- 最后核验：2026-08-02
 - 事实来源：本仓库文档体系
 
 本目录是项目的记录系统。根目录 [AGENTS.md](../AGENTS.md) 只负责把贡献者带到这里；产品与工程事实应在下列唯一事实来源中维护。
@@ -23,6 +23,7 @@
 | 港版/国行 Samsung 与小米怎样真机验收 | [Android 设备兼容](design-docs/android-device-compatibility.md) | [RELIABILITY.md](RELIABILITY.md) |
 | 没学过 Java，怎样开始 Android 开发 | [Android 开发入门](development/android-getting-started.md) | [Android 技术基线](decisions/0004-android-compose-baseline.md) |
 | 账户、负债、投资怎样表示 | [账户/负债/投资规格](product-specs/accounts-liabilities-investments.md) | [领域模型](design-docs/domain-model.md) |
+| 后续收支图表页统计什么 | [收支图表页规格](product-specs/analytics-charts.md) | [对账与关联](design-docs/reconciliation.md) |
 | 哪些权限和数据处理允许 | [SECURITY.md](SECURITY.md) | [来源覆盖矩阵](product-specs/source-coverage.md) |
 | 失败后如何恢复、怎样测试 | [RELIABILITY.md](RELIABILITY.md) | [QUALITY_SCORE.md](QUALITY_SCORE.md) |
 | 接下来做什么 | [执行计划索引](exec-plans/index.md) | [PLANS.md](PLANS.md) |
@@ -56,6 +57,7 @@
 | 通用分享文本证据主干 | [decisions/0006-provider-neutral-shared-text-evidence-spine.md](decisions/0006-provider-neutral-shared-text-evidence-spine.md) |
 | 来源证据生命周期与有界存储 | [decisions/0007-source-evidence-lifecycle-and-bounded-storage.md](decisions/0007-source-evidence-lifecycle-and-bounded-storage.md) |
 | 三轨采集的本地资源预算 | [decisions/0011-local-resource-budget-first-capture.md](decisions/0011-local-resource-budget-first-capture.md) |
+| 后续独立收支图表页 | [product-specs/analytics-charts.md](product-specs/analytics-charts.md) |
 
 ## 状态词
 
