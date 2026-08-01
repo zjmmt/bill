@@ -40,6 +40,8 @@ if not exist "%BILL_RELEASE_STORE_FILE%" (
 set "BILL_REQUIRE_SIGNED_RELEASE=true"
 call "%~dp0android.cmd" :app:assembleRelease --no-daemon --console=plain
 if errorlevel 1 exit /b %ERRORLEVEL%
+set "BILL_RELEASE_STORE_PASSWORD="
+set "BILL_RELEASE_KEY_PASSWORD="
 
 if not exist "%BILL_ARM64_APK%" (
     echo Signed arm64-v8a APK was not produced.
@@ -84,6 +86,12 @@ if errorlevel 1 (
 call "%BILL_APKSIGNER%" verify --verbose "%BILL_X86_64_APK%" >nul
 if errorlevel 1 (
     echo x86_64 APK signature verification failed.
+    exit /b 6
+)
+
+"%JAVA_HOME%\bin\java.exe" -Dfile.encoding=UTF-8 "%BILL_PROJECT_ROOT%\scripts\InternalSigning.java" verify-release
+if errorlevel 1 (
+    echo Signed APK identity verification failed.
     exit /b 6
 )
 
