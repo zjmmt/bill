@@ -1,6 +1,6 @@
 # 采集、导入与来源适配器
 
-- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界/控制面、持久观察去重与证据生命周期已实现；支付宝、微信和招商银行有 5 条默认关闭的实验通知 route；CNY 持仓手填/单图 OCR 预填和基金申购待复核已有代码，单次截图/Photo Picker 本地 OCR 已有 11 张本机私有真实页面与简中合成真机回归，但新增 route 真机验收、通知 callback、真实简中页面和完整资源发布门均未完成
+- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界/控制面、持久观察去重与证据生命周期已实现；支付宝、微信和招商银行有 5 条默认关闭的实验通知 route，生产 catalog/registry 的五路整链内存回放已通过；CNY 持仓手填/单图 OCR 预填和基金申购待复核已有代码，单次截图/Photo Picker 本地 OCR 已有 11 张本机私有真实页面与简中合成真机回归，但新增 route 真机验收、通知 callback、真实简中页面和完整资源发布门均未完成
 - 所有者：项目维护者
 - 最后核验：2026-08-01
 - 事实来源：多来源产品要求、Android 官方能力边界、当前来源/Room/Application 实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
@@ -84,9 +84,10 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 - `NotificationListenerService` 只先读取包名、具体 Android 通知渠道和类别。静态 `VerifiedNotificationRoute` 同时提供 metadata rule、route ID、SourceIdentity、parser 与安全显示标签；类别为 null 时也只匹配 null，不能当通配符。只有三者精确命中且 route 已在 app-private 本地设置中显式开启，才复制 title/text/subText/bigText/summaryText 的有界字段；未命中、关闭或 route 已移除时不碰 `extras`，不入库、不打日志、不创建草稿。模板不得只按包名匹配。候选工作进入容量 16 的非阻塞内存队列，由单个 IO consumer 串行处理；满队列时丢弃这次工作项，不启动额外协程或重试任务。
 - 当前生产 catalog 由 `:source:alipay`、`:source:wechat` 与 `:source:bank:cmb` 提供 5 条本地随包 route：支付宝支出、支付宝余额收款、支付宝基金申购确认、微信付款完成、招商银行快捷支付退款。所有 route 默认关闭；Prepared capture 必须携带 catalog 原对象，ingress 拒绝同值 lookalike 并在持久化前再次检查开关。设置控制面只导出 opaque route ID 与安全标签，开关命令单飞串行；开启先用 `SharedPreferences.commit()` 成功写盘，关闭先收紧本进程门禁，失败时冻结其他 route 并保留精确重试。微信 route 保留原稳定 route ID，并把标题 `Weixin Pay` 与 `微信支付` 视为同一来源提示；标题不提供金额，只有当前真实样本验证过的英文正文模板可以进入 parser，未知简中/繁中正文失败关闭。支付宝基金 route 只接受唯一确认金额和零手续费形态，输出 `INVEST_BUY` 经济事件提示；简体来自真实样本，繁体只是字段兼容别名。它不输出标的，复核时必须绑定用户已经创建并确认的持仓。provider parser 在 transport 后重新校验 RawEvent identity、媒体类型、8 KiB 上限、template/version 与正文模板，只接受可证明的正 CNY 金额、方向和有限事件提示，生成来源建议而不猜商户、资金账户、基金标的或直接过账；parser factory 的 identity 必须与 route 完全一致。复核投影只由 opaque connector 解析安全标签，不显示包名、频道、类别或正文。观察 HMAC 摘要仍以 `StatusBarNotification.key` 与 post time 派生；两分钟过期租约复用原 command，成功 hand-off 后标记 `CAPTURED`，不设后台维护任务。
 - 5 条 route 来自用户授权的 21 条本地真实 callback：离线安全盘点覆盖付款、余额收款、基金申请/确认/行情、微信付款与招商退款，代码与仓库只保留脱敏成功/缺字段/漂移/敏感反例。Alipay 三条 route 使用其默认通知频道；基金申请受理和收益/行情提醒不会创建草稿。微信 route 的支付通知与普通消息共用同一频道和类别，因此启用时会在设备本地读取同频道的有界正文再以标题别名和已验证完成词过滤，安全标签必须披露这一点。同名联系人若发送完全相同格式，现有元数据仍不能证明它是支付服务，所以该 route 永远只生成待复核建议。招商银行只使用 App 专用交易频道。Samsung 短信 route 被明确排除，因为读取正文前的元数据无法把银行短信与普通短信、OTP 或私人消息分开。
+- `AppContainer` 与纵向回放共用 `ProductionNotificationRoutes.parsers`，避免生产注册和测试清单漂移。五条脱敏夹具已逐条经过 metadata/content gate、观察租约、证据 ingress、不可变 `RawEvent`、生产 parser registry 和来源 proposal，并只得到金额、方向、有限事件提示与 `WAITING_USER`；回放端口全部在内存中，不连接目标数据库、设备或本机私有样本。
 - Debug 变体为模板研究提供独立、显式的采样控制器。用户从专用桌面入口选择精确包名并手动开始后，控制器保存 `active + startedAt + targetPackages`，只接收开始时间之后的新 callback；进程重建不改变活动状态，且不存在自动到期、条数或文件大小上限。每条候选仍共用容量 16 的单消费者队列，追加包名、channel/category、post time 与五个既有有界正文域到 app-private no-backup NDJSON；它不读取通知 key、历史、actions、RemoteViews 或消息数组，不进入 `RawEvent`/Draft。页面使用固定内存的反向逐行读取，每页最多返回 10 条，从新到旧显示实际字段并标出缺失域；预览不上传、不写日志，也不改变样本或账务状态。队列丢弃与正文不可读取只在当前进程计数，未收到系统 callback 的事件不可推断。重复开始保留旧样本并更新前向边界；停止保留文件，清除必须由用户另行点击。Release 是永久关闭的无操作控制器，且不打包采样 Activity、研究包名、文件名或研究文案。
 - 不读取历史通知、不修改外部通知、不开前台服务、不设周期任务或唤醒锁。通知无法反映没有通知的领取、发送或后台余额变动，也不能补历史；来源健康页必须把这些显示为覆盖缺口，而不是显示“自动同步正常”。
-- 当前仍缺这 5 条 route 的真实系统 callback、更新/重启回放和真机资源数据；设置页显示可逐条开启的安全标签、全暂停、系统权限缺失、listener 未连接、队列跳过与失败健康状态。S24U-HK/API 36 的 app instrumentation 只验证过此前 4-route catalog 的独立测试偏好和默认关闭/opaque opt-in；新增基金 route 没有运行系统 callback。不得用内存、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
+- 当前仍缺这 5 条 route 的真实系统 callback、更新/重启回放和真机资源数据；设置页显示可逐条开启的安全标签、全暂停、系统权限缺失、listener 未连接、队列跳过与失败健康状态。S24U-HK/API 36 的 app instrumentation 已验证当前 5-route catalog 的独立测试偏好和默认关闭/opaque opt-in，但没有运行系统 callback。不得用已经通过的内存整链回放、正文 hash 或金额替代系统实例语义，也不得为此读取历史通知。
 
 ## 被动无障碍读取（研究门）
 

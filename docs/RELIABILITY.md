@@ -78,7 +78,7 @@
 
 - 用户授权导出的 21 条真实 callback 与 11 张过程截图只保存在两份 Git 忽略的本机私有副本，设备端原始数据未删除。离线安全盘点只将 5/21 归入 4 条严格候选；仓库测试只使用脱敏成功/缺字段/漂移/敏感反例，不包含真实账号、商户或原文。
 - 新增 `:source:alipay` 两条 route、`:source:wechat` 一条 route、`:source:bank:cmb` 一条 route；它们默认关闭，只产生整条通知内无冲突、无外币标记的单一 CNY 金额和方向建议。微信 route 的稳定 ID 不变，标题接受 `Weixin Pay` 与 `微信支付`，但只有真实样本验证过的英文正文模板可提取金额；未经样本验证的简中/繁中正文失败关闭。Samsung 短信、微信红包/转账/提现、支付宝其他事件及招商银行登录/普通交易保持拒绝。微信共享消息频道仍存在同名联系人完全仿照格式的误触发风险，因此只允许待复核。
-- 定向 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks` 已实际执行并 173/173 通过。完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：80 executed、811 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `d76a2c91013bc2991cf8e61d71e52a0083edf33a6bb8ac8b74c253918cfad74e`；x86_64 Release 为 128,419,330 bytes、SHA-256 `62ec182dfed546540d68536458de181abe55e99ff32cab6dd63da7f2b44c1e4e`，两包通过 16 KiB ZIP 对齐。
+- 定向 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks` 已实际执行并成功（173 个 actionable tasks 全部执行）。完整 `test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（891 个 actionable tasks：80 executed、811 up-to-date）。arm64-v8a Release 为 90,597,641 bytes、SHA-256 `d76a2c91013bc2991cf8e61d71e52a0083edf33a6bb8ac8b74c253918cfad74e`；x86_64 Release 为 128,419,330 bytes、SHA-256 `62ec182dfed546540d68536458de181abe55e99ff32cab6dd63da7f2b44c1e4e`，两包通过 16 KiB ZIP 对齐。
 - 最终 `code-review` 未发现开放 P0/P1；已修复 parser 身份错配、超限载荷复制、致命错误被吞、带符号/多金额/跨字段冲突/混入外币的 CNY 误判，并以纵向测试确认 provider 建议保持 `WAITING_USER` 且不猜交易对手或资金账户。微信普通消息与支付通知共享频道是平台残余风险：同名联系人完全仿照正文仍可能产生待复核建议，因此该 route 保持默认关闭、实验性且不得自动入账。
 - 本轮 connected 测试均只使用程序生成的合成数据；没有读取通知、打开支付 App 或使用用户的真实截图。因此 4 条新 route 的系统 callback、更新/重启、OEM 后台与资源证据仍全部开放。
 
@@ -120,6 +120,12 @@
 - `code-review` 未发现开放 P0/P1；审查发现并修复一项归档向后兼容缺口：合法历史快照不再因账户后来归档而把全局状态误判为损坏。备注长度与控制字符同时提升为领域不变量，并有单元/真机回归。
 - 本轮没有执行 `pm clear`，没有读取通知历史、来源 App、真实截图或 `evidence.local/**` 本机私有样本。余额快照只写不可变快照、审计与幂等回执，不创建交易或分录。
 - 最终工作树的 `test lint` 成功（571 个 actionable tasks：112 executed、4 from cache、455 up-to-date）；随后 `assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（711 个 actionable tasks：52 executed、659 up-to-date）。arm64-v8a 未签名 Release 为 90,787,129 bytes、SHA-256 `1cdb540fc7e9b23203e14182249d97e4566a4fef74c1e31542d9f92094ef47b7`；x86_64 为 128,608,818 bytes、SHA-256 `1b3b44bf1b0e2a25fefa5f88ac00e945ed9ddccae482cb299e7662a65fd740ab`；两包通过 `zipalign -c -P 16 4`。
+
+2026-08-01 的五路生产通知接线回放：
+
+- `ProductionNotificationPipelineTest` 使用与 `AppContainer` 相同的 `ProductionNotificationRoutes.parsers`，逐条回放支付宝支出、支付宝余额收款、支付宝基金申购确认、微信付款完成和招商银行快捷支付退款。每条都通过生产 catalog、metadata/content gate、观察租约、通知证据 ingress、不可变 `RawEvent` 与 parser registry，最终只形成 `WAITING_USER` proposal；金额、方向、有限事件提示、来源和捕获方式均有断言，交易对手与资金账户保持未知。
+- 强制重跑 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks --console=plain` 成功（173 个 actionable tasks 全部执行）。测试证据、RawEvent、proposal 与观察仓储均为内存实现，没有连接目标数据库、设备或 `evidence.local/**`。
+- 指定 `code-review` 未发现开放 P0–P2；审查修正了仍声称生产 catalog 为空和发布门始终关闭的两处过期注释。该结果只覆盖 Android callback 之后的生产接线，不能替代真实系统 callback、更新/重启与 OEM 资源验证。
 
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
