@@ -2,7 +2,6 @@
 <resources>
     <string name="hero_kicker">01 / 本機帳本</string>
     <string name="local_only_status">本機帳本 · 金額預設隱藏</string>
-    <string name="local_only_detail">目前帳本保留在本機；離開應用程式後會再次隱藏金額。</string>
     <string name="net_worth">淨資產</string>
     <string name="net_worth_currency">淨資產 · %1$s</string>
     <string name="show_amounts">顯示金額</string>
@@ -18,19 +17,19 @@
     <plurals name="possible_duplicates">
         <item quantity="other">%1$d 組疑似重複</item>
     </plurals>
-    <string name="review_now">前往覆核</string>
-    <string name="draft_action_label">行動 / 等你確認</string>
-    <string name="source_health">來源狀態</string>
+    <string name="review_now">前往確認</string>
+    <string name="draft_action_label">等你確認</string>
+    <string name="source_health">擷取狀態</string>
     <string name="recent_transactions">最近交易</string>
     <string name="source_alipay">支付寶</string>
     <string name="source_wechat">微信支付</string>
     <string name="source_bank">銀行</string>
-    <string name="source_healthy">契約骨架已建立，格式仍待樣本驗證</string>
-    <string name="source_needs_attention">等待第一份已遮蓋敏感資料的樣本</string>
-    <string name="source_fallback_required">請匯入月結單或手動補錄</string>
-    <string name="status_ready">僅骨架</string>
-    <string name="status_attention">待驗證</string>
-    <string name="status_fallback">需回退</string>
+    <string name="source_healthy">通知識別可用</string>
+    <string name="source_needs_attention">請檢查權限或設定</string>
+    <string name="source_fallback_required">可用截圖、帳單或手動補錄</string>
+    <string name="status_ready">可用</string>
+    <string name="status_attention">需檢查</string>
+    <string name="status_fallback">需補錄</string>
     <string name="overview_empty_title">尚未有帳本資料</string>
     <string name="overview_empty_body">先建立帳戶和期初結餘，或手動記錄第一筆交易。</string>
     <string name="getting_started_title">先由帳戶開始</string>
@@ -38,10 +37,10 @@
     <string name="create_first_account">建立第一個帳戶</string>
     <string name="enter_first_transaction">手動輸入一筆交易</string>
     <string name="overview_error_title">總覽暫時無法顯示</string>
-    <string name="overview_error_body">裝置上的資料仍然安全。請稍後重試，或前往來源狀態查看復原方法。</string>
+    <string name="overview_error_body">請稍後重試。資料仍儲存在本機。</string>
     <string name="retry">重試</string>
-    <string name="synthetic_lunch">合成午餐</string>
-    <string name="synthetic_lunch_detail">合成扣帳帳戶 · 支出</string>
-    <string name="synthetic_repayment">合成信用卡還款</string>
+    <string name="synthetic_lunch">示例午餐</string>
+    <string name="synthetic_lunch_detail">示例扣帳帳戶 · 支出</string>
+    <string name="synthetic_repayment">示例信用卡還款</string>
     <string name="synthetic_repayment_detail">資金移動 · 不計入一般支出</string>
 </resources>

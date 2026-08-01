@@ -2,7 +2,6 @@
 <resources>
     <string name="hero_kicker">01 / LOCAL LEDGER</string>
     <string name="local_only_status">On-device ledger · amounts hidden by default</string>
-    <string name="local_only_detail">The current ledger stays on this device. Leaving the app hides amounts again.</string>
     <string name="net_worth">Net worth</string>
     <string name="net_worth_currency">Net worth · %1$s</string>
     <string name="show_amounts">Show amounts</string>
@@ -22,18 +21,18 @@
         <item quantity="other">%1$d possible duplicate groups</item>
     </plurals>
     <string name="review_now">Review now</string>
-    <string name="draft_action_label">ACTION / NEEDS YOU</string>
-    <string name="source_health">Source status</string>
+    <string name="draft_action_label">NEEDS YOU</string>
+    <string name="source_health">Capture status</string>
     <string name="recent_transactions">Recent transactions</string>
     <string name="source_alipay">Alipay</string>
     <string name="source_wechat">WeChat Pay</string>
     <string name="source_bank">Bank</string>
-    <string name="source_healthy">Contract skeleton created; formats still need sample validation</string>
-    <string name="source_needs_attention">Waiting for the first redacted sample</string>
-    <string name="source_fallback_required">Import a statement or enter the item manually</string>
-    <string name="status_ready">Skeleton</string>
-    <string name="status_attention">Unverified</string>
-    <string name="status_fallback">Fallback</string>
+    <string name="source_healthy">Notification recognition is available</string>
+    <string name="source_needs_attention">Check permissions or settings</string>
+    <string name="source_fallback_required">Use a screenshot, statement, or manual entry</string>
+    <string name="status_ready">Available</string>
+    <string name="status_attention">Check</string>
+    <string name="status_fallback">Manual entry</string>
     <string name="overview_empty_title">No ledger data yet</string>
     <string name="overview_empty_body">Create accounts and opening balances, or enter the first transaction manually.</string>
     <string name="getting_started_title">Start with an account</string>
@@ -41,10 +40,10 @@
     <string name="create_first_account">Create first account</string>
     <string name="enter_first_transaction">Enter a transaction manually</string>
     <string name="overview_error_title">Overview is temporarily unavailable</string>
-    <string name="overview_error_body">Your on-device data remains safe. Try again later or inspect source status for a recovery action.</string>
+    <string name="overview_error_body">Try again later. Your data remains on this device.</string>
     <string name="retry">Retry</string>
-    <string name="synthetic_lunch">Synthetic lunch</string>
-    <string name="synthetic_lunch_detail">Synthetic debit account · Expense</string>
-    <string name="synthetic_repayment">Synthetic credit card repayment</string>
+    <string name="synthetic_lunch">Sample lunch</string>
+    <string name="synthetic_lunch_detail">Sample debit account · Expense</string>
+    <string name="synthetic_repayment">Sample credit card repayment</string>
     <string name="synthetic_repayment_detail">Money movement · Not a regular expense</string>
 </resources>

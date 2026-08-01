@@ -64,11 +64,6 @@ fun LedgerScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Text(
-                text = stringResource(R.string.ledger_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         if (transactions.isEmpty()) {

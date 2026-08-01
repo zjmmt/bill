@@ -66,11 +66,6 @@ fun DraftsScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Text(
-                text = stringResource(R.string.drafts_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onAddManualDraft,
@@ -118,11 +113,6 @@ fun DraftsScreen(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
-                Text(
-                    text = stringResource(R.string.source_reviews_intro),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             items(
                 items = sourceReviews,
@@ -143,11 +133,6 @@ fun DraftsScreen(
                     modifier = Modifier.semantics { heading() },
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = stringResource(R.string.reconciliation_candidates_intro),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             items(

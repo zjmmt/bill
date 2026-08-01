@@ -129,11 +129,6 @@ fun AccountsScreen(
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.ExtraBold,
             )
-            Text(
-                text = stringResource(R.string.accounts_intro),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             Spacer(Modifier.height(12.dp))
             Button(
                 onClick = onCreateRequested,

@@ -317,17 +317,11 @@ private fun LocalStatusBand() {
                     .size(14.dp)
                     .background(MaterialTheme.colorScheme.secondary),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = stringResource(R.string.local_only_status),
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = stringResource(R.string.local_only_detail),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
+            Text(
+                text = stringResource(R.string.local_only_status),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

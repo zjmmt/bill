@@ -2,7 +2,6 @@
 <resources>
     <string name="ledger_title">帳本</string>
     <string name="ledger_heading">已入帳流水</string>
-    <string name="ledger_intro">這裡只顯示平衡且有效的分錄。撤銷會保留稽核記錄，並把手動交易還原到草稿匣。</string>
     <string name="ledger_empty_title">尚未有已入帳流水</string>
     <string name="ledger_empty_body">先輸入一筆收入或支出，核對資金帳戶後再確認入帳。</string>
     <string name="enter_transaction">輸入一筆交易</string>
