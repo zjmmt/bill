@@ -127,6 +127,12 @@
 - 强制重跑 `:source:generic-notification:test :source:alipay:test :source:wechat:test :source:bank:cmb:test :application:test :app:testDebugUnitTest --rerun-tasks --console=plain` 成功（173 个 actionable tasks 全部执行）。测试证据、RawEvent、proposal 与观察仓储均为内存实现，没有连接目标数据库、设备或 `evidence.local/**`。
 - 指定 `code-review` 未发现开放 P0–P2；审查修正了仍声称生产 catalog 为空和发布门始终关闭的两处过期注释。该结果只覆盖 Android callback 之后的生产接线，不能替代真实系统 callback、更新/重启与 OEM 资源验证。
 
+2026-08-01 的小范围侧载签名接线：
+
+- 不设置签名环境时，强制重跑 `:app:assembleRelease --rerun-tasks --console=plain` 成功（342 个 actionable tasks 全部执行），输出仍是两个 `release-unsigned` 审计 APK；默认版本保持 `1/0.1.0`，既有构建和 CI 行为未被偷偷改成签名发行。
+- 使用仓库外、有效期一天的一次性 PKCS12 测试密钥，把版本覆盖为 `2/0.1.0-test.1` 后两次完整运行 `scripts\release.cmd` 均成功；最终脚本以 `--no-daemon` 执行（343 个 actionable tasks：5 executed、338 up-to-date），SDK `apksigner` 验证 arm64-v8a 与 x86_64 APK 均通过。临时 keystore、测试包装脚本和两个不可继续升级的临时签名 APK随后均已删除，没有创建长期或生产身份。
+- 缺必填变量、只提供部分签名参数、非法 `versionCode` 和把现有文件冒充仓库内 keystore 的失败测试均按预期拒绝；错误只给安全变量名或修复提示。指定 `code-review` 修复了 CMD 括号内提前展开导致 SDK 路径丢失、签名秘密可能留在常驻 Gradle daemon、回显不可信版本文本和新构建前先删除上一份好包四项问题，未发现开放 P0–P2。项目负责人选择固定内部测试签名用于小范围覆盖安装；该长期密钥、备份与首个真实侧载包仍待单独创建。
+
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
 ## 来源漂移

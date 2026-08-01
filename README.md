@@ -1,13 +1,13 @@
 # Bill - 本地优先 Android 个人财务聚合器
 
-- 状态：部分实现；受限 CNY/USD 手工账本、不可变余额快照、完整可编辑审核、通用显式证据链、本地 CSV/TSV 映射、用户确认对账、5 条实验通知 route 与随包本地 OCR 已有代码，真实生产 callback 与正式签名发布仍待完成
+- 状态：部分实现；受限 CNY/USD 手工账本、不可变余额快照、完整可编辑审核、通用显式证据链、本地 CSV/TSV 映射、用户确认对账、5 条实验通知 route、随包本地 OCR 与小范围侧载签名接线已有代码，真实生产 callback 与固定内部测试签名包仍待完成
 - 所有者：项目维护者
 - 最后核验：2026-08-01
 - 事实来源：当前 Android/Room 工程、[质量评分](docs/QUALITY_SCORE.md)、[ADR-0005](docs/decisions/0005-manual-ledger-first-slice.md)、[ADR-0006](docs/decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](docs/decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0008](docs/decisions/0008-leased-source-evidence-staging-and-orphan-recovery.md)、[ADR-0009](docs/decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0010](docs/decisions/0010-notification-first-capture-and-single-receipt-fallback.md)、[ADR-0011](docs/decisions/0011-local-resource-budget-first-capture.md)、[ADR-0012](docs/decisions/0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md)、[ADR-0013](docs/decisions/0013-bank-card-only-usd-without-fx.md)、[ADR-0015](docs/decisions/0015-immutable-balance-snapshots-and-explicit-differences.md)、[ADR-0016](docs/decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)
 
 Bill 是一款 Android 原生、离线可用、无自有服务端的个人财务聚合器。它把支付宝、微信支付和银行视为同等重要的数据来源，将通知、用户导入文件和手工录入统一为可追溯的本地总账。
 
-当前仓库已经从“文档先行”进入多条纵向实现：受限 CNY/USD 手工账户/期初余额/收入支出账本、Android Sharesheet 与 SAF 的通用显式文本证据、用户逐列映射的本地 CSV/TSV 行导入、转账/信用卡还款/退款的用户确认对账、系统 Sharesheet 单次 PNG 收据证据、默认空目录的通知安全边界，以及用户显式触发的截图/Photo Picker OCR。账本、文本、导入与安全边界已有自动化；CNY 路径还有 MuMu API 32 证据，港版 S24 Ultra 另有应用、Room 与随包 OCR instrumentation。OCR 已换成静态随包的 PP-OCRv6 small + ONNX Runtime/OpenCV，本地代码、依赖 AAR 和当前 `release-unsigned` 分包的静态审计未发现联网入口；同一设备上的 11 张本机私有真实支付过程截图经状态门和空间规则修正后，金额与预期语义均为 11/11，另有简体中文四状态页的程序绘制真机回归。原始截图、OCR 文本和通知正文不进入 Git；真实简中微信页面、目标真机完整资源、签名发行包，以及真实支付宝、微信支付和具体银行的完整适配仍未完成。
+当前仓库已经从“文档先行”进入多条纵向实现：受限 CNY/USD 手工账户/期初余额/收入支出账本、Android Sharesheet 与 SAF 的通用显式文本证据、用户逐列映射的本地 CSV/TSV 行导入、转账/信用卡还款/退款的用户确认对账、系统 Sharesheet 单次 PNG 收据证据、默认空目录的通知安全边界，以及用户显式触发的截图/Photo Picker OCR。账本、文本、导入与安全边界已有自动化；CNY 路径还有 MuMu API 32 证据，港版 S24 Ultra 另有应用、Room 与随包 OCR instrumentation。OCR 已换成静态随包的 PP-OCRv6 small + ONNX Runtime/OpenCV，本地代码、依赖 AAR 和当前 `release-unsigned` 分包的静态审计未发现联网入口；同一设备上的 11 张本机私有真实支付过程截图经状态门和空间规则修正后，金额与预期语义均为 11/11，另有简体中文四状态页的程序绘制真机回归。原始截图、OCR 文本和通知正文不进入 Git。仓库已提供只从外部环境读取版本/签名秘密并用 `apksigner` 验证双 ABI APK 的小范围侧载路径；一次性测试密钥验证后已销毁，固定内部测试密钥尚未创建。真实简中微信页面、目标真机完整资源，以及真实支付宝、微信支付和具体银行的完整适配仍未完成。
 
 ## 不可退让的产品边界
 
@@ -71,5 +71,7 @@ Bill 是一款 Android 原生、离线可用、无自有服务端的个人财务
 cmd.exe /d /s /c "scripts\android.cmd test lint assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest --console=plain"
 cmd.exe /d /s /c "scripts\check-repository.cmd"
 ```
+
+普通 `assembleRelease` 仍只生成未签名审计包。小范围测试若只用 ADB，可继续安装 Debug；若要发给多台测试机并在以后覆盖安装保留本地账本，则使用一把长期固定、仓库外保存且单独备份的内部测试 keystore。设置递增的 `BILL_VERSION_CODE`、`BILL_VERSION_NAME` 和四项 `BILL_RELEASE_*` 签名环境变量后，经 CMD 运行 `scripts\release.cmd`；脚本使用单次 Gradle 进程构建并验证两个 ABI APK，不上传到 GitHub 或任何应用商店。密钥或密码缺失、只给一部分、keystore 位于仓库内或 APK 验签失败时都会失败关闭。
 
 真实支付页面、真实通知或真机 ADB 验收需要数据所有者明确同意后单独进行；仓库不收录真实支付截图、通知正文、账号、金额或设备序列号。
