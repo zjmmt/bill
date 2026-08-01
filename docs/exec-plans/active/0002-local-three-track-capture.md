@@ -11,6 +11,8 @@
 
 第一交付实现低功耗通知基础、显著本地声明和单次 PNG 收据回退；随后由 [ExecPlan 0007](0007-debug-notification-template-sampling.md) 以本地真实样本驱动首批 4 条默认关闭的实验通知 route，[ExecPlan 0009](0009-investment-positions-and-alipay-fund-notifications.md) 再加入第 5 条支付宝基金申购确认 route。它们覆盖支付宝支出/余额收款/基金确认、微信付款完成和招商银行快捷支付退款，整体来源仍显示回退；微信标题接受 `Weixin Pay`/`微信支付`，金额仍只来自已验证英文正文，未知简中/繁中正文失败关闭。基金 route 只提出金额和 `INVEST_BUY`，不推断标的，必须选择既有持仓。用户也可用 Android 正常截图后经系统 Sharesheet 分享一张 PNG 给 Bill，形成仅本地、无 OCR、无字段猜测的手工复核项。磁贴/Photo Picker OCR 属于独立的 [ExecPlan 0004](0004-quick-tile-local-ocr-capture.md)，本地引擎、未签名 Release 静态门、S24U-HK 合成三语/简中状态与 11 张本机私有真实繁中/英文过程页回放已完成，但真实简中微信页面、Release 资源、完整真机和签名门未完成；它不改变本计划 Sharesheet PNG 路径的无 OCR 边界。
 
+2026-08-01 的当前发布范围只要求这 5 条实验 route、用户触发的本地 OCR/手工补录和用户确认入账形成可用闭环。其他银行暂不纳入；识别结果不足时允许用户手填；跨来源关联保持用户确认；基金分红等无本地可观察事件由用户手填。常驻截图、后台轮询 OCR、自动合并、自动推断基金事件和自动解释余额差异不是本轮待办，也不得作为“补齐自动化”的理由重新引入。当前剩余通知门是：用同一生产 catalog/registry 对 5 条脱敏夹具完成整链回放，并在另一次明确真机授权后验证真实系统 callback；正式签名与发行渠道由独立发布收口处理。
+
 ## 范围与非目标
 
 包含：
@@ -40,7 +42,7 @@
 - 本计划的资源约束：[../../decisions/0011-local-resource-budget-first-capture.md](../../decisions/0011-local-resource-budget-first-capture.md)
 - 当前实现主干：`source:contract`、`source:pipeline`、`source:review-contract`、`source:generic-share-text`、`source:generic-delimited-statement`、`source:generic-receipt-image`、`source:generic-notification`、`source:generic-photo-ocr`、`ocr:paddle`、`application`、`data:local` 和 `app`。
 
-现有 `CaptureMethod.NOTIFICATION`、通知字段 locator 与来源证据暂存已存在。`SourceIngestionService` 会先保存 RawEvent，因此 listener 不得在未知模板时调用它。当前 Room schema 为 v9，并保留 v6 引入的通知观察摘要：它只含安装范围 HMAC 摘要、opaque command/lease 和状态，不含 Android notification key、包名、频道或正文；过期租约会复用原 command，避免进程死亡后重复创建 RawEvent。
+现有 `CaptureMethod.NOTIFICATION`、通知字段 locator 与来源证据暂存已存在。`SourceIngestionService` 会先保存 RawEvent，因此 listener 不得在未知模板时调用它。当前 Room schema 为 v11，并保留 v6 引入的通知观察摘要：它只含安装范围 HMAC 摘要、opaque command/lease 和状态，不含 Android notification key、包名、频道或正文；过期租约会复用原 command，避免进程死亡后重复创建 RawEvent。
 
 ## 进度
 
@@ -56,6 +58,7 @@
 - [x] 2026-07-26 - 接通用户明确分享的一张 PNG 收据截图：`ACTION_SEND image/png` 只使用当次 `content://` 授权，有界读取最多 4 MiB，验证 PNG 签名/IHDR/尺寸/分块 CRC/IDAT/IEND 后进入现有私有证据、RawEvent、ParseAttempt 和手工复核链。临时字节在完成或失败后擦除；不保存 URI/文件名、不申请相册权限、不解码/预览像素、不运行 OCR 或推断财务字段。JVM parser、application 与 ViewModel 回归已覆盖，真实 Sharesheet/真机仍待验收。
 - [x] 2026-07-26 - 将空目录重构为静态 `VerifiedNotificationRoute` 目录、默认关闭的本地 route enablement，以及 `route -> source identity -> RawEvent -> parser -> source review` 的完整安全链；类别（包括 null）精确匹配，ingress 拒绝同值 lookalike route、在写入前再次检查开关，复核只显示安全标签。生产目录继续为空，不能以此宣称任何 provider 已支持。已由 `:source:generic-notification:test :application:test :app:testDebugUnitTest :data:local:assembleDebugAndroidTest :feature:review:compileDebugKotlin` 验证。
 - [x] 2026-07-31 - 在首个非空 route catalog 前接通只显示安全标签的 route 选择器、串行后台写盘、持久化失败重试，以及“无目录 / 全暂停 / 系统权限缺失 / listener 尚未连接 / 就绪 / 背压 / 失败”健康状态。开启写盘失败不放行；关闭失败立即收紧本进程门禁并冻结其他变更，直到重试成功。无目录且没有既有系统授权时不显示授权入口；若系统授权仍在，即使目录为空或路线全暂停也保留“管理或撤销”入口。生产目录继续为空。JVM 回归、Debug/AndroidTest APK 构建及港版 S24 Ultra Android 16 上 3 个隔离 SharedPreferences instrumentation 均通过，覆盖跨实例启停、旧 route 丢弃和损坏偏好类型失败关闭；这些测试没有授予通知使用权，也没有读取真实通知。
+- [ ] 2026-08-01 - 增加不访问设备数据库或私有真实样本的生产接线回放门：5 条脱敏 route 必须逐条经过生产 catalog、metadata/content gate、观察租约、通知证据 ingress、包含通用通知 parser 的生产 registry 和来源 proposal，并断言金额、方向、有限事件提示与 `WAITING_USER` 语义。该回放只证明 Android callback 之后的生产接线，不替代真实系统 callback。
 - [ ] 2026-07-26 - 补真实系统 callback 更新回放、容量和敏感日志回归；没有这组设备验证时不得开放真实 provider 模板或把 listener 声称为完整账单覆盖。
 - [ ] 待项目负责人明确授权真实内容范围后 - 在 S24U-HK、国行 S24U、已建档小米执行通知资源基线；记录 OEM 回调存活与可选省电设置，不能用模拟器替代。
 - [ ] 待通知基线、商店政策、显著告知和脱敏页面样本齐全后 - 决定是否实施独立只读结果页服务；已实现的 PNG 手工复核保持无 OCR。磁贴/Photo Picker OCR 已在 ExecPlan 0004 换成静态随包 PP-OCRv6 small，并通过代码/AAR/未签名 Release 的本地无网络静态检查；实际三语推理、签名发行、ELF 页兼容与目标真机资源门未完成前仍不得发布。
@@ -136,6 +139,7 @@
 7. 有用户授权后执行设备对照；若 OEM 仅在关闭电池优化后回调，记录为可选设备配置而非默认要求。任何真实内容只产出脱敏测试结论，不写入 Git、日志或对话摘要。
 8. 当前 provider 切片：静态 catalog 包含 5 条默认关闭 route；gate 在读取 extras 前同时要求目录命中、route 已启用、包名/频道/类别精确匹配。Prepared capture 把 route identity 交给 ingress，后者以 route 的 `SourceFamily` 和 connector 建立 RawEvent；provider parser 在 transport 后再次验证 identity、template/version、正文规则与单一 CNY 金额，只生成可证明的金额/方向和有限事件提示。基金确认必须绑定既有持仓。复核 UI 只由 opaque connector 映射本地安全标签，绝不显示包名、频道或正文。仓库只使用脱敏夹具，原始样本不提交。
 9. 当前控制面切片：以 catalog presentation 建立只读设置快照，通过单飞串行后台命令启停 route；开关不可越过 catalog，开启不得在持久化失败时放行，关闭失败则只保证本进程立即收紧并要求在重启前重试或撤销系统授权。设置页仅在 route 已开启时提供授权入口；若应用级系统授权已存在，则无论 route 是否暂停都保留管理/撤销入口。健康状态还要求 listener 实际连接后才能显示就绪。fixture catalog、损坏偏好和跨实例 Android 回归覆盖控制面；新 provider route 的 callback/更新/重启仍待真机验证。
+10. 生产接线回放使用内存端口承载证据、RawEvent、proposal 和观察租约，禁止连接目标 App 数据库、读取 `evidence.local` 或引用原始通知文件。测试 registry 必须与 `AppContainer` 一样同时包含 `GenericNotificationParser` 与 5 个 route parser，避免模块级单测遗漏生产选择歧义；每条夹具从 `NotificationCaptureCoordinator.prepare` 进入 `NotificationEvidenceIngestionService`，成功后才完成观察租约。
 
 ## 具体命令
 
@@ -158,6 +162,7 @@ cmd.exe /d /s /c "git diff --check"
 - 同通知实例的重复/更新不会生成两笔候选；不同通知实例的相同内容也不会被金额/正文误合并。listener 重启后的语义由持久化状态验证。
 - `onNotificationRemoved` 不影响既有草稿或账本。
 - 自动路径最多创建待复核 Draft，所有入账仍要满足既有平衡和确认状态机。
+- 5 条脱敏生产 route 在同一个整链回放中各产生且只产生一个 `WAITING_USER` proposal；通用通知 parser 与 provider parser 不得造成 `AMBIGUOUS_PARSER`。回放不得写目标 App 数据库、设备私有文件或真实通知内容。
 - 单次 PNG 分享只在用户动作后读取一个临时 `content://` 流，类型/大小/结构不符即不落库；成功也只建立无财务字段的手工复核建议，临时字节必须擦除，不能持久化 URI、文件名或相册授权。
 - 没有周期 Job/Alarm、前台服务、主动通知历史扫描或持续唤醒锁；所有证据都遵从容量、保留、删除和敏感日志检查。
 - 三台目标真机分别记录关闭/开启能力的空闲基线、固定回调序列和用户同意范围内的真实来源结果；无基线或发现异常持续消耗时，不把该路线开放给普通用户。
@@ -170,4 +175,4 @@ cmd.exe /d /s /c "git diff --check"
 
 ## 结果与复盘
 
-尚未完成。当前已交付受控通知证据基础、5 条默认关闭的 provider 实验 route、Room v10 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 的 app 14/14 发生在第 5 条基金 route 之前，不包含它的系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6、空间转录 v2，并通过本地无网络静态门、S24U-HK 合成三语推理和合成多金额空间链；真实支付页面、系统截图/选图 UI、签名发行和目标真机资源门仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
+尚未完成。当前已交付受控通知证据基础、5 条默认关闭的 provider 实验 route、Room v11 中保留的 v6 持久观察去重、有界回调队列、安全标签 route 控制面、最小权限授权/撤权入口、listener 连接健康、来源待复核展示、显著本地/权限说明，以及单次 PNG 收据的本地手工复核回退。21 条真实 callback 只用于本机离线研究，仓库内是脱敏夹具；S24U-HK 的最新 app 16/16 是合成 instrumentation 与启动验证，不包含这 5 条 route 的真实系统 callback、更新/重启或资源数据。磁贴/Photo Picker OCR 已由 ExecPlan 0004 接入 PP-OCRv6、空间转录 v2，并通过本地无网络静态门、S24U-HK 合成三语推理和合成多金额空间链；真实系统 callback、签名发行和当前范围要求的发布收口仍未通过。完成时在此记录设备回放、测得资源结果、未开放能力和对来源支持标签的影响。
