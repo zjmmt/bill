@@ -1,12 +1,16 @@
 package dev.bill.data.local
 
 import dev.bill.core.domain.CommandId
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
 import dev.bill.core.model.CurrencyCode
+import dev.bill.core.model.AccountId
 import dev.bill.core.model.EntryRole
 import dev.bill.core.model.Money
 import dev.bill.core.model.TransactionType
@@ -23,6 +27,47 @@ class LedgerEntityMapperTest {
         val domain = LedgerEntityMapper.accountToDomain(entity, MappingDiagnostics.None)
 
         assertEquals(entity, LedgerEntityMapper.accountToEntity(checkNotNull(domain)))
+    }
+
+    @Test
+    fun balanceSnapshotRoundTripPreservesImmutableEvidenceFields() {
+        val snapshot = BalanceSnapshot(
+            id = BalanceSnapshotId("balance-snapshot:command-1"),
+            accountId = AccountId("account-1"),
+            observedBalance = Money(12_345L, CurrencyCode.CNY),
+            asOf = Instant.ofEpochMilli(1_000L),
+            recordedAt = Instant.ofEpochMilli(2_000L),
+            note = "manual check",
+            sourceMode = BalanceSnapshotSourceMode.MANUAL,
+            creationCommandId = CommandId("command-1"),
+        )
+        val entity = LedgerEntityMapper.balanceSnapshotToEntity(snapshot)
+
+        assertEquals(
+            snapshot,
+            LedgerEntityMapper.balanceSnapshotToDomain(entity, MappingDiagnostics.None),
+        )
+    }
+
+    @Test
+    fun unknownBalanceSnapshotSourceModeIsReportedAndSkipped() {
+        val issues = mutableListOf<MappingIssue>()
+        val entity = LedgerEntityMapper.balanceSnapshotToEntity(
+            BalanceSnapshot(
+                id = BalanceSnapshotId("balance-snapshot:command-1"),
+                accountId = AccountId("account-1"),
+                observedBalance = Money.cny(0L),
+                asOf = Instant.ofEpochMilli(1_000L),
+                recordedAt = Instant.ofEpochMilli(2_000L),
+                note = null,
+                sourceMode = BalanceSnapshotSourceMode.MANUAL,
+                creationCommandId = CommandId("command-1"),
+            ),
+        ).copy(sourceMode = "REMOTE")
+
+        assertNull(LedgerEntityMapper.balanceSnapshotToDomain(entity, issues::add))
+        assertEquals(MappingIssueKind.UNKNOWN_ENUM, issues.single().kind)
+        assertEquals("sourceMode", issues.single().field)
     }
 
     @Test

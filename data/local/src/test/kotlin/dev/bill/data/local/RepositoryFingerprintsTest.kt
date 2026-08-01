@@ -1,6 +1,9 @@
 package dev.bill.data.local
 
 import dev.bill.core.domain.CommandId
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
@@ -55,6 +58,34 @@ class RepositoryFingerprintsTest {
         assertNotEquals(
             Fingerprints.createDraft(draft),
             Fingerprints.createDraft(replay.copy(amount = Money.cny(2_501L))),
+        )
+    }
+
+    @Test
+    fun `balance snapshot retry ignores recording time but preserves observed intent`() {
+        val snapshot = BalanceSnapshot(
+            id = BalanceSnapshotId("balance-snapshot:stable-command"),
+            accountId = AccountId("account:stable-command"),
+            observedBalance = Money.cny(12_345L),
+            asOf = early,
+            recordedAt = early,
+            note = "manual check",
+            sourceMode = BalanceSnapshotSourceMode.MANUAL,
+            creationCommandId = CommandId("stable-command"),
+        )
+        val replay = snapshot.copy(recordedAt = later)
+
+        assertEquals(
+            Fingerprints.createBalanceSnapshot(snapshot),
+            Fingerprints.createBalanceSnapshot(replay),
+        )
+        assertNotEquals(
+            Fingerprints.createBalanceSnapshot(snapshot),
+            Fingerprints.createBalanceSnapshot(replay.copy(observedBalance = Money.cny(12_346L))),
+        )
+        assertNotEquals(
+            Fingerprints.createBalanceSnapshot(snapshot),
+            Fingerprints.createBalanceSnapshot(replay.copy(asOf = later)),
         )
     }
 

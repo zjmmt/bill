@@ -5,6 +5,9 @@ import androidx.room.withTransaction
 import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditAction
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotComparison
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -12,6 +15,7 @@ import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
 import dev.bill.core.domain.InvestmentPosition
+import dev.bill.core.domain.MAX_BALANCE_SNAPSHOT_NOTE_LENGTH
 import dev.bill.core.domain.ManualDraft
 import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
@@ -25,6 +29,8 @@ import dev.bill.core.domain.SystemAccountIds
 import dev.bill.core.domain.TransactionRelationType
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.domain.supportsBalanceSnapshots
+import dev.bill.core.domain.toUserViewBalance
 import dev.bill.core.ledger.PostingBuildResult
 import dev.bill.core.ledger.PostingFactory
 import dev.bill.core.model.AccountId
@@ -58,9 +64,14 @@ class RoomLedgerRepository(
 
     override fun observeState(): Flow<LedgerState> = combine(
         combine(
-            dao.observeAccountBalances(),
-            dao.observeInvestmentPositions(),
-        ) { balances, positions -> balances to positions },
+            combine(
+                dao.observeAccountBalances(),
+                dao.observeInvestmentPositions(),
+            ) { balances, positions -> balances to positions },
+            dao.observeLatestBalanceSnapshotLedgers(),
+        ) { accountAndPositions, snapshotLedgers ->
+            Triple(accountAndPositions.first, accountAndPositions.second, snapshotLedgers)
+        },
         dao.observePendingDrafts(),
         combine(
             dao.observeRecentTransactions(recentTransactionLimit),
@@ -84,7 +95,11 @@ class RoomLedgerRepository(
                     Math.addExact(transactionRelations, reconciliationTransactions),
                 )
             },
-            dao.observeInvestmentPositionIntegrityIssueCount(),
+            combine(
+                dao.observeInvestmentPositionIntegrityIssueCount(),
+                dao.observeBalanceSnapshotIntegrityIssueCount(),
+                Math::addExact,
+            ),
             Math::addExact,
         ),
         sourceDao.observeSourceIntegrityIssueCount(),
@@ -112,10 +127,10 @@ class RoomLedgerRepository(
                 throw LocalDataIntegrityException("active refund total")
             }
         }
+        val accountBalances = accountAndPositions.first.map(::mapAccountBalance)
+        val accountBalancesById = accountBalances.associateBy { it.account.id.value }
         LedgerState(
-            accountBalances = accountAndPositions.first.map { row ->
-                mapAccountBalance(row)
-            },
+            accountBalances = accountBalances,
             pendingDrafts = draftRelations.map { relation ->
                 mapDraft(relation)
             }.filter { draft ->
@@ -128,6 +143,9 @@ class RoomLedgerRepository(
             investmentPositions = accountAndPositions.second.map { entity ->
                 LedgerEntityMapper.investmentPositionToDomain(entity, diagnostics)
                     ?: throw LocalDataIntegrityException("investment position")
+            },
+            balanceSnapshotComparisons = accountAndPositions.third.map { row ->
+                mapBalanceSnapshotComparison(row, accountBalancesById)
             },
         )
     }
@@ -352,6 +370,69 @@ class RoomLedgerRepository(
         dao.insertInvestmentPosition(LedgerEntityMapper.investmentPositionToEntity(position))
         dao.insertAuditEvents(auditRecords.map(LedgerEntityMapper::auditToEntity))
         applied(position.id.value)
+    }
+
+    override suspend fun createBalanceSnapshot(
+        snapshot: BalanceSnapshot,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult = safelyWrite {
+        val fingerprint = Fingerprints.createBalanceSnapshot(snapshot)
+        when (
+            val replay = inspectCommand(
+                commandId = snapshot.creationCommandId,
+                operation = Operation.CREATE_BALANCE_SNAPSHOT,
+                targetId = snapshot.id.value,
+                fingerprint = fingerprint,
+            )
+        ) {
+            is CommandInspection.Replay -> return@safelyWrite replay.result
+            CommandInspection.Collision -> return@safelyWrite collision()
+            CommandInspection.New -> Unit
+        }
+
+        val account = dao.findAccount(snapshot.accountId.value)?.let(::mapAccount)
+            ?: return@safelyWrite accountNotFound()
+        if (
+            account.isSystem ||
+            account.isArchived ||
+            !account.type.supportsBalanceSnapshots() ||
+            !account.type.allowsUserAccountCurrency(account.currency) ||
+            snapshot.observedBalance.currency != account.currency ||
+            !snapshot.observedBalance.currency.isSupportedLedgerCurrency() ||
+            snapshot.sourceMode != BalanceSnapshotSourceMode.MANUAL ||
+            snapshot.asOf > snapshot.recordedAt ||
+            snapshot.recordedAt < account.createdAt ||
+            snapshot.note?.length?.let { it > MAX_BALANCE_SNAPSHOT_NOTE_LENGTH } == true ||
+            snapshot.note?.any(Char::isISOControl) == true ||
+            auditRecord.occurredAt != snapshot.recordedAt ||
+            dao.findBalanceSnapshot(snapshot.id.value) != null
+        ) {
+            return@safelyWrite invalidState()
+        }
+        if (
+            !auditsAreInsertable(
+                audits = listOf(auditRecord),
+                commandId = snapshot.creationCommandId,
+                expectedTargets = mapOf(
+                    AuditAction.BALANCE_SNAPSHOT_RECORDED to
+                        AuditTarget("balance_snapshot", snapshot.id.value),
+                ),
+            )
+        ) {
+            return@safelyWrite collision()
+        }
+
+        claimCommand(
+            commandId = snapshot.creationCommandId,
+            operation = Operation.CREATE_BALANCE_SNAPSHOT,
+            targetId = snapshot.id.value,
+            resultEntityId = snapshot.id.value,
+            fingerprint = fingerprint,
+            appliedAtEpochMillis = snapshot.recordedAt.toEpochMilli(),
+        )
+        dao.insertBalanceSnapshot(LedgerEntityMapper.balanceSnapshotToEntity(snapshot))
+        dao.insertAuditEvents(listOf(LedgerEntityMapper.auditToEntity(auditRecord)))
+        applied(snapshot.id.value)
     }
 
     override suspend fun createManualDraft(
@@ -1237,6 +1318,41 @@ class RoomLedgerRepository(
         LedgerEntityMapper.accountBalanceToDomain(row, diagnostics)
             ?: throw LocalDataIntegrityException("account balance")
 
+    private fun mapBalanceSnapshotComparison(
+        row: BalanceSnapshotLedgerRow,
+        accountBalancesById: Map<String, AccountBalance>,
+    ): BalanceSnapshotComparison {
+        val snapshot = LedgerEntityMapper.balanceSnapshotToDomain(row.snapshot, diagnostics)
+            ?: throw LocalDataIntegrityException("balance snapshot")
+        val account = accountBalancesById[snapshot.accountId.value]?.account
+            ?: throw LocalDataIntegrityException("balance snapshot account")
+        if (
+            row.currencyMismatchCount > 0L ||
+            account.currency != snapshot.observedBalance.currency ||
+            !account.type.supportsBalanceSnapshots()
+        ) {
+            throw LocalDataIntegrityException("balance snapshot ledger")
+        }
+        return try {
+            val ledgerBalance = account.type.toUserViewBalance(
+                Money(row.ledgerBalanceMinorUnits, account.currency),
+            )
+            BalanceSnapshotComparison(
+                snapshot = snapshot,
+                ledgerBalance = ledgerBalance,
+                difference = Money(
+                    minorUnits = Math.subtractExact(
+                        snapshot.observedBalance.minorUnits,
+                        ledgerBalance.minorUnits,
+                    ),
+                    currency = account.currency,
+                ),
+            )
+        } catch (_: ArithmeticException) {
+            throw LocalDataIntegrityException("balance snapshot arithmetic")
+        }
+    }
+
     private suspend fun findDraftSafely(id: String): ManualDraft? {
         val relation = dao.findDraft(id) ?: return null
         if (sourceDao.countDraftSourceLinkIssues(id) > 0L) {
@@ -1432,6 +1548,7 @@ private object Operation {
     const val VOID_TRANSACTION = "VOID_TRANSACTION"
     const val RESOLVE_RECONCILIATION = "RESOLVE_RECONCILIATION"
     const val CREATE_INVESTMENT_POSITION = "CREATE_INVESTMENT_POSITION"
+    const val CREATE_BALANCE_SNAPSHOT = "CREATE_BALANCE_SNAPSHOT"
 }
 
 internal object Fingerprints {
@@ -1463,6 +1580,17 @@ internal object Fingerprints {
         .add(position.sourceMode.name)
         .addAccount(account)
         .addTransaction(opening)
+        .finish()
+
+    fun createBalanceSnapshot(snapshot: BalanceSnapshot): String = CanonicalFingerprint()
+        .add(Operation.CREATE_BALANCE_SNAPSHOT)
+        .add(snapshot.id.value)
+        .add(snapshot.accountId.value)
+        .add(snapshot.observedBalance.minorUnits)
+        .add(snapshot.observedBalance.currency.value)
+        .add(snapshot.asOf.toEpochMilli())
+        .addNullable(snapshot.note)
+        .add(snapshot.sourceMode.name)
         .finish()
 
     fun createDraft(draft: ManualDraft): String = CanonicalFingerprint()
@@ -1605,7 +1733,6 @@ private class CanonicalFingerprint {
 }
 
 private const val SystemCreationCommandId = "system:init:v3"
-
 private val SystemAccountIdValues = (
     SystemAccountIds.allFor(CurrencyCode.CNY) + SystemAccountIds.allFor(CurrencyCode.USD)
 ).mapTo(linkedSetOf(), AccountId::value)

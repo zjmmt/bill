@@ -2,6 +2,9 @@ package dev.bill.data.local
 
 import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -270,6 +273,46 @@ internal object LedgerEntityMapper {
         }
     }
 
+    fun balanceSnapshotToDomain(
+        entity: BalanceSnapshotEntity,
+        diagnostics: MappingDiagnostics,
+    ): BalanceSnapshot? {
+        val id = constructIdOrNull(
+            entity.id,
+            "balance_snapshots",
+            "id",
+            diagnostics,
+            ::BalanceSnapshotId,
+        ) ?: return null
+        val accountId = accountId(entity.accountId, "balance_snapshots", diagnostics)
+            ?: return null
+        val currency = currencyOrNull(entity.currency, "balance_snapshots", diagnostics)
+            ?: return null
+        val sourceMode = enumOrNull<BalanceSnapshotSourceMode>(
+            entity.sourceMode,
+            "balance_snapshots",
+            "sourceMode",
+            diagnostics,
+        ) ?: return null
+        val commandId = commandId(
+            entity.creationCommandId,
+            "balance_snapshots",
+            diagnostics,
+        ) ?: return null
+        return constructOrNull("balance_snapshots", diagnostics) {
+            BalanceSnapshot(
+                id = id,
+                accountId = accountId,
+                observedBalance = Money(entity.observedBalanceMinorUnits, currency),
+                asOf = Instant.ofEpochMilli(entity.asOfEpochMillis),
+                recordedAt = Instant.ofEpochMilli(entity.recordedAtEpochMillis),
+                note = entity.note,
+                sourceMode = sourceMode,
+                creationCommandId = commandId,
+            )
+        }
+    }
+
     fun accountToEntity(account: LedgerAccount): AccountEntity = AccountEntity(
         id = account.id.value,
         name = account.name,
@@ -300,6 +343,19 @@ internal object LedgerEntityMapper {
         updatedAtEpochMillis = position.updatedAt.toEpochMilli(),
         creationCommandId = position.creationCommandId.value,
     )
+
+    fun balanceSnapshotToEntity(snapshot: BalanceSnapshot): BalanceSnapshotEntity =
+        BalanceSnapshotEntity(
+            id = snapshot.id.value,
+            accountId = snapshot.accountId.value,
+            observedBalanceMinorUnits = snapshot.observedBalance.minorUnits,
+            currency = snapshot.observedBalance.currency.value,
+            asOfEpochMillis = snapshot.asOf.toEpochMilli(),
+            recordedAtEpochMillis = snapshot.recordedAt.toEpochMilli(),
+            note = snapshot.note,
+            sourceMode = snapshot.sourceMode.name,
+            creationCommandId = snapshot.creationCommandId.value,
+        )
 
     fun draftToEntity(draft: ManualDraft): DraftEntity = DraftEntity(
         id = draft.id.value,

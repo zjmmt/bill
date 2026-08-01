@@ -6,6 +6,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.bill.core.domain.AuditAction
 import dev.bill.core.domain.AuditEventId
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -191,6 +194,25 @@ class RoomLedgerRepositoryTest {
             repository.observeState().first().accountBalances.single {
                 it.account.id == usdBank.id
             }.account.currency,
+        )
+        val usdSnapshot = balanceSnapshot(
+            id = "usd-bank",
+            account = usdBank,
+            observedBalance = Money(12_345L, CurrencyCode.USD),
+            asOf = now,
+            recordedAt = now,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(
+                usdSnapshot,
+                balanceSnapshotAudit(usdSnapshot),
+            ).status,
+        )
+        assertEquals(
+            CurrencyCode.USD,
+            repository.observeState().first().balanceSnapshotComparisons.single()
+                .snapshot.observedBalance.currency,
         )
 
         val usdWallet = usdBank.copy(
@@ -577,6 +599,213 @@ class RoomLedgerRepositoryTest {
     }
 
     @Test
+    fun balanceSnapshotIsIdempotentAndTracksHistoricalLedgerChangesWithoutPosting() = runBlocking {
+        val createdAt = Instant.parse("2026-07-19T00:00:00Z")
+        val bank = userAccount("snapshot-bank", AccountType.ASSET_BANK, createdAt)
+        persistAccount(bank, createdAt)
+        persistTransaction(
+            id = "income-before-snapshot",
+            type = TransactionType.INCOME,
+            account = bank,
+            amount = Money.cny(10_000L),
+            occurredAt = createdAt.plusSeconds(60),
+            confirmedAt = createdAt.plusSeconds(120),
+        )
+        persistTransaction(
+            id = "expense-after-snapshot",
+            type = TransactionType.EXPENSE,
+            account = bank,
+            amount = Money.cny(2_000L),
+            occurredAt = createdAt.plusSeconds(600),
+            confirmedAt = createdAt.plusSeconds(660),
+        )
+        val snapshot = balanceSnapshot(
+            id = "bank",
+            account = bank,
+            observedBalance = Money.cny(10_000L),
+            asOf = createdAt.plusSeconds(300),
+            recordedAt = createdAt.plusSeconds(900),
+        )
+        val snapshotAudit = balanceSnapshotAudit(snapshot)
+
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(snapshot, snapshotAudit).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.ALREADY_APPLIED,
+            repository.createBalanceSnapshot(
+                snapshot.copy(recordedAt = snapshot.recordedAt.plusSeconds(60)),
+                snapshotAudit.copy(occurredAt = snapshot.recordedAt.plusSeconds(60)),
+            ).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.COMMAND_COLLISION,
+            repository.createBalanceSnapshot(
+                snapshot.copy(observedBalance = Money.cny(9_999L)),
+                snapshotAudit,
+            ).status,
+        )
+
+        var state = repository.observeState().first()
+        assertEquals(Money.cny(8_000L), state.accountBalances.single { it.account.id == bank.id }.balance)
+        var comparison = state.balanceSnapshotComparisons.single()
+        assertEquals(Money.cny(10_000L), comparison.ledgerBalance)
+        assertEquals(Money.cny(0L), comparison.difference)
+        assertTrue(comparison.isReconciled)
+        assertEquals(2, state.recentTransactions.size)
+
+        val backdated = persistTransaction(
+            id = "backdated-expense",
+            type = TransactionType.EXPENSE,
+            account = bank,
+            amount = Money.cny(1_000L),
+            occurredAt = createdAt.plusSeconds(240),
+            confirmedAt = createdAt.plusSeconds(1_020),
+        )
+        state = repository.observeState().first()
+        comparison = state.balanceSnapshotComparisons.single()
+        assertEquals(Money.cny(9_000L), comparison.ledgerBalance)
+        assertEquals(Money.cny(1_000L), comparison.difference)
+
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.voidTransaction(
+                backdated.id,
+                audit(
+                    CommandId("void-backdated-expense"),
+                    "transaction-voided",
+                    AuditAction.TRANSACTION_VOIDED,
+                    "transaction",
+                    backdated.id.value,
+                    createdAt.plusSeconds(1_080),
+                ),
+            ).status,
+        )
+        comparison = repository.observeState().first().balanceSnapshotComparisons.single()
+        assertEquals(Money.cny(10_000L), comparison.ledgerBalance)
+        assertTrue(comparison.isReconciled)
+
+        val newerSnapshot = balanceSnapshot(
+            id = "bank-newer",
+            account = bank,
+            observedBalance = Money.cny(9_500L),
+            asOf = createdAt.plusSeconds(360),
+            recordedAt = createdAt.plusSeconds(1_200),
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(
+                newerSnapshot,
+                balanceSnapshotAudit(newerSnapshot),
+            ).status,
+        )
+        comparison = repository.observeState().first().balanceSnapshotComparisons.single()
+        assertEquals(newerSnapshot.id, comparison.snapshot.id)
+        assertEquals(Money.cny(-500L), comparison.difference)
+        database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM balance_snapshots WHERE accountId = ?",
+            arrayOf(bank.id.value),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(2L, cursor.getLong(0))
+        }
+    }
+
+    @Test
+    fun archivedAccountRetainsSnapshotHistoryWithoutPoisoningCurrentState() = runBlocking {
+        val createdAt = Instant.parse("2026-07-19T00:00:00Z")
+        val bank = userAccount("archived-snapshot-bank", AccountType.ASSET_BANK, createdAt)
+        persistAccount(bank, createdAt)
+        val snapshot = balanceSnapshot(
+            id = "archived-bank",
+            account = bank,
+            observedBalance = Money.cny(1_000L),
+            asOf = createdAt,
+            recordedAt = createdAt.plusSeconds(60),
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(snapshot, balanceSnapshotAudit(snapshot)).status,
+        )
+        assertEquals(1, repository.observeState().first().balanceSnapshotComparisons.size)
+
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE accounts SET isArchived = 1 WHERE id = ?",
+            arrayOf(bank.id.value),
+        )
+
+        assertEquals(0L, database.ledgerDao().observeBalanceSnapshotIntegrityIssueCount().first())
+        assertTrue(repository.observeState().first().balanceSnapshotComparisons.isEmpty())
+        database.openHelper.readableDatabase.query(
+            "SELECT COUNT(*) FROM balance_snapshots WHERE accountId = ?",
+            arrayOf(bank.id.value),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals(1L, cursor.getLong(0))
+        }
+    }
+
+    @Test
+    fun creditCardSnapshotComparesPositiveUserDebtAgainstSignedLedgerLiability() = runBlocking {
+        val createdAt = Instant.parse("2026-07-19T00:00:00Z")
+        val card = userAccount("snapshot-card", AccountType.LIABILITY_CC, createdAt)
+        persistAccount(card, createdAt)
+        persistTransaction(
+            id = "card-expense",
+            type = TransactionType.EXPENSE,
+            account = card,
+            amount = Money.cny(5_000L),
+            occurredAt = createdAt.plusSeconds(60),
+            confirmedAt = createdAt.plusSeconds(120),
+        )
+        val snapshot = balanceSnapshot(
+            id = "card",
+            account = card,
+            observedBalance = Money.cny(5_000L),
+            asOf = createdAt.plusSeconds(120),
+            recordedAt = createdAt.plusSeconds(180),
+        )
+
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(snapshot, balanceSnapshotAudit(snapshot)).status,
+        )
+
+        val state = repository.observeState().first()
+        assertEquals(Money.cny(-5_000L), state.accountBalances.single { it.account.id == card.id }.balance)
+        val comparison = state.balanceSnapshotComparisons.single()
+        assertEquals(Money.cny(5_000L), comparison.ledgerBalance)
+        assertEquals(Money.cny(0L), comparison.difference)
+    }
+
+    @Test
+    fun corruptBalanceSnapshotFailsClosedInsteadOfPublishingPartialState() = runBlocking {
+        val createdAt = Instant.parse("2026-07-19T00:00:00Z")
+        val bank = userAccount("corrupt-snapshot", AccountType.ASSET_BANK, createdAt)
+        persistAccount(bank, createdAt)
+        val snapshot = balanceSnapshot(
+            id = "corrupt",
+            account = bank,
+            observedBalance = Money.cny(0L),
+            asOf = createdAt,
+            recordedAt = createdAt.plusSeconds(60),
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.createBalanceSnapshot(snapshot, balanceSnapshotAudit(snapshot)).status,
+        )
+        database.openHelper.writableDatabase.execSQL(
+            "UPDATE balance_snapshots SET sourceMode = 'REMOTE' WHERE id = ?",
+            arrayOf(snapshot.id.value),
+        )
+
+        assertEquals(1L, database.ledgerDao().observeBalanceSnapshotIntegrityIssueCount().first())
+        val failure = runCatching { repository.observeState().first() }.exceptionOrNull()
+        assertTrue(failure is LocalDataIntegrityException)
+    }
+
+    @Test
     fun invalidActiveLedgerStateFailsClosedInsteadOfPublishingAPartialSnapshot() = runBlocking {
         database.openHelper.writableDatabase.execSQL(
             """
@@ -796,6 +1025,82 @@ class RoomLedgerRepositoryTest {
             ).status,
         )
     }
+
+    private suspend fun persistTransaction(
+        id: String,
+        type: TransactionType,
+        account: LedgerAccount,
+        amount: Money,
+        occurredAt: Instant,
+        confirmedAt: Instant,
+    ): PostedTransaction {
+        val draft = reviewDraft(
+            id = id,
+            type = type,
+            accountId = account.id,
+            occurredAt = occurredAt,
+            amount = amount,
+        )
+        persistDraft(draft)
+        val commandId = CommandId("confirm:$id")
+        val validated = (
+            PostingFactory.manualDraft(
+                draft = draft,
+                fundingAccount = account,
+                transactionId = TransactionId("transaction:$id"),
+                confirmedAt = confirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val transaction = postedTransaction(
+            validated = validated,
+            draftId = draft.id,
+            commandId = commandId,
+            confirmedAt = confirmedAt,
+            title = draft.counterparty,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            repository.confirmDraft(
+                draft.id,
+                transaction,
+                audit(
+                    commandId,
+                    "draft-confirmed",
+                    AuditAction.DRAFT_CONFIRMED,
+                    "draft",
+                    draft.id.value,
+                    confirmedAt,
+                ),
+            ).status,
+        )
+        return transaction
+    }
+
+    private fun balanceSnapshot(
+        id: String,
+        account: LedgerAccount,
+        observedBalance: Money,
+        asOf: Instant,
+        recordedAt: Instant,
+    ) = BalanceSnapshot(
+        id = BalanceSnapshotId("balance-snapshot:$id"),
+        accountId = account.id,
+        observedBalance = observedBalance,
+        asOf = asOf,
+        recordedAt = recordedAt,
+        note = "manual check",
+        sourceMode = BalanceSnapshotSourceMode.MANUAL,
+        creationCommandId = CommandId("create-balance-snapshot:$id"),
+    )
+
+    private fun balanceSnapshotAudit(snapshot: BalanceSnapshot) = audit(
+        commandId = snapshot.creationCommandId,
+        suffix = "balance-snapshot-recorded",
+        action = AuditAction.BALANCE_SNAPSHOT_RECORDED,
+        entityType = "balance_snapshot",
+        entityId = snapshot.id.value,
+        occurredAt = snapshot.recordedAt,
+    )
 
     private fun postedTransaction(
         validated: ValidatedLedgerTransaction,
