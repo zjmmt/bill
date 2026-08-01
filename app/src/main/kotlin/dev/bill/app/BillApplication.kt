@@ -25,7 +25,6 @@ import dev.bill.source.genericsharetext.GenericShareTextParser
 import dev.bill.source.genericdelimited.GenericDelimitedStatementParser
 import dev.bill.source.genericphotoocr.GenericPhotoOcrParser
 import dev.bill.source.genericreceiptimage.GenericSharedReceiptImageParser
-import dev.bill.source.genericnotification.GenericNotificationParser
 import dev.bill.source.genericnotification.NotificationTemplateGate
 import dev.bill.app.notification.NotificationCaptureCoordinator
 import dev.bill.app.notification.AppPrivateNotificationObservationIdDeriver
@@ -108,9 +107,7 @@ class AppContainer(context: Context) {
             rawEventRepository = rawEventRepository,
             evidenceReader = evidenceStore,
             parserRegistry = ParserRegistry(
-                listOf(
-                    GenericNotificationParser(),
-                ) + notificationRouteCatalog.parsers() + listOf(
+                ProductionNotificationRoutes.parsers + listOf(
                     GenericPhotoOcrParser(),
                     GenericDelimitedStatementParser(),
                     GenericShareTextParser(),

@@ -33,8 +33,8 @@ internal class PreparedNotificationCapture(
 }
 
 /**
- * Keeps the Android listener thin. The production catalog is intentionally empty until a provider
- * has sanitized replay fixtures. It accepts content only after an explicit metadata rule, and it
+ * Keeps the Android listener thin. Production routes are backed by sanitized replay fixtures and
+ * remain opt-in per provider. It accepts content only after an explicit metadata rule, and it
  * reserves a durable redacted observation before handing evidence to the ingestion pipeline.
  */
 internal class NotificationCaptureCoordinator(
@@ -45,7 +45,7 @@ internal class NotificationCaptureCoordinator(
     private val commandIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val leaseIdFactory: () -> String = { UUID.randomUUID().toString() },
     private val leaseDuration: Duration = DefaultLeaseDuration,
-    /** This release gate stays closed until the caller supplies a durable store and bounded queue. */
+    /** Safe default for tests/alternate callers; production enables this with durable dedupe and a bounded queue. */
     private val hasDurableUpdateDedupe: Boolean = false,
 ) {
     init {
