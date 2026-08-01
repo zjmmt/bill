@@ -1,6 +1,6 @@
 # ExecPlan 0011：完整可编辑审核、单帧 OCR 回退与跨来源 FUNDED_BY
 
-- 状态：进行中
+- 状态：完成
 - 所有者：项目维护者
 - 最后核验：2026-08-01
 - 事实来源：项目负责人 2026-08-01 的基础可用优先级、ADR-0012、ADR-0016、采集复核规格、对账设计、当前 Room v10 与 Compose 实现
@@ -45,7 +45,7 @@
 - [x] 2026-08-01 - 补齐并通过本轮定向回归：完整 Draft 编辑保留身份与来源模式、未来时间失败关闭、OCR 渠道预填/未知回退、`FUNDED_BY` 成功与拒绝矩阵、电子钱包余额排除；9→10 迁移 Android 测试源码编译通过。
 - [x] 2026-08-01 - 补齐 Room 仓储级 `FUNDED_BY` 确认/撤销/双证据链回归，以及简体中文、繁体中文、英文状态和应用展示名不参与金额门控的 OCR 固定回放；三组 AndroidTest APK 均可构建。
 - [x] 2026-08-01 - 完成完整测试、Lint、Debug/Release/AndroidTest APK、仓库守卫和 `code-review`；审查修复了编辑命令重试、显式渠道指纹兼容，以及实体未声明迁移默认值会导致 Room 真机 schema 校验失败的问题。
-- [ ] 下次真机连接时实际运行 Room 9→10 迁移、仓储原子性及 OCR runtime 仪器化测试；当前只有源码/APK 编译证据，不冒充真机通过。
+- [x] 2026-08-01 - 在港版 `S24U-HK`（Android 16/API 36、arm64-v8a）完成最终工作树真机回归：Room 50/50、App 16/16、随包 OCR 1/1；v9→v10、`FUNDED_BY` 确认/撤销/双证据链、5-route 默认关闭目录和空间 OCR 均实际执行通过。随后以 `adb install -r` 安装 arm64 Debug APK，`MainActivity` 冷启动成功且进程保持。
 
 ## 意外发现
 
@@ -53,6 +53,9 @@
 - 现有审核底部页展示金额、时间和商户，但只能选择资金账户；“看得见”不等于“可审核修改”。
 - 现有对账观察上限为有界 Draft 集合；新增匹配必须建立键索引，不能对全部 Draft 做无界 O(n²) 扫描。
 - Room 实体的 Kotlin 属性默认值不是数据库 schema 默认值；迁移使用 `DEFAULT 'UNKNOWN'` 时，实体也必须声明同一 `ColumnInfo(defaultValue)`，否则 AndroidTest 虽可编译，真机迁移校验仍可能失败。
+- 数据库升级到 v10 后，两个早期迁移测试的“打开当前数据库”夹具仍只注册到 v7，导致完整链在真机假失败；补齐 v7→v10 后 8/8 迁移通过，新增 v9→v10 用例从首次执行起即通过。
+- `FUNDED_BY` 会同时产生资金账户与支出科目余额；仓储真机结果正确，旧测试却对全部余额调用 `single()`。断言改为按银行卡账户 ID 精确验证，未放宽生产账务不变量。
+- 生产通知目录已是 5 条 route，旧 App 集成测试仍写死 4。测试现固定全部 5 个稳定 route ID，避免数量相同但来源被误替换也蒙混过关。
 
 ## 决策日志
 
@@ -102,7 +105,7 @@ cmd.exe /d /s /c git diff --check
 
 ## 结果与复盘
 
-本地实现与静态/构建验证完成；按项目负责人要求在此暂停。当前工作树在最后一次兼容性修复后已通过：
+实现、静态/构建验证与本计划要求的港版 S24 Ultra 真机回归均已完成。离线完整门沿用本轮实现提交前结果：
 
 ```text
 cmd.exe /d /s /c scripts\android.cmd :core:domain:test :core:ledger:test :application:test :source:generic-photo-ocr:test :feature:review:test :app:compileDebugKotlin :data:local:test :data:local:compileDebugAndroidTestKotlin --console=plain
@@ -127,4 +130,16 @@ cmd.exe /d /s /c git diff --check
 通过；仅有现存 LF→CRLF 工作树提示
 ```
 
-`code-review` 没有留下已知的高优先级代码问题；检查过运行时失败路径、性能边界、事务副作用、向后兼容、敏感数据边界、分层与测试。尚缺的唯一运行证据是真机执行 Room 9→10 迁移、仓储原子性与 OCR runtime 仪器化用例；提交/推送状态单独以 Git 结果为准。平台不产生通知不计为失败，磁贴截图和手工补录必须可用。
+最终真机结果：
+
+```text
+BillDatabaseMigrationTest：8/8
+RoomSourceRepositoryTest：10/10
+:data:local:connectedDebugAndroidTest：50/50
+:ocr:paddle:connectedDebugAndroidTest：1/1
+:app:connectedDebugAndroidTest：16/16
+adb install -r app-arm64-v8a-debug.apk：Success
+MainActivity：Status ok，COLD，TotalTime 1078 ms；随后 pidof 返回活动进程
+```
+
+首次运行暴露的 3 处失败全部是过时或过宽的测试夹具：旧迁移链停在 v7、余额断言误把多科目账务当单余额、生产 route 数量仍写 4。修复只收紧或补全测试，未修改生产代码；复跑后的三个模块共 67/67 通过。`code-review` 检查了运行时失败路径、性能边界、事务副作用、向后兼容、敏感数据边界、分层与测试，没有留下已知 P0/P1/P2。真实通知 callback、系统截图/Photo Picker UI、Release 资源和其余目标真机矩阵仍是产品发布门，但不属于本计划完成条件；平台不产生通知时继续由磁贴截图和手工补录兜底。

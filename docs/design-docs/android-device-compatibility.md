@@ -23,7 +23,7 @@
 
 | 设备代号 | 已知信息 | 执行前必须补齐 | 当前角色 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟、14/14 app、47/47 Room、1/1 随包 OCR 合成、1/1 空间 OCR、11/11 本机私有真实页面与 1/1 简中四状态页定向 instrumentation，未完成任一完整真机用例 |
+| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟、最终工作树 16/16 app、50/50 Room、1/1 随包 OCR 合成、空间 OCR、11/11 本机私有真实页面与 1/1 简中四状态页定向 instrumentation，未完成任一完整真机用例 |
 | `S24U-CN` | 国行 Samsung Galaxy S24 Ultra | 型号代码、CSC/地区、Android 与 One UI 完整构建、安全补丁、RAM/存储档、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | 无 GMS 核心路径主验证、One UI 后台与竖屏主视觉验证 | 待建档、未实测 |
 | `XIAOMI-CN` | 国行小米，具体型号未知 | **具体型号**、SoC/RAM/存储档、Android 与 HyperOS 完整构建、安全补丁、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | HyperOS 权限、后台、文件入口和竖屏主视觉压力验证 | **研究门未满足，不得声称代表任何小米机型或性能档** |
 | `MUMU-API32` | MuMu 模拟器；当前 ADB 建档为 API 32、`x86_64`，上报型号 `SM-S9280` | MuMu 版本、镜像版本、分辨率/密度、sw/window dp、旋转与窗口设置 | 快速安装、竖屏布局和合成流程冒烟 | 仅模拟器；不是 Samsung 硬件、国行固件、One UI 或真 S24 Ultra 证据 |
@@ -134,6 +134,21 @@ Room 套件首次运行有 2 条旧夹具失败：夹具绕过了生产要求的
 | 简中四状态页 | 程序绘制“领取成功、红包尚未领取、提现处理中、转账成功”四页，定向 `:app:connectedDebugAndroidTest` 1/1 通过 | 同一随包模型能识别这些简体字，解析器对完成/未领取/处理中/转账状态按规则处理；与真实繁中/英文回放共同约束简繁体兼容目标 | 真实简中微信页面、中文通知正文、OEM 字体/布局漂移或 provider 发布支持 |
 
 本节把“真实繁中/英文页面”和“合成简中状态页”分开记证据。两者都不允许升级微信、支付宝或银行来源状态；真实简中页面、通知 callback、Release 资源和完整目标设备矩阵仍是开放门。
+
+## 2026-08-01 `S24U-HK` Room v10、可编辑审核与 `FUNDED_BY` 最终回归
+
+这组结果只使用测试数据库、程序生成图像和测试专用偏好；没有打开来源 App、读取通知历史、导出真实通知或读取本机私有截图。设备序列号不入库。
+
+| 范围 | 执行结果 | 能证明 | 不能证明 |
+| --- | --- | --- | --- |
+| Room instrumentation | `:data:local:connectedDebugAndroidTest` 50/50 通过；其中迁移类 8/8、来源仓储类 10/10 | v1→v10 迁移、v9→v10 的 `observedChannel=UNKNOWN`、完整 Draft 编辑、`FUNDED_BY` 原子确认/幂等/撤销、银行余额与两条证据链在当前 arm64/API 36 设备执行通过 | 真实来源 Draft、系统强杀切点、数据库加密、UI 操作或其他 OEM |
+| App instrumentation | `:app:connectedDebugAndroidTest` 16/16 通过：10 条 Debug 采样、3 条隔离 route 偏好、全部 5 个生产 route 的目录锁定、2 条空间 OCR | 最终工作树的研究文件/偏好边界、5-route 默认关闭与 opaque opt-in、程序绘制图像到空间主金额建议在 One UI 上可执行 | 系统通知 callback、真实模板、截图/Photo Picker UI、后台存活或 provider 支持 |
+| 随包 OCR instrumentation | `:ocr:paddle:connectedDebugAndroidTest` 1/1 通过 | 当前捆绑模型和原生运行时能在 arm64/API 36 本地加载、完成合成中/英/日推理并释放 | 真实简中页面、Release 峰值/耗电、ELF 页兼容、签名发行或其他设备 |
+| 安装与启动 | `adb install -r` 安装 arm64 Debug APK 成功；`MainActivity` 冷启动 `Status: ok`、`TotalTime: 1078 ms`，随后主进程仍存在 | 当前 Debug 主包可安装并完成一次冷启动；本轮没有执行 `pm clear` | 全新安装/覆盖升级数据语义、旋转/分屏、完整 `INSTALL-01` 或长期稳定性 |
+
+首轮真机测试曾暴露 4 个测试失败：两个旧迁移测试的当前数据库 builder 只注册到 v7，一个 `FUNDED_BY` 断言错误假定账本只有一个账户余额，一个 App 断言仍期待 4 条生产 route。新增 v9→v10 迁移本身从首次执行起即通过。修复只补全迁移测试链、按银行卡 ID 验证余额并锁定全部 5 个 route ID，没有修改或放宽生产实现；三个模块复跑共 67/67 通过。
+
+因此本节补齐 ExecPlan 0011 要求的组件级真机运行证据，但仍不把 `INSTALL-01`、`NLS-01`、`ORIENT-01` 或任一 provider 完成门标为通过。
 
 ## 完成门
 

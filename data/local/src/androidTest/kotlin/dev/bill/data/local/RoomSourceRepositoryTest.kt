@@ -377,7 +377,10 @@ class RoomSourceRepositoryTest {
             ledgerRepository.resolveReconciliation(resolution, resolutionAudit).status,
         )
         val reconciled = ledgerRepository.observeState().first()
-        assertEquals(Money.cny(-2_500L), reconciled.accountBalances.single().balance)
+        assertEquals(
+            Money.cny(-2_500L),
+            reconciled.accountBalances.single { it.account.id == bank.id }.balance,
+        )
         assertTrue(reconciled.pendingDrafts.isEmpty())
         assertEquals(1, transaction.entries.count { it.role == EntryRole.EXPENSE })
         assertEquals(1, transaction.entries.count { it.role == EntryRole.FUNDING })
@@ -409,7 +412,10 @@ class RoomSourceRepositoryTest {
             ledgerRepository.voidTransaction(transaction.id, voidAudit).status,
         )
         val restored = ledgerRepository.observeState().first()
-        assertEquals(Money.cny(0L), restored.accountBalances.single().balance)
+        assertEquals(
+            Money.cny(0L),
+            restored.accountBalances.single { it.account.id == bank.id }.balance,
+        )
         assertEquals(
             setOf(channelDraft.id, bankDraft.id),
             restored.pendingDrafts.mapTo(mutableSetOf()) { it.id },

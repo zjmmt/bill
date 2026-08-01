@@ -31,7 +31,16 @@ class ProductionNotificationRoutesInstrumentedTest {
     fun productionRoutesAreDefaultOffAndPersistOnlyOpaqueOptIns() {
         val catalog = ProductionNotificationRoutes.catalog
         val routeIds = catalog.presentations().map { it.routeId }.toSet()
-        assertEquals(4, routeIds.size)
+        assertEquals(
+            setOf(
+                "alipay.notification.outbound-cny.v1",
+                "alipay.notification.balance-receipt-cny.v1",
+                "alipay.notification.fund-buy-confirmed-cny.v1",
+                "wechat.notification.paid-en-cny.v1",
+                "bank.cmb.notification.quick-refund-cny.v1",
+            ),
+            routeIds,
+        )
 
         var enablement = newEnablement()
         assertTrue(enablement.enabledRouteIds().isEmpty())

@@ -101,6 +101,9 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration4To5,
                 BillMigrations.Migration5To6,
                 BillMigrations.Migration6To7,
+                BillMigrations.Migration7To8,
+                BillMigrations.Migration8To9,
+                BillMigrations.Migration9To10,
             )
             .allowMainThreadQueries()
             .build()
@@ -215,6 +218,9 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration4To5,
                 BillMigrations.Migration5To6,
                 BillMigrations.Migration6To7,
+                BillMigrations.Migration7To8,
+                BillMigrations.Migration8To9,
+                BillMigrations.Migration9To10,
             )
             .allowMainThreadQueries()
             .build()

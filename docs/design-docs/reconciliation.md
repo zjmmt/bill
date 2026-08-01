@@ -3,7 +3,7 @@
 - 状态：部分实现；用户确认的转账、信用卡还款、退款与绑卡支付 `FUNDED_BY` 切片已有自动化证据，其他关系与阈值仍待样本校准
 - 所有者：项目维护者
 - 最后核验：2026-08-01
-- 事实来源：原设计报告的关联思路，经多来源与反例扩展；ADR-0009；[ADR-0016](../decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)；[完整可编辑审核与 FUNDED_BY ExecPlan](../exec-plans/active/0011-editable-review-ocr-funded-by.md)；当前领域、应用与 Room v10 实现
+- 事实来源：原设计报告的关联思路，经多来源与反例扩展；ADR-0009；[ADR-0016](../decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)；[完整可编辑审核与 FUNDED_BY ExecPlan](../exec-plans/completed/0011-editable-review-ocr-funded-by.md)；当前领域、应用与 Room v10 实现
 
 ## 两个不同问题
 

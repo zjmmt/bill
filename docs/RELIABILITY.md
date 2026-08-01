@@ -1,9 +1,9 @@
 # 可靠性、测试与可诊断性
 
-- 状态：部分实现；账本、CNY 投资持仓、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、5 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、14 个 app、47 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，新增持仓/基金 route 的真机验收、真实 callback、真实简中页面、完整设备矩阵与发布门待完成
+- 状态：部分实现；账本、CNY 投资持仓、分享文本、显式 CSV/TSV 映射、用户确认对账、受控通知边界/控制面、5 条默认关闭的 provider 实验 route、Debug 模板采样隔离、持久观察去重与证据生命周期已有自动化；S24U-HK 另有受限应用级冒烟、最终工作树 16 个 app、50 个 Room、随包 OCR 合成/空间链、11 张本机私有真实页面与简中合成状态页证据，真实 callback、真实简中页面、完整设备矩阵与发布门待完成
 - 所有者：项目维护者
 - 最后核验：2026-08-01
-- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、Android 设备兼容与真机验收
+- 事实来源：当前领域/Application/Room/来源实现、自动化与 MuMu/受限真机结果、领域设计与本地优先产品承诺、ADR-0010、ADR-0011、ADR-0012、ADR-0016、ExecPlan 0002、ExecPlan 0003、ExecPlan 0006、ExecPlan 0011、Android 设备兼容与真机验收
 
 ## 正确性不变量
 
@@ -105,6 +105,13 @@
 - `assembleDebug assembleRelease :data:local:assembleDebugAndroidTest :ocr:paddle:assembleDebugAndroidTest :app:assembleDebugAndroidTest` 成功（711 个 actionable tasks：77 executed、1 from cache、633 up-to-date）。本轮只编译 AndroidTest APK，没有连接设备；Room v7→v9、持仓 OCR UI 和第 5 条通知 route 的真机验收仍开放。
 - `code-review` 修复了投资草稿只校验账户类型、却未证明存在对应持仓的完整性缺口；application 与 Room 现在都要求目标账户能关联到真实 `InvestmentPosition`。文档结构检查和 `git diff --check` 同步通过。
 
+2026-08-01 的可编辑审核、`FUNDED_BY` 与最终工作树真机结果：
+
+- 港版 `S24U-HK` 上的 `:data:local:connectedDebugAndroidTest` 最终 50/50 通过，实际覆盖 v1→v10 迁移、Room v10 审核渠道默认值、Draft 编辑、`FUNDED_BY` 原子确认/幂等/撤销、两条来源证据保留，以及既有导入、通知观察、证据生命周期和账本仓储。
+- `:app:connectedDebugAndroidTest` 最终 16/16 通过：10 条 Debug 采样、3 条 route 偏好隔离、固定全部 5 条生产 route 的默认关闭/opaque opt-in，以及 2 条空间 OCR 管线。`:ocr:paddle:connectedDebugAndroidTest` 1/1 再次通过，随包模型在 arm64/API 36 本地加载、推理并释放。
+- 首轮分别出现 2 条旧迁移夹具未注册 v7→v10、1 条余额断言未按资金账户筛选、1 条生产目录仍期待 4-route 的失败；修复均只补全或收紧测试，生产代码与隐私边界未放宽。三个模块复跑共 67/67 通过。
+- arm64 Debug APK 随后以 `adb install -r` 安装成功；`MainActivity` 冷启动 `Status: ok`、`TotalTime: 1078 ms`，启动后进程仍存在。没有执行 `pm clear`，也没有读取通知历史、来源 App、真实截图或本机私有样本。
+
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
 ## 来源漂移
@@ -122,7 +129,7 @@
 - 性质测试：分录平衡、金额守恒、导入幂等、关系对称/非对称约束。
 - 领域单元测试：转账、还款、退款、充值、投资申赎和用户修正优先级。
 - 适配器回放测试：三类来源的成功、格式漂移、缺字段、重复和乱码样本。
-- Room 测试：schema、v1→v2→v3→v4→v5→v6→v7 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。v1→v5 的真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；S24U-HK 的完整 47-test suite 又覆盖到 v6→v7、导入批次/行、对账与通知观察。真实 SAF、5000 行基准、系统强杀和完整 UI 矩阵仍待补。
+- Room 测试：schema、v1→v2→v3→v4→v5→v6→v7→v8→v9→v10 迁移、事务回滚、命令重放/碰撞、void 恢复、来源/生命周期跨表完整性和大量数据查询。v1→v5 的真实仓储、证据、重复、忽略、两阶段清除、租约暂存/恢复、磁盘数据库重开、keyset 分页和损坏链 instrumentation 已在 MuMu 执行；S24U-HK 的完整 50-test suite 又覆盖到 v10、导入批次/行、通知观察，以及对账和 `FUNDED_BY` 确认/撤销。真实 SAF、5000 行基准、系统强杀和完整 UI 矩阵仍待补。
 - Android 集成测试：权限撤销、进程重建、NotificationListener 系统回调/更新语义、SAF 文件访问失效。通知路径不使用 WorkManager 重试。
 - UI 测试：账户/期初余额、手工/来源草稿确认、进程重建、重复解释、忽略、撤销、无障碍和敏感信息遮罩。首片与分享文本已完成 MuMu 手工端到端验收，ViewModel 覆盖后台整页保护、错误后清除陈旧快照和按 command 消费分享结果；自动化 Compose/进程死亡仍待完成。
 - 端到端样例：同一绑卡消费同时出现支付渠道和银行证据，最终只产生一次支出。
