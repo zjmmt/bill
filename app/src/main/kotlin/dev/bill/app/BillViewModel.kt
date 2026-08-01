@@ -9,6 +9,7 @@ import dev.bill.app.quickcapture.SelectedImageOcrReader
 import dev.bill.application.BillService
 import dev.bill.application.BillSnapshot
 import dev.bill.application.CreateAccountCommand
+import dev.bill.application.CreateBalanceSnapshotCommand
 import dev.bill.application.CreateExternalDraftCommand
 import dev.bill.application.CreateInvestmentPositionCommand
 import dev.bill.application.CreateManualDraftCommand
@@ -74,6 +75,7 @@ import kotlinx.coroutines.withContext
 
 enum class BillOperationKind {
     CREATE_ACCOUNT,
+    CREATE_BALANCE_SNAPSHOT,
     CREATE_INVESTMENT_POSITION,
     CREATE_DRAFT,
     CREATE_EXTERNAL_DRAFT,
@@ -325,6 +327,26 @@ class BillViewModel(
                     type = type,
                     openingBalanceText = openingBalance,
                     currency = currency,
+                ),
+            )
+        }
+    }
+
+    fun createBalanceSnapshot(
+        commandId: String,
+        accountId: String,
+        observedBalance: String,
+        asOf: String,
+        note: String,
+    ) {
+        perform(BillOperationKind.CREATE_BALANCE_SNAPSHOT, entityId = accountId) {
+            service.createBalanceSnapshot(
+                CreateBalanceSnapshotCommand(
+                    commandId = CommandId(commandId),
+                    accountId = AccountId(accountId),
+                    observedBalanceText = observedBalance,
+                    asOfText = asOf,
+                    note = note.takeIf(String::isNotBlank),
                 ),
             )
         }

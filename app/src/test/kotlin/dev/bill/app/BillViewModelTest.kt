@@ -23,6 +23,7 @@ import dev.bill.application.StatementImportPreviewResult
 import dev.bill.application.StatementImportProgress
 import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -141,6 +142,35 @@ class BillViewModelTest {
             assertEquals(1_230L, repository.openingTransaction?.entries?.first()?.amount?.minorUnits)
             assertEquals(BillOperationKind.CREATE_ACCOUNT, viewModel.events.first().successKind())
             assertEquals(null, viewModel.uiState.value.activeOperation)
+        }
+
+    @Test
+    fun `balance snapshot delegates through view model and reports the account operation`() =
+        runTest(dispatcher) {
+            val now = Instant.parse("2026-07-19T00:00:00Z")
+            val bank = ledgerAccount("snapshot-bank", AccountType.ASSET_BANK, now)
+            val repository = FakeLedgerRepository(findableAccounts = mapOf(bank.id to bank))
+            val viewModel = viewModel(repository)
+            advanceUntilIdle()
+
+            viewModel.createBalanceSnapshot(
+                commandId = "snapshot-command",
+                accountId = bank.id.value,
+                observedBalance = "123.45",
+                asOf = "2026-07-19 00:00",
+                note = "manual check",
+            )
+            advanceUntilIdle()
+
+            val snapshot = requireNotNull(repository.createdBalanceSnapshot)
+            assertEquals(bank.id, snapshot.accountId)
+            assertEquals(Money.cny(12_345L), snapshot.observedBalance)
+            assertEquals("manual check", snapshot.note)
+            assertEquals(
+                BillOperationKind.CREATE_BALANCE_SNAPSHOT,
+                viewModel.events.first().successKind(),
+            )
+            assertNull(viewModel.uiState.value.activeOperation)
         }
 
     @Test
@@ -577,6 +607,7 @@ class BillViewModelTest {
         service = BillService(
             repository = repository,
             clock = Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
+            localZoneId = ZoneOffset.UTC,
         ),
         sharedTextIngestionService = capture,
         sourceEvidenceManager = evidenceManager,
@@ -607,14 +638,16 @@ private fun failedPhotoResult(error: SourceCaptureError) = SourceCaptureResult.F
 
 private class FakeLedgerRepository(
     private val observedState: Flow<LedgerState> = MutableStateFlow(emptyLedgerState()),
+    private val findableAccounts: Map<AccountId, LedgerAccount> = emptyMap(),
 ) : LedgerRepository {
 
     var createdAccount: LedgerAccount? = null
     var openingTransaction: PostedTransaction? = null
+    var createdBalanceSnapshot: BalanceSnapshot? = null
 
     override fun observeState(): Flow<LedgerState> = observedState
 
-    override suspend fun findAccount(id: AccountId): LedgerAccount? = null
+    override suspend fun findAccount(id: AccountId): LedgerAccount? = findableAccounts[id]
 
     override suspend fun findDraft(id: DraftId): ManualDraft? = null
 
@@ -628,6 +661,14 @@ private class FakeLedgerRepository(
         createdAccount = account
         this.openingTransaction = openingTransaction
         return RepositoryWriteResult(RepositoryWriteStatus.APPLIED, account.id.value)
+    }
+
+    override suspend fun createBalanceSnapshot(
+        snapshot: BalanceSnapshot,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult {
+        createdBalanceSnapshot = snapshot
+        return RepositoryWriteResult(RepositoryWriteStatus.APPLIED, snapshot.id.value)
     }
 
     override suspend fun createManualDraft(
