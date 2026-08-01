@@ -104,6 +104,7 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration7To8,
                 BillMigrations.Migration8To9,
                 BillMigrations.Migration9To10,
+                BillMigrations.Migration10To11,
             )
             .allowMainThreadQueries()
             .build()
@@ -221,6 +222,7 @@ class BillDatabaseMigrationTest {
                 BillMigrations.Migration7To8,
                 BillMigrations.Migration8To9,
                 BillMigrations.Migration9To10,
+                BillMigrations.Migration10To11,
             )
             .allowMainThreadQueries()
             .build()
@@ -602,6 +604,72 @@ class BillDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate10To11PreservesAccountsAndCreatesEmptyBalanceSnapshotJournal() = runBlocking {
+        helper.createDatabase(DatabaseV10Name, 10).apply {
+            execSQL(
+                """
+                INSERT INTO accounts (
+                    id,
+                    name,
+                    normalizedName,
+                    type,
+                    currency,
+                    isSystem,
+                    isArchived,
+                    createdAtEpochMillis,
+                    creationCommandId
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                arrayOf<Any>(
+                    "fixture-v10-account",
+                    "FIXTURE BANK",
+                    "fixture bank",
+                    "ASSET_BANK",
+                    "CNY",
+                    0,
+                    0,
+                    1_753_000_000_000L,
+                    "fixture-v10-command",
+                ),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DatabaseV10Name,
+            11,
+            true,
+            BillMigrations.Migration10To11,
+        ).use { migrated ->
+            migrated.query(
+                "SELECT id, currency FROM accounts WHERE id = ?",
+                arrayOf("fixture-v10-account"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("fixture-v10-account", cursor.getString(0))
+                assertEquals("CNY", cursor.getString(1))
+            }
+            migrated.query("SELECT COUNT(*) FROM balance_snapshots").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0L, cursor.getLong(0))
+            }
+            migrated.query(
+                """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type = 'index'
+                  AND name IN (
+                      'index_balance_snapshots_accountId_asOfEpochMillis_recordedAtEpochMillis_id',
+                      'index_balance_snapshots_creationCommandId'
+                  )
+                """.trimIndent(),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(2L, cursor.getLong(0))
+            }
+        }
+    }
+
     private companion object {
         const val DatabaseName = "bill-v1-to-v2-migration-test"
         const val DatabaseV2Name = "bill-v2-to-v3-migration-test"
@@ -611,6 +679,7 @@ class BillDatabaseMigrationTest {
         const val DatabaseV6Name = "bill-v6-to-v7-migration-test"
         const val DatabaseV8Name = "bill-v8-to-v9-migration-test"
         const val DatabaseV9Name = "bill-v9-to-v10-migration-test"
+        const val DatabaseV10Name = "bill-v10-to-v11-migration-test"
         const val ValidHash =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val ExpectedLedgerTables = setOf(

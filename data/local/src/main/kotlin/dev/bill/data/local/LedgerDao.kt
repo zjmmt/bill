@@ -50,6 +50,101 @@ interface LedgerDao {
     )
     fun observeAccountBalances(): Flow<List<AccountBalanceRow>>
 
+    @Query("SELECT * FROM balance_snapshots WHERE id = :id")
+    suspend fun findBalanceSnapshot(id: String): BalanceSnapshotEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertBalanceSnapshot(snapshot: BalanceSnapshotEntity)
+
+    @Query(
+        """
+        SELECT snapshot.*,
+               COALESCE(SUM(
+                   CASE
+                       WHEN transaction_record.status = 'ACTIVE'
+                        AND transaction_record.occurredAtEpochMillis <= snapshot.asOfEpochMillis
+                        AND entry.currency = snapshot.currency
+                       THEN entry.amountMinorUnits
+                       ELSE 0
+                   END
+               ), 0) AS ledgerBalanceMinorUnits,
+               COALESCE(SUM(
+                   CASE
+                       WHEN transaction_record.status = 'ACTIVE'
+                        AND transaction_record.occurredAtEpochMillis <= snapshot.asOfEpochMillis
+                        AND entry.currency <> snapshot.currency
+                       THEN 1
+                       ELSE 0
+                   END
+               ), 0) AS currencyMismatchCount
+        FROM balance_snapshots AS snapshot
+        INNER JOIN accounts AS snapshot_account
+            ON snapshot_account.id = snapshot.accountId
+        LEFT JOIN ledger_entries AS entry ON entry.accountId = snapshot.accountId
+        LEFT JOIN ledger_transactions AS transaction_record
+            ON transaction_record.id = entry.transactionId
+        WHERE snapshot_account.isArchived = 0
+          AND snapshot_account.isSystem = 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM balance_snapshots AS newer
+            WHERE newer.accountId = snapshot.accountId
+              AND (
+                  newer.asOfEpochMillis > snapshot.asOfEpochMillis
+                  OR (
+                      newer.asOfEpochMillis = snapshot.asOfEpochMillis
+                      AND newer.recordedAtEpochMillis > snapshot.recordedAtEpochMillis
+                  )
+                  OR (
+                      newer.asOfEpochMillis = snapshot.asOfEpochMillis
+                      AND newer.recordedAtEpochMillis = snapshot.recordedAtEpochMillis
+                      AND newer.id > snapshot.id
+                  )
+              )
+        )
+        GROUP BY snapshot.id
+        ORDER BY snapshot.asOfEpochMillis DESC,
+                 snapshot.recordedAtEpochMillis DESC,
+                 snapshot.id DESC
+        """,
+    )
+    fun observeLatestBalanceSnapshotLedgers(): Flow<List<BalanceSnapshotLedgerRow>>
+
+    @Query(
+        """
+        SELECT COUNT(*)
+        FROM balance_snapshots AS snapshot
+        LEFT JOIN accounts AS account ON account.id = snapshot.accountId
+        LEFT JOIN command_receipts AS receipt
+            ON receipt.commandId = snapshot.creationCommandId
+        LEFT JOIN audit_events AS audit
+            ON audit.commandId = snapshot.creationCommandId
+           AND audit.action = 'BALANCE_SNAPSHOT_RECORDED'
+           AND audit.entityType = 'balance_snapshot'
+           AND audit.entityId = snapshot.id
+        WHERE account.id IS NULL
+           OR account.isSystem != 0
+           OR account.type NOT IN (
+               'ASSET_CASH', 'ASSET_BANK', 'ASSET_EWALLET_BALANCE', 'LIABILITY_CC'
+           )
+           OR snapshot.observedBalanceMinorUnits < 0
+           OR snapshot.currency NOT IN ('CNY', 'USD')
+           OR snapshot.currency != account.currency
+           OR snapshot.sourceMode != 'MANUAL'
+           OR snapshot.asOfEpochMillis > snapshot.recordedAtEpochMillis
+           OR snapshot.recordedAtEpochMillis < account.createdAtEpochMillis
+           OR (snapshot.note IS NOT NULL AND TRIM(snapshot.note) = '')
+           OR (snapshot.note IS NOT NULL AND LENGTH(snapshot.note) > 200)
+           OR receipt.commandId IS NULL
+           OR receipt.operation != 'CREATE_BALANCE_SNAPSHOT'
+           OR receipt.targetId != snapshot.id
+           OR receipt.resultEntityId != snapshot.id
+           OR audit.id IS NULL
+           OR audit.occurredAtEpochMillis != snapshot.recordedAtEpochMillis
+        """,
+    )
+    fun observeBalanceSnapshotIntegrityIssueCount(): Flow<Long>
+
     @Transaction
     @Query("SELECT * FROM drafts WHERE id = :id")
     suspend fun findDraft(id: String): DraftWithSourceEvidence?

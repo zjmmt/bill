@@ -370,4 +370,43 @@ object BillMigrations {
             )
         }
     }
+
+    val Migration10To11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `balance_snapshots` (
+                    `id` TEXT NOT NULL,
+                    `accountId` TEXT NOT NULL,
+                    `observedBalanceMinorUnits` INTEGER NOT NULL,
+                    `currency` TEXT NOT NULL,
+                    `asOfEpochMillis` INTEGER NOT NULL,
+                    `recordedAtEpochMillis` INTEGER NOT NULL,
+                    `note` TEXT,
+                    `sourceMode` TEXT NOT NULL,
+                    `creationCommandId` TEXT NOT NULL,
+                    PRIMARY KEY(`id`),
+                    FOREIGN KEY(`accountId`) REFERENCES `accounts`(`id`)
+                        ON UPDATE NO ACTION ON DELETE RESTRICT
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE INDEX IF NOT EXISTS
+                    `index_balance_snapshots_accountId_asOfEpochMillis_recordedAtEpochMillis_id`
+                ON `balance_snapshots` (
+                    `accountId`, `asOfEpochMillis`, `recordedAtEpochMillis`, `id`
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                    `index_balance_snapshots_creationCommandId`
+                ON `balance_snapshots` (`creationCommandId`)
+                """.trimIndent(),
+            )
+        }
+    }
 }

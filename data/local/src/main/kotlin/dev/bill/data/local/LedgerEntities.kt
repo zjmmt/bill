@@ -28,6 +28,35 @@ data class AccountEntity(
 )
 
 @Entity(
+    tableName = "balance_snapshots",
+    foreignKeys = [
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.RESTRICT,
+        ),
+    ],
+    indices = [
+        Index(
+            value = ["accountId", "asOfEpochMillis", "recordedAtEpochMillis", "id"],
+        ),
+        Index(value = ["creationCommandId"], unique = true),
+    ],
+)
+data class BalanceSnapshotEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val accountId: String,
+    val observedBalanceMinorUnits: Long,
+    val currency: String,
+    val asOfEpochMillis: Long,
+    val recordedAtEpochMillis: Long,
+    val note: String?,
+    val sourceMode: String,
+    val creationCommandId: String,
+)
+
+@Entity(
     tableName = "drafts",
     foreignKeys = [
         ForeignKey(
@@ -187,6 +216,12 @@ data class CommandReceiptEntity(
 data class AccountBalanceRow(
     @Embedded val account: AccountEntity,
     val balanceMinorUnits: Long,
+    val currencyMismatchCount: Long,
+)
+
+data class BalanceSnapshotLedgerRow(
+    @Embedded val snapshot: BalanceSnapshotEntity,
+    val ledgerBalanceMinorUnits: Long,
     val currencyMismatchCount: Long,
 )
 

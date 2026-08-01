@@ -25,12 +25,13 @@ import androidx.room.AutoMigration
         ReconciliationDraftLinkEntity::class,
         TransactionRelationEntity::class,
         InvestmentPositionEntity::class,
+        BalanceSnapshotEntity::class,
     ],
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
     ],
-    version = 10,
+    version = 11,
     exportSchema = true,
 )
 abstract class BillDatabase : RoomDatabase() {
