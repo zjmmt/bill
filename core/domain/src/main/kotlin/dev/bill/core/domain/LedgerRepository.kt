@@ -53,6 +53,14 @@ interface LedgerRepository {
         auditRecord: AuditRecord,
     ): RepositoryWriteResult
 
+    /** Replaces only reviewable business fields; identity and source evidence remain unchanged. */
+    suspend fun updateDraft(
+        draft: ReviewDraft,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult = RepositoryWriteResult(
+        status = RepositoryWriteStatus.INVALID_STATE,
+    )
+
     suspend fun selectFundingAccount(
         draftId: DraftId,
         accountId: AccountId,

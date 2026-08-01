@@ -1,9 +1,9 @@
 # 采集、确认与对账规格
 
-- 状态：部分实现；通用显式证据复核与用户确认的基础对账已实现，provider 流程待样本验证
+- 状态：部分实现；通用显式证据复核、5 条窄范围通知 route、完整 Draft 编辑与用户确认对账已实现，provider 发布门仍未完成
 - 所有者：项目维护者
-- 最后核验：2026-07-30
-- 事实来源：MVP 规格、[统一领域模型](../design-docs/domain-model.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0009](../decisions/0009-wallet-balance-not-inferred-from-bank.md)
+- 最后核验：2026-08-01
+- 事实来源：MVP 规格、[统一领域模型](../design-docs/domain-model.md)、[ADR-0006](../decisions/0006-provider-neutral-shared-text-evidence-spine.md)、[ADR-0007](../decisions/0007-source-evidence-lifecycle-and-bounded-storage.md)、[ADR-0009](../decisions/0009-wallet-balance-not-inferred-from-bank.md)、[ADR-0016](../decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)
 
 ## 原则
 
@@ -12,9 +12,9 @@
 - 用户修改、合并、拆分和撤销是正式领域行为，有审计记录。
 - 支付宝、微信和银行共用交互；来源差异只显示为证据和能力差异。
 
-## Provider 通知采集流程（目标，尚未实现）
+## Provider 通知采集流程（窄范围实验 route 已实现）
 
-下面描述首个真实 provider route 的目标流程。当前代码只有生产空目录、默认关闭开关、包名/渠道/类别元数据门、持久观察去重和有界队列；尚无按真实通知标题/正文模板限定的支付宝、微信或银行 route，也没有真实脱敏样本。因此现有底座不能被表述为“已抓取指定 App 通知”。
+当前生产目录有 5 条默认关闭的窄范围实验 route：支付宝支出、支付宝余额收款、支付宝基金申购确认、微信付款完成和招商银行快捷支付退款。它们有真实授权样本导出的脱敏模板与本地回放，但仍缺当前版本的真机系统 callback、更新/重启和完整目标机资源验收；因此只能描述为“已实现这些模板的待复核采集路径”，不能描述为完整抓取指定 App。
 
 1. 用户从来源设置页选择允许监听的 App，并跳转系统授权。
 2. 收到通知后先按包名允许列表过滤；非目标内容不持久化。
@@ -67,14 +67,15 @@ stateDiagram-v2
 
 ## 当前基础对账切片
 
-- 待复核 Draft 可在本机得到三类建议：两个本人资产账户之间的相反方向转账、银行卡支出改作信用卡还款、收入 Draft 关联既有支出作为退款。
+- 待复核 Draft 可在本机得到四类建议：两个本人资产账户之间的相反方向转账、银行卡支出改作信用卡还款、收入 Draft 关联既有支出作为退款，以及支付宝/微信绑卡支出与银行扣款的 `FUNDED_BY`。
 - 金额、币种、方向、账户角色和关系特定时间窗是硬门，不是关系已成立的证明；每条建议都要求用户显式确认。
 - 确认前展示账务影响：转账不计普通收支，还款不产生第二笔支出，退款冲减原支出且累计不能超额。
+- `FUNDED_BY` 只接受两条外部支出 Draft；用户审核渠道后，金额、币种、同一银行卡/信用卡账户、规范化商户与 30 分钟窗口必须完全匹配。确认后只保留一笔支出和两条来源证据链；电子钱包余额不参与。
 - 确认事务同时保存平衡 Entries、Draft 链接、退款关系、审计与幂等回执；中途失败不保留半笔结果。
 - 撤销只作废替代交易并恢复 Draft，不删除 RawEvent、来源证据、关系或审计历史。
 - 候选计算有 500 条近期 Draft、每条 3 个和全局 50 个的本机资源上限；上限外内容仍保留正常人工复核路径。
 
-该切片不是 provider 双计消除、pending/posted 合并、钱包绑卡推断或自动对账。上述能力仍须真实脱敏样本、独立关系硬门和回放测试。
+该切片已经能在上述硬门下由用户显式消除一类 provider 双计，但不是一般重复删除、pending/posted 合并、钱包余额资金反推或自动对账。未命中时两条 Draft 保持独立，可继续人工修改、确认或忽略。
 
 ## 证据文件生命周期
 

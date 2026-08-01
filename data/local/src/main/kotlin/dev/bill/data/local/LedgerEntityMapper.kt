@@ -10,6 +10,7 @@ import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.InvestmentPositionId
 import dev.bill.core.domain.InvestmentPositionSourceMode
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
@@ -88,6 +89,12 @@ internal object LedgerEntityMapper {
         val type = enumOrNull<TransactionType>(entity.type, "drafts", "type", diagnostics) ?: return null
         val currency = currencyOrNull(entity.currency, "drafts", diagnostics) ?: return null
         val commandId = commandId(entity.creationCommandId, "drafts", diagnostics) ?: return null
+        val observedChannel = enumOrNull<ObservedChannel>(
+            entity.observedChannel,
+            "drafts",
+            "observedChannel",
+            diagnostics,
+        ) ?: return null
         val fundingAccountId = entity.fundingAccountId?.let {
             accountId(it, "drafts", diagnostics) ?: return null
         }
@@ -109,6 +116,7 @@ internal object LedgerEntityMapper {
                 updatedAt = Instant.ofEpochMilli(entity.updatedAtEpochMillis),
                 creationCommandId = commandId,
                 sourceMode = sourceMode,
+                observedChannel = observedChannel,
             )
         }
     }
@@ -307,6 +315,7 @@ internal object LedgerEntityMapper {
         createdAtEpochMillis = draft.createdAt.toEpochMilli(),
         updatedAtEpochMillis = draft.updatedAt.toEpochMilli(),
         creationCommandId = draft.creationCommandId.value,
+        observedChannel = draft.observedChannel.name,
     )
 
     fun transactionToEntity(transaction: PostedTransaction): TransactionEntity = TransactionEntity(

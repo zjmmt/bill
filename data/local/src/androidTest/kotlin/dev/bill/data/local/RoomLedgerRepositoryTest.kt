@@ -11,6 +11,7 @@ import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.ReconciliationDraftLink
 import dev.bill.core.domain.ReconciliationDraftRole
@@ -110,6 +111,13 @@ class RoomLedgerRepositoryTest {
                     updatedAt = retryTime,
                 ),
                 draftAudit.copy(occurredAt = retryTime),
+            ).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.COMMAND_COLLISION,
+            repository.createManualDraft(
+                draft.copy(observedChannel = ObservedChannel.ALIPAY),
+                draftAudit,
             ).status,
         )
     }

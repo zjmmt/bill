@@ -542,6 +542,60 @@ class BillDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate9To10PreservesDraftsAndDefaultsReviewedChannelToUnknown() = runBlocking {
+        helper.createDatabase(DatabaseV9Name, 9).apply {
+            execSQL(
+                """
+                INSERT INTO drafts (
+                    id,
+                    state,
+                    type,
+                    amountMinorUnits,
+                    currency,
+                    occurredAtEpochMillis,
+                    counterparty,
+                    note,
+                    fundingAccountId,
+                    investmentAccountId,
+                    createdAtEpochMillis,
+                    updatedAtEpochMillis,
+                    creationCommandId
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?, ?)
+                """.trimIndent(),
+                arrayOf<Any>(
+                    "fixture-v9-draft",
+                    "WAITING_USER",
+                    "EXPENSE",
+                    990L,
+                    "CNY",
+                    1_753_000_000_000L,
+                    "fixture merchant",
+                    1_753_000_000_000L,
+                    1_753_000_000_000L,
+                    "fixture-v9-command",
+                ),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DatabaseV9Name,
+            10,
+            true,
+            BillMigrations.Migration9To10,
+        ).use { migrated ->
+            migrated.query(
+                "SELECT id, observedChannel FROM drafts WHERE id = ?",
+                arrayOf("fixture-v9-draft"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("fixture-v9-draft", cursor.getString(0))
+                assertEquals("UNKNOWN", cursor.getString(1))
+            }
+        }
+    }
+
     private companion object {
         const val DatabaseName = "bill-v1-to-v2-migration-test"
         const val DatabaseV2Name = "bill-v2-to-v3-migration-test"
@@ -550,6 +604,7 @@ class BillDatabaseMigrationTest {
         const val DatabaseV5Name = "bill-v5-to-v6-migration-test"
         const val DatabaseV6Name = "bill-v6-to-v7-migration-test"
         const val DatabaseV8Name = "bill-v8-to-v9-migration-test"
+        const val DatabaseV9Name = "bill-v9-to-v10-migration-test"
         const val ValidHash =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         val ExpectedLedgerTables = setOf(

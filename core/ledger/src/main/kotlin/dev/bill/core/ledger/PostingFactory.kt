@@ -2,7 +2,9 @@ package dev.bill.core.ledger
 
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.SystemAccountIds
+import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
@@ -15,6 +17,8 @@ import dev.bill.core.model.TransactionType
 import dev.bill.core.model.allowsUserAccountCurrency
 import dev.bill.core.model.isSupportedLedgerCurrency
 import java.time.Instant
+import java.time.Duration
+import java.util.Locale
 
 sealed interface PostingBuildResult {
     data class Valid(val transaction: ValidatedLedgerTransaction) : PostingBuildResult
@@ -234,6 +238,43 @@ object PostingFactory {
         )
     }
 
+    /**
+     * Collapses wallet-channel evidence and its bank/card funding evidence into one expense.
+     * Both drafts remain linked by the repository; this method only builds the replacement posting.
+     */
+    fun fundedExpense(
+        channelDraft: ManualDraft,
+        bankEvidenceDraft: ManualDraft,
+        fundingAccount: LedgerAccount,
+        transactionId: TransactionId,
+        confirmedAt: Instant,
+    ): PostingBuildResult {
+        if (
+            channelDraft.type != TransactionType.EXPENSE ||
+            bankEvidenceDraft.type != TransactionType.EXPENSE ||
+            channelDraft.sourceMode != TransactionSourceMode.EXTERNAL ||
+            bankEvidenceDraft.sourceMode != TransactionSourceMode.EXTERNAL ||
+            channelDraft.observedChannel !in WALLET_CHANNELS ||
+            bankEvidenceDraft.observedChannel != ObservedChannel.BANK ||
+            channelDraft.amount != bankEvidenceDraft.amount ||
+            channelDraft.fundingAccountId != fundingAccount.id ||
+            bankEvidenceDraft.fundingAccountId != fundingAccount.id ||
+            normalizedCounterparty(channelDraft.counterparty) !=
+            normalizedCounterparty(bankEvidenceDraft.counterparty) ||
+            Duration.between(channelDraft.occurredAt, bankEvidenceDraft.occurredAt).abs() >
+            FUNDED_BY_MATCH_WINDOW ||
+            fundingAccount.type !in FUNDED_BY_ACCOUNT_TYPES
+        ) {
+            return PostingBuildResult.InvalidDraftPair
+        }
+        return manualDraft(
+            draft = channelDraft,
+            fundingAccount = fundingAccount,
+            transactionId = transactionId,
+            confirmedAt = confirmedAt,
+        )
+    }
+
     fun refund(
         inboundDraft: ManualDraft,
         destinationAccount: LedgerAccount,
@@ -440,4 +481,15 @@ object PostingFactory {
     )
     private val REFUND_DESTINATION_ACCOUNT_TYPES =
         ASSET_MOVEMENT_ACCOUNT_TYPES + AccountType.LIABILITY_CC
+    private val FUNDED_BY_ACCOUNT_TYPES = setOf(
+        AccountType.ASSET_BANK,
+        AccountType.LIABILITY_CC,
+    )
+    private val WALLET_CHANNELS = setOf(ObservedChannel.ALIPAY, ObservedChannel.WECHAT)
+    private val FUNDED_BY_MATCH_WINDOW: Duration = Duration.ofMinutes(30)
+
+    private fun normalizedCounterparty(value: String): String = value
+        .trim()
+        .replace(Regex("\\s+"), " ")
+        .lowercase(Locale.ROOT)
 }

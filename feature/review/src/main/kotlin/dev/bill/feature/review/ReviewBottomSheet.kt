@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -145,6 +146,10 @@ fun ReviewBottomSheet(
             }
             LabeledValue(
                 label = stringResource(R.string.payment_channel),
+                value = draft.observedChannel.localizedName(),
+            )
+            LabeledValue(
+                label = stringResource(R.string.capture_source),
                 value = stringResource(
                     if (draft.sourceMode == TransactionSourceMode.EXTERNAL) {
                         R.string.shared_text_channel
@@ -213,6 +218,17 @@ fun ReviewBottomSheet(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+
+            OutlinedButton(
+                onClick = { onAction(ReviewAction.Edit) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 52.dp),
+                enabled = !state.isSaving,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(stringResource(R.string.edit_draft))
             }
 
             Button(

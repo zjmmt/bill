@@ -361,4 +361,13 @@ object BillMigrations {
             )
         }
     }
+
+    val Migration9To10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `drafts` ADD COLUMN `observedChannel` TEXT NOT NULL " +
+                    "DEFAULT 'UNKNOWN'",
+            )
+        }
+    }
 }

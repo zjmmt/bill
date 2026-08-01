@@ -111,6 +111,7 @@ import dev.bill.feature.overview.OverviewPresenter
 import dev.bill.feature.overview.OverviewScreen
 import dev.bill.feature.overview.OverviewUiState
 import dev.bill.feature.review.DraftsScreen
+import dev.bill.feature.review.EditDraftSheet
 import dev.bill.feature.review.ManualDraftSheet
 import dev.bill.feature.review.ReconciliationBottomSheet
 import dev.bill.feature.review.ReviewAction
@@ -335,6 +336,8 @@ private fun BillApp(
     var investmentFormSeed by remember { mutableStateOf(CreateInvestmentPositionInput()) }
     var manualDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedDraftId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingDraftId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedSourceReviewId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedReconciliationCaseId by rememberSaveable { mutableStateOf<String?>(null) }
     var reconciliationCommandId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -490,6 +493,12 @@ private fun BillApp(
                         BillOperationKind.CREATE_EXTERNAL_DRAFT -> {
                             selectedSourceReviewId = null
                             sourceDraftCommandId = null
+                            selectedDraftId = event.entityId
+                            destination = AppDestination.DRAFTS
+                        }
+                        BillOperationKind.UPDATE_DRAFT -> {
+                            editingDraftId = null
+                            editDraftCommandId = null
                             selectedDraftId = event.entityId
                             destination = AppDestination.DRAFTS
                         }
@@ -943,6 +952,7 @@ private fun BillApp(
                         counterparty = input.counterparty,
                         note = input.note,
                         currency = input.currency,
+                        observedChannel = input.observedChannel,
                     )
                 }
             },
@@ -977,6 +987,7 @@ private fun BillApp(
                             currency = input.currency,
                             occurredAt = selectedSourceReview.suggestedOccurredAt,
                             investmentAccountId = input.investmentAccountId,
+                            observedChannel = input.observedChannel,
                         )
                     }
                 },
@@ -1008,6 +1019,12 @@ private fun BillApp(
                         viewModel.selectFundingAccount(selectedDraft.id, action.accountId)
                     }
                     ReviewAction.Confirm -> viewModel.confirmDraft(selectedDraft.id)
+                    ReviewAction.Edit -> {
+                        editingDraftId = selectedDraft.id
+                        editDraftCommandId = viewModel.newCommandId()
+                        selectedDraftId = null
+                        viewModel.clearOperationFeedback()
+                    }
                     ReviewAction.Ignore -> viewModel.dismissDraft(selectedDraft.id)
                     ReviewAction.SaveForLater,
                     ReviewAction.Dismiss,
@@ -1017,6 +1034,46 @@ private fun BillApp(
                     }
                 }
             },
+            )
+        }
+
+        val editingDraft = snapshot?.pendingDrafts?.firstOrNull { it.id == editingDraftId }
+        if (editingDraft != null) {
+            EditDraftSheet(
+                draft = editingDraft,
+                accounts = snapshot.accounts,
+                investmentPositions = snapshot.investmentPositions,
+                isSaving = state.activeOperation?.let { operation ->
+                    operation.kind == BillOperationKind.UPDATE_DRAFT &&
+                        operation.entityId == editingDraft.id
+                } == true,
+                operationError = state.operationError,
+                onSubmit = { input ->
+                    editDraftCommandId?.let { commandId ->
+                        viewModel.updateDraft(
+                            commandId = commandId,
+                            draftId = editingDraft.id,
+                            kind = input.kind,
+                            amount = input.amount,
+                            counterparty = input.counterparty,
+                            note = input.note,
+                            occurredAt = input.occurredAt,
+                            observedChannel = input.observedChannel,
+                            fundingAccountId = input.fundingAccountId,
+                            investmentAccountId = input.investmentAccountId,
+                        )
+                    }
+                },
+                onInputChanged = {
+                    editDraftCommandId = viewModel.newCommandId()
+                    viewModel.clearOperationFeedback()
+                },
+                onDismiss = {
+                    editingDraftId = null
+                    editDraftCommandId = null
+                    selectedDraftId = editingDraft.id
+                    viewModel.clearOperationFeedback()
+                },
             )
         }
 
@@ -1069,6 +1126,7 @@ private fun BillApp(
 }
 
 private val reviewOperationKinds = setOf(
+    BillOperationKind.UPDATE_DRAFT,
     BillOperationKind.SELECT_FUNDING_ACCOUNT,
     BillOperationKind.CONFIRM_DRAFT,
     BillOperationKind.DISMISS_DRAFT,

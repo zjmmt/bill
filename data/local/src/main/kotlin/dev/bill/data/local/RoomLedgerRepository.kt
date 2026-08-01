@@ -13,6 +13,7 @@ import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
 import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
@@ -401,6 +402,109 @@ class RoomLedgerRepository(
             appliedAtEpochMillis = auditRecord.occurredAt.toEpochMilli(),
         )
         dao.insertDraft(LedgerEntityMapper.draftToEntity(draft))
+        dao.insertAuditEvents(listOf(LedgerEntityMapper.auditToEntity(auditRecord)))
+        applied(draft.id.value)
+    }
+
+    override suspend fun updateDraft(
+        draft: ManualDraft,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult = safelyWrite {
+        val fingerprint = Fingerprints.updateDraft(draft)
+        when (
+            val replay = inspectCommand(
+                commandId = auditRecord.commandId,
+                operation = Operation.UPDATE_DRAFT,
+                targetId = draft.id.value,
+                fingerprint = fingerprint,
+            )
+        ) {
+            is CommandInspection.Replay -> return@safelyWrite replay.result
+            CommandInspection.Collision -> return@safelyWrite collision()
+            CommandInspection.New -> Unit
+        }
+
+        val existing = findDraftSafely(draft.id.value) ?: return@safelyWrite notFound()
+        if (
+            existing.state !in setOf(DraftState.WAITING_USER, DraftState.EDITED) ||
+            draft.state != DraftState.EDITED ||
+            draft.creationCommandId != existing.creationCommandId ||
+            draft.createdAt != existing.createdAt ||
+            draft.sourceMode != existing.sourceMode ||
+            draft.amount.currency != existing.amount.currency ||
+            draft.updatedAt != auditRecord.occurredAt ||
+            draft.updatedAt < existing.updatedAt ||
+            draft.occurredAt > draft.updatedAt ||
+            !draft.amount.currency.isSupportedLedgerCurrency()
+        ) {
+            return@safelyWrite invalidState()
+        }
+        val fundingAccount = draft.fundingAccountId?.let { accountId ->
+            dao.findAccount(accountId.value)?.let(::mapAccount)
+                ?: return@safelyWrite accountNotFound()
+        }
+        if (fundingAccount != null && !fundingAccount.canFund(draft)) {
+            return@safelyWrite invalidState()
+        }
+        when (draft.type) {
+            TransactionType.EXPENSE,
+            TransactionType.INCOME,
+            -> if (draft.investmentAccountId != null) return@safelyWrite invalidState()
+
+            TransactionType.INVEST_BUY -> {
+                val investmentId = draft.investmentAccountId
+                    ?: return@safelyWrite invalidState()
+                val investmentAccount = dao.findAccount(investmentId.value)?.let(::mapAccount)
+                    ?: return@safelyWrite accountNotFound()
+                if (
+                    investmentAccount.type != AccountType.INVESTMENT_SECURITY ||
+                    investmentAccount.currency != draft.amount.currency ||
+                    investmentAccount.isSystem ||
+                    investmentAccount.isArchived ||
+                    dao.findInvestmentPositionByAccountId(investmentId.value) == null
+                ) {
+                    return@safelyWrite invalidState()
+                }
+            }
+
+            else -> return@safelyWrite invalidState()
+        }
+        if (
+            !auditsAreInsertable(
+                audits = listOf(auditRecord),
+                commandId = auditRecord.commandId,
+                expectedTargets = mapOf(
+                    AuditAction.DRAFT_EDITED to AuditTarget("draft", draft.id.value),
+                ),
+            )
+        ) {
+            return@safelyWrite collision()
+        }
+
+        claimCommand(
+            commandId = auditRecord.commandId,
+            operation = Operation.UPDATE_DRAFT,
+            targetId = draft.id.value,
+            resultEntityId = draft.id.value,
+            fingerprint = fingerprint,
+            appliedAtEpochMillis = auditRecord.occurredAt.toEpochMilli(),
+        )
+        if (
+            dao.updateDraft(
+                draftId = draft.id.value,
+                type = draft.type.name,
+                amountMinorUnits = draft.amount.minorUnits,
+                occurredAtEpochMillis = draft.occurredAt.toEpochMilli(),
+                counterparty = draft.counterparty,
+                note = draft.note,
+                fundingAccountId = draft.fundingAccountId?.value,
+                investmentAccountId = draft.investmentAccountId?.value,
+                observedChannel = draft.observedChannel.name,
+                updatedAtEpochMillis = draft.updatedAt.toEpochMilli(),
+            ) != 1
+        ) {
+            throw ConcurrentStateChangeException()
+        }
         dao.insertAuditEvents(listOf(LedgerEntityMapper.auditToEntity(auditRecord)))
         applied(draft.id.value)
     }
@@ -946,6 +1050,24 @@ class RoomLedgerRepository(
                     confirmedAt = transaction.confirmedAt,
                 )
             }
+
+            ReconciliationKind.FUNDED_BY -> {
+                val channel = drafts[ReconciliationDraftRole.FUNDED_CHANNEL_EXPENSE]
+                    ?: return false
+                val bankEvidence = drafts[ReconciliationDraftRole.FUNDED_BANK_EVIDENCE]
+                    ?: return false
+                val fundingId = channel.fundingAccountId ?: return false
+                if (bankEvidence.fundingAccountId != fundingId) return false
+                val fundingAccount = dao.findAccount(fundingId.value)?.let(::mapAccount)
+                    ?: return false
+                PostingFactory.fundedExpense(
+                    channelDraft = channel,
+                    bankEvidenceDraft = bankEvidence,
+                    fundingAccount = fundingAccount,
+                    transactionId = transaction.id,
+                    confirmedAt = transaction.confirmedAt,
+                )
+            }
         }
         val validated = (expected as? PostingBuildResult.Valid)?.transaction ?: return false
         return validated.id == transaction.id &&
@@ -1303,6 +1425,7 @@ private data class AuditTarget(val entityType: String, val entityId: String)
 private object Operation {
     const val CREATE_ACCOUNT = "CREATE_ACCOUNT"
     const val CREATE_DRAFT = "CREATE_DRAFT"
+    const val UPDATE_DRAFT = "UPDATE_DRAFT"
     const val SELECT_FUNDING_ACCOUNT = "SELECT_FUNDING_ACCOUNT"
     const val CONFIRM_DRAFT = "CONFIRM_DRAFT"
     const val DISMISS_DRAFT = "DISMISS_DRAFT"
@@ -1354,6 +1477,15 @@ internal object Fingerprints {
         .addNullable(draft.note)
         .addNullable(draft.fundingAccountId?.value)
         .addNullable(draft.investmentAccountId?.value)
+        .also { fingerprint ->
+            // v9 receipts did not contain a reviewed channel. Preserve UNKNOWN replays across
+            // the v10 migration while still making every explicit channel part of new intent.
+            if (draft.observedChannel != ObservedChannel.UNKNOWN) {
+                fingerprint
+                    .add("observed-channel-v1")
+                    .add(draft.observedChannel.name)
+            }
+        }
         .finish()
 
     fun selectFundingAccount(draftId: DraftId, accountId: AccountId): String =
@@ -1362,6 +1494,20 @@ internal object Fingerprints {
             .add(draftId.value)
             .add(accountId.value)
             .finish()
+
+    fun updateDraft(draft: ManualDraft): String = CanonicalFingerprint()
+        .add(Operation.UPDATE_DRAFT)
+        .add(draft.id.value)
+        .add(draft.type.name)
+        .add(draft.amount.minorUnits)
+        .add(draft.amount.currency.value)
+        .add(draft.occurredAt.toEpochMilli())
+        .add(draft.counterparty)
+        .addNullable(draft.note)
+        .addNullable(draft.fundingAccountId?.value)
+        .addNullable(draft.investmentAccountId?.value)
+        .add(draft.observedChannel.name)
+        .finish()
 
     fun confirmDraft(draftId: DraftId, transaction: PostedTransaction): String =
         CanonicalFingerprint()

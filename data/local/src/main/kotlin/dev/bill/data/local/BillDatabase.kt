@@ -30,7 +30,7 @@ import androidx.room.AutoMigration
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
 )
 abstract class BillDatabase : RoomDatabase() {

@@ -26,6 +26,7 @@ import dev.bill.application.StatementImportConfirmationResult
 import dev.bill.application.StatementImportMappingPreviewResult
 import dev.bill.application.StatementImportPreviewError
 import dev.bill.application.StatementImportPreviewResult
+import dev.bill.application.UpdateDraftCommand
 import dev.bill.application.SelectedTextFileCapture
 import dev.bill.application.SharedReceiptImageCapture
 import dev.bill.application.SharedTextCapture
@@ -37,6 +38,7 @@ import dev.bill.application.SourceEvidenceOperationResult
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.InvestmentPositionSourceMode
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.model.AccountId
 import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
@@ -75,6 +77,7 @@ enum class BillOperationKind {
     CREATE_INVESTMENT_POSITION,
     CREATE_DRAFT,
     CREATE_EXTERNAL_DRAFT,
+    UPDATE_DRAFT,
     DISMISS_SOURCE_REVIEW,
     SELECT_FUNDING_ACCOUNT,
     CONFIRM_DRAFT,
@@ -402,6 +405,7 @@ class BillViewModel(
         counterparty: String,
         note: String,
         currency: CurrencyCode = CurrencyCode.CNY,
+        observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
     ) {
         perform(BillOperationKind.CREATE_DRAFT) {
             service.createManualDraft(
@@ -416,6 +420,7 @@ class BillViewModel(
                     counterparty = counterparty,
                     note = note,
                     currency = currency,
+                    observedChannel = observedChannel,
                 ),
             )
         }
@@ -431,6 +436,7 @@ class BillViewModel(
         currency: CurrencyCode = CurrencyCode.CNY,
         occurredAt: Instant? = null,
         investmentAccountId: String? = null,
+        observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
     ) {
         perform(BillOperationKind.CREATE_EXTERNAL_DRAFT, proposalId) {
             service.createExternalDraft(
@@ -448,6 +454,7 @@ class BillViewModel(
                     occurredAt = occurredAt,
                     currency = currency,
                     investmentAccountId = investmentAccountId?.let(::AccountId),
+                    observedChannel = observedChannel,
                 ),
             )
         }
@@ -863,6 +870,40 @@ class BillViewModel(
                 commandId = service.newCommandId(),
                 draftId = DraftId(draftId),
                 accountId = AccountId(accountId),
+            )
+        }
+    }
+
+    fun updateDraft(
+        commandId: String,
+        draftId: String,
+        kind: DraftSummaryKind,
+        amount: String,
+        counterparty: String,
+        note: String,
+        occurredAt: Instant,
+        observedChannel: ObservedChannel,
+        fundingAccountId: String?,
+        investmentAccountId: String?,
+    ) {
+        perform(BillOperationKind.UPDATE_DRAFT, draftId) {
+            service.updateDraft(
+                UpdateDraftCommand(
+                    commandId = CommandId(commandId),
+                    draftId = DraftId(draftId),
+                    type = when (kind) {
+                        DraftSummaryKind.EXPENSE -> TransactionType.EXPENSE
+                        DraftSummaryKind.INCOME -> TransactionType.INCOME
+                        DraftSummaryKind.INVEST_BUY -> TransactionType.INVEST_BUY
+                    },
+                    amountText = amount,
+                    counterparty = counterparty,
+                    note = note,
+                    occurredAt = occurredAt,
+                    observedChannel = observedChannel,
+                    fundingAccountId = fundingAccountId?.let(::AccountId),
+                    investmentAccountId = investmentAccountId?.let(::AccountId),
+                ),
             )
         }
     }

@@ -11,6 +11,7 @@ import dev.bill.core.domain.LedgerRepository
 import dev.bill.core.domain.LedgerState
 import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.ReconciliationDraftRole
 import dev.bill.core.domain.ReconciliationKind
@@ -420,6 +421,59 @@ class BillServiceTest {
     }
 
     @Test
+    fun `USD drafts reject wallet channels but allow a reviewed bank channel`() = runBlocking {
+        val createRepository = FakeLedgerRepository()
+        val createService = BillService(createRepository, clock)
+
+        assertEquals(
+            OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY),
+            createService.createManualDraft(
+                draftCommand(
+                    id = "usd-alipay",
+                    currency = CurrencyCode.USD,
+                ).copy(observedChannel = ObservedChannel.ALIPAY),
+            ),
+        )
+        assertNull(createRepository.createDraftCall)
+
+        val usdDraft = draft(
+            id = "usd-review",
+            currency = CurrencyCode.USD,
+            observedChannel = ObservedChannel.UNKNOWN,
+        )
+        val editRepository = FakeLedgerRepository(
+            ledgerState(drafts = listOf(usdDraft)),
+        )
+        val editService = BillService(editRepository, clock)
+        val baseCommand = UpdateDraftCommand(
+            commandId = CommandId("edit-usd-review"),
+            draftId = usdDraft.id,
+            type = TransactionType.EXPENSE,
+            amountText = "25.00",
+            counterparty = "TEST COUNTERPARTY",
+            note = null,
+            occurredAt = now.minusSeconds(60),
+            observedChannel = ObservedChannel.ALIPAY,
+            fundingAccountId = null,
+        )
+
+        assertEquals(
+            OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY),
+            editService.updateDraft(baseCommand),
+        )
+        assertNull(editRepository.updateDraftCall)
+        assertEquals(
+            OperationResult.Success(usdDraft.id.value),
+            editService.updateDraft(
+                baseCommand.copy(
+                    commandId = CommandId("edit-usd-review-bank"),
+                    observedChannel = ObservedChannel.BANK,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `external source completion creates an evidenced review draft instead of manual entry`() =
         runBlocking {
             val ledgerRepository = FakeLedgerRepository()
@@ -492,6 +546,7 @@ class BillServiceTest {
             val review = service.observeSnapshot().first().pendingSourceReviews.single()
             assertEquals(DraftSummaryKind.INVEST_BUY, review.suggestedKind)
             assertEquals(setOf(DraftSummaryKind.INVEST_BUY), review.allowedDraftKinds)
+            assertEquals(ObservedChannel.ALIPAY, review.suggestedObservedChannel)
 
             val result = service.createExternalDraft(
                 CreateExternalDraftCommand(
@@ -1109,6 +1164,7 @@ class BillServiceTest {
         assertEquals(6_600L, review.suggestedAmount?.minorUnits)
         assertEquals(Instant.parse("2026-07-17T16:00:00Z"), review.suggestedOccurredAt)
         assertEquals("测试付款方", review.suggestedCounterparty)
+        assertEquals(ObservedChannel.UNKNOWN, review.suggestedObservedChannel)
     }
 
     @Test
@@ -1317,6 +1373,178 @@ class BillServiceTest {
         }
 
     @Test
+    fun `draft edit changes review facts but preserves identity and source mode`() = runBlocking {
+        val bank = account("bank", AccountType.ASSET_BANK)
+        val original = draft(
+            id = "ocr-draft",
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = ObservedChannel.UNKNOWN,
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(
+                balances = listOf(AccountBalance(bank, Money.cny(20_000L))),
+                drafts = listOf(original),
+            ),
+        )
+        val service = BillService(repository, clock)
+        val command = UpdateDraftCommand(
+            commandId = CommandId("edit-ocr-draft"),
+            draftId = original.id,
+            type = TransactionType.EXPENSE,
+            amountText = "13.70",
+            counterparty = "  测试   商户  ",
+            note = " corrected locally ",
+            occurredAt = now.minusSeconds(30),
+            observedChannel = ObservedChannel.ALIPAY,
+            fundingAccountId = bank.id,
+        )
+        val result = service.updateDraft(command)
+
+        assertEquals(OperationResult.Success(original.id.value), result)
+        val call = requireNotNull(repository.updateDraftCall)
+        assertEquals(original.id, call.draft.id)
+        assertEquals(original.creationCommandId, call.draft.creationCommandId)
+        assertEquals(original.createdAt, call.draft.createdAt)
+        assertEquals(TransactionSourceMode.EXTERNAL, call.draft.sourceMode)
+        assertEquals(ObservedChannel.ALIPAY, call.draft.observedChannel)
+        assertEquals(Money.cny(1_370L), call.draft.amount)
+        assertEquals("测试 商户", call.draft.counterparty)
+        assertEquals("corrected locally", call.draft.note)
+        assertEquals(bank.id, call.draft.fundingAccountId)
+        assertEquals(AuditAction.DRAFT_EDITED, call.auditRecord.action)
+
+        repository.state.value = repository.state.value.copy(
+            pendingDrafts = listOf(call.draft.copy(state = DraftState.LINKED)),
+        )
+        repository.updateDraftResult = RepositoryWriteResult(
+            RepositoryWriteStatus.ALREADY_APPLIED,
+        )
+        assertEquals(
+            OperationResult.Success(original.id.value),
+            service.updateDraft(command),
+        )
+    }
+
+    @Test
+    fun `draft edit rejects future time before repository write`() = runBlocking {
+        val repository = FakeLedgerRepository(
+            ledgerState(drafts = listOf(draft(id = "future-draft"))),
+        )
+
+        val result = BillService(repository, clock).updateDraft(
+            UpdateDraftCommand(
+                commandId = CommandId("edit-future"),
+                draftId = DraftId("future-draft"),
+                type = TransactionType.EXPENSE,
+                amountText = "25.00",
+                counterparty = "TEST COUNTERPARTY",
+                note = null,
+                occurredAt = now.plusSeconds(1),
+                observedChannel = ObservedChannel.OTHER,
+                fundingAccountId = null,
+            ),
+        )
+
+        assertEquals(OperationResult.Failure(OperationError.INVALID_TIME), result)
+        assertNull(repository.updateDraftCall)
+    }
+
+    @Test
+    fun `funded by requires reviewed channels matching merchant account amount and time`() =
+        runBlocking {
+            val bank = account("bank", AccountType.ASSET_BANK)
+            val channel = draft(
+                id = "alipay-ocr",
+                fundingAccountId = bank.id,
+                sourceMode = TransactionSourceMode.EXTERNAL,
+                observedChannel = ObservedChannel.ALIPAY,
+                counterparty = "Cotti Coffee",
+                amountMinor = 990L,
+                occurredAt = now.minusSeconds(120),
+            )
+            val bankEvidence = draft(
+                id = "bank-notification",
+                fundingAccountId = bank.id,
+                sourceMode = TransactionSourceMode.EXTERNAL,
+                observedChannel = ObservedChannel.BANK,
+                counterparty = "cotti   coffee",
+                amountMinor = 990L,
+                occurredAt = now.minusSeconds(60),
+            )
+            val stale = bankEvidence.copy(
+                id = DraftId("stale-bank"),
+                occurredAt = now.minusSeconds(2_001),
+                creationCommandId = CommandId("create-stale-bank"),
+            )
+            val wrongMerchant = bankEvidence.copy(
+                id = DraftId("wrong-merchant"),
+                counterparty = "Another merchant",
+                creationCommandId = CommandId("create-wrong-merchant"),
+            )
+            val repository = FakeLedgerRepository(
+                ledgerState(
+                    balances = listOf(AccountBalance(bank, Money.cny(20_000L))),
+                    drafts = listOf(channel, bankEvidence, stale, wrongMerchant),
+                ),
+            )
+            val service = BillService(repository, clock)
+
+            val cases = service.observeSnapshot().first().reconciliationCases
+                .filter { it.kind == ReconciliationCaseKind.FUNDED_BY }
+
+            val case = cases.single()
+            assertEquals(listOf("alipay-ocr", "bank-notification"), case.draftIds)
+            assertEquals("bank", case.sourceAccountId)
+            val result = service.resolveReconciliation(
+                ResolveReconciliationCommand(CommandId("reconcile-funded-by"), case.id),
+            )
+            assertTrue(result is OperationResult.Success)
+            val resolution = requireNotNull(repository.resolveReconciliationCall).resolution
+            assertEquals(ReconciliationKind.FUNDED_BY, resolution.kind)
+            assertEquals(TransactionType.EXPENSE, resolution.transaction.type)
+            assertEquals(
+                setOf(
+                    ReconciliationDraftRole.FUNDED_CHANNEL_EXPENSE,
+                    ReconciliationDraftRole.FUNDED_BANK_EVIDENCE,
+                ),
+                resolution.draftLinks.mapTo(mutableSetOf()) { it.role },
+            )
+            assertTrue(resolution.relations.isEmpty())
+            assertEquals(0L, resolution.transaction.entries.sumOf { it.amount.minorUnits })
+        }
+
+    @Test
+    fun `funded by never treats wallet balance as the bank funding account`() = runBlocking {
+        val wallet = account("wallet", AccountType.ASSET_EWALLET_BALANCE)
+        val drafts = listOf(
+            draft(
+                id = "wechat-ocr",
+                fundingAccountId = wallet.id,
+                sourceMode = TransactionSourceMode.EXTERNAL,
+                observedChannel = ObservedChannel.WECHAT,
+            ),
+            draft(
+                id = "bank-evidence",
+                fundingAccountId = wallet.id,
+                sourceMode = TransactionSourceMode.EXTERNAL,
+                observedChannel = ObservedChannel.BANK,
+            ),
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(
+                balances = listOf(AccountBalance(wallet, Money.cny(20_000L))),
+                drafts = drafts,
+            ),
+        )
+
+        assertFalse(
+            BillService(repository, clock).observeSnapshot().first().reconciliationCases.any {
+                it.kind == ReconciliationCaseKind.FUNDED_BY
+            },
+        )
+    }
+
+    @Test
     fun `confirmed transfer sends one balanced replacement posting with both draft links`() =
         runBlocking {
             val bank = account("bank", AccountType.ASSET_BANK)
@@ -1515,13 +1743,15 @@ class BillServiceTest {
         currency: CurrencyCode = CurrencyCode.CNY,
         amountMinor: Long = 2_500L,
         occurredAt: Instant = now.minusSeconds(60),
+        observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
+        counterparty: String = "TEST COUNTERPARTY",
     ) = ManualDraft(
         id = DraftId(id),
         state = state,
         type = type,
         amount = Money(amountMinor, currency),
         occurredAt = occurredAt,
-        counterparty = "TEST COUNTERPARTY",
+        counterparty = counterparty,
         note = "local fixture",
         fundingAccountId = fundingAccountId,
         investmentAccountId = investmentAccountId,
@@ -1529,6 +1759,7 @@ class BillServiceTest {
         updatedAt = updatedAt,
         creationCommandId = CommandId("create-$id"),
         sourceMode = sourceMode,
+        observedChannel = observedChannel,
     )
 
     private fun investmentPosition(account: LedgerAccount) = InvestmentPosition(
@@ -1643,6 +1874,7 @@ private class FakeLedgerRepository(
     var createAccountResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var createInvestmentPositionResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var createDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
+    var updateDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var selectFundingResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var confirmDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var dismissDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
@@ -1652,6 +1884,7 @@ private class FakeLedgerRepository(
     var createAccountCall: CreateAccountCall? = null
     var createInvestmentPositionCall: CreateInvestmentPositionCall? = null
     var createDraftCall: CreateDraftCall? = null
+    var updateDraftCall: UpdateDraftCall? = null
     var selectFundingCall: SelectFundingCall? = null
     var confirmDraftCall: ConfirmDraftCall? = null
     var dismissDraftCall: DismissDraftCall? = null
@@ -1731,6 +1964,21 @@ private class FakeLedgerRepository(
             state.value = state.value.copy(pendingDrafts = state.value.pendingDrafts + draft)
         }
         return createDraftResult.withDefaultEntityId(draft.id.value)
+    }
+
+    override suspend fun updateDraft(
+        draft: ReviewDraft,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult {
+        updateDraftCall = UpdateDraftCall(draft, auditRecord)
+        if (updateDraftResult.status == RepositoryWriteStatus.APPLIED) {
+            state.value = state.value.copy(
+                pendingDrafts = state.value.pendingDrafts.map { existing ->
+                    if (existing.id == draft.id) draft else existing
+                },
+            )
+        }
+        return updateDraftResult.withDefaultEntityId(draft.id.value)
     }
 
     override suspend fun selectFundingAccount(
@@ -1835,6 +2083,11 @@ private class FakeLedgerRepository(
 
     data class CreateDraftCall(
         val draft: ManualDraft,
+        val auditRecord: AuditRecord,
+    )
+
+    data class UpdateDraftCall(
+        val draft: ReviewDraft,
         val auditRecord: AuditRecord,
     )
 

@@ -48,6 +48,29 @@ enum class TransactionSourceMode {
     EXTERNAL,
 }
 
+/**
+ * User-reviewed business channel. This never replaces immutable capture provenance:
+ * a generic screenshot can be reviewed as an Alipay event while its evidence remains GENERIC.
+ */
+enum class ObservedChannel {
+    ALIPAY,
+    WECHAT,
+    BANK,
+    OTHER,
+    UNKNOWN,
+}
+
+fun ObservedChannel.allowsCurrency(currency: CurrencyCode): Boolean = when (this) {
+    ObservedChannel.ALIPAY,
+    ObservedChannel.WECHAT,
+    -> currency == CurrencyCode.CNY
+
+    ObservedChannel.BANK,
+    ObservedChannel.OTHER,
+    ObservedChannel.UNKNOWN,
+    -> true
+}
+
 enum class AuditAction {
     ACCOUNT_CREATED,
     OPENING_BALANCE_POSTED,
@@ -58,6 +81,7 @@ enum class AuditAction {
     SOURCE_EVIDENCE_CLEAR_REQUESTED,
     SOURCE_EVIDENCE_CLEARED,
     FUNDING_ACCOUNT_SELECTED,
+    DRAFT_EDITED,
     DRAFT_CONFIRMED,
     RECONCILIATION_CONFIRMED,
     DRAFT_DISMISSED,
@@ -107,6 +131,7 @@ data class ReviewDraft(
     val updatedAt: Instant,
     val creationCommandId: CommandId,
     val sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
+    val observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
 ) {
     init {
         require(
@@ -117,6 +142,9 @@ data class ReviewDraft(
             "Review drafts accept expense, income, or investment purchase events"
         }
         require(amount.minorUnits > 0L) { "Draft amount must be positive" }
+        require(observedChannel.allowsCurrency(amount.currency)) {
+            "The reviewed channel does not support this currency"
+        }
         require(counterparty.isNotBlank()) { "Draft counterparty cannot be blank" }
         when (type) {
             TransactionType.EXPENSE,
@@ -129,7 +157,6 @@ data class ReviewDraft(
                 "An investment purchase draft must target an investment account"
             }
 
-            else -> Unit
         }
         require(fundingAccountId == null || fundingAccountId != investmentAccountId) {
             "Funding and investment accounts must differ"

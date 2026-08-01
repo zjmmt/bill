@@ -5,6 +5,7 @@ import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
 import dev.bill.core.domain.LedgerAccount
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.SystemAccountIds
 import dev.bill.core.domain.TransactionSourceMode
@@ -272,6 +273,92 @@ class PostingFactoryTest {
     }
 
     @Test
+    fun `funded by keeps one expense and uses the bank funding leg`() {
+        val bank = account(AccountType.ASSET_BANK, id = "bank")
+        val channelDraft = draft(
+            type = TransactionType.EXPENSE,
+            id = "alipay-draft",
+            fundingAccountId = bank.id,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = ObservedChannel.ALIPAY,
+        )
+        val bankEvidence = draft(
+            type = TransactionType.EXPENSE,
+            id = "bank-draft",
+            fundingAccountId = bank.id,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = ObservedChannel.BANK,
+            occurredAt = now.plusSeconds(60),
+        )
+
+        val result = PostingFactory.fundedExpense(
+            channelDraft = channelDraft,
+            bankEvidenceDraft = bankEvidence,
+            fundingAccount = bank,
+            transactionId = TransactionId("tx-funded-by"),
+            confirmedAt = now.plusSeconds(120),
+        )
+
+        val transaction = (result as PostingBuildResult.Valid).transaction
+        assertEquals(TransactionType.EXPENSE, transaction.type)
+        assertEquals(2, transaction.entries.size)
+        assertEquals(2_500L, transaction.entries.single { it.role == EntryRole.EXPENSE }.amount.minorUnits)
+        assertEquals(-2_500L, transaction.entries.single { it.role == EntryRole.FUNDING }.amount.minorUnits)
+        assertEquals(bank.id, transaction.entries.single { it.role == EntryRole.FUNDING }.accountId)
+    }
+
+    @Test
+    fun `funded by rejects unknown channel stale evidence and wallet balance funding`() {
+        val bank = account(AccountType.ASSET_BANK, id = "bank")
+        val channelDraft = draft(
+            type = TransactionType.EXPENSE,
+            id = "wechat-draft",
+            fundingAccountId = bank.id,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = ObservedChannel.WECHAT,
+        )
+        val bankEvidence = draft(
+            type = TransactionType.EXPENSE,
+            id = "bank-draft",
+            fundingAccountId = bank.id,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = ObservedChannel.BANK,
+        )
+
+        assertEquals(
+            PostingBuildResult.InvalidDraftPair,
+            PostingFactory.fundedExpense(
+                channelDraft = channelDraft,
+                bankEvidenceDraft = bankEvidence.copy(observedChannel = ObservedChannel.UNKNOWN),
+                fundingAccount = bank,
+                transactionId = TransactionId("tx-unknown"),
+                confirmedAt = now,
+            ),
+        )
+        assertEquals(
+            PostingBuildResult.InvalidDraftPair,
+            PostingFactory.fundedExpense(
+                channelDraft = channelDraft,
+                bankEvidenceDraft = bankEvidence.copy(occurredAt = now.plusSeconds(1_801)),
+                fundingAccount = bank,
+                transactionId = TransactionId("tx-stale"),
+                confirmedAt = now.plusSeconds(1_900),
+            ),
+        )
+        val wallet = account(AccountType.ASSET_EWALLET_BALANCE, id = "wallet")
+        assertEquals(
+            PostingBuildResult.InvalidDraftPair,
+            PostingFactory.fundedExpense(
+                channelDraft = channelDraft.copy(fundingAccountId = wallet.id),
+                bankEvidenceDraft = bankEvidence.copy(fundingAccountId = wallet.id),
+                fundingAccount = wallet,
+                transactionId = TransactionId("tx-wallet"),
+                confirmedAt = now,
+            ),
+        )
+    }
+
+    @Test
     fun `partial refund reverses expense and cannot exceed remaining amount`() {
         val bank = account(AccountType.ASSET_BANK, id = "bank")
         val original = expenseTransaction(bank, amount = 5_000)
@@ -335,12 +422,15 @@ class PostingFactoryTest {
             null
         },
         amount: Money = Money.cny(2_500L),
+        sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
+        observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
+        occurredAt: Instant = now,
     ) = ManualDraft(
         id = DraftId(id),
         state = DraftState.WAITING_USER,
         type = type,
         amount = amount,
-        occurredAt = now,
+        occurredAt = occurredAt,
         counterparty = "测试商户",
         note = null,
         fundingAccountId = fundingAccountId,
@@ -348,6 +438,8 @@ class PostingFactoryTest {
         createdAt = now,
         updatedAt = now,
         creationCommandId = CommandId("command-draft"),
+        sourceMode = sourceMode,
+        observedChannel = observedChannel,
     )
 
     private fun expenseTransaction(

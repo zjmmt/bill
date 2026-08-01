@@ -14,6 +14,7 @@ import dev.bill.core.domain.InvestmentPosition
 import dev.bill.core.domain.InvestmentPositionId
 import dev.bill.core.domain.InvestmentPositionSourceMode
 import dev.bill.core.domain.ManualDraft
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.PostedTransaction
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
@@ -29,6 +30,7 @@ import dev.bill.core.domain.TransactionStatus
 import dev.bill.core.domain.TransactionRelation
 import dev.bill.core.domain.TransactionRelationId
 import dev.bill.core.domain.TransactionRelationType
+import dev.bill.core.domain.allowsCurrency
 import dev.bill.core.ledger.PostingBuildResult
 import dev.bill.core.ledger.PostingFactory
 import dev.bill.core.model.AccountId
@@ -65,6 +67,7 @@ import dev.bill.source.review.allowsExternalDraftCurrency
 import dev.bill.source.review.allowsExternalDraftType
 import dev.bill.source.contract.ObservedTime
 import dev.bill.source.contract.GenericDelimitedStatementIdentity
+import dev.bill.source.contract.SourceFamily
 
 enum class OperationError {
     INVALID_NAME,
@@ -83,6 +86,7 @@ enum class OperationError {
     INVALID_INSTRUMENT_CODE,
     INVALID_UNITS,
     INVALID_COST_BASIS,
+    INVALID_TIME,
 }
 
 sealed interface OperationResult {
@@ -135,6 +139,7 @@ data class CreateManualDraftCommand(
     val note: String?,
     val occurredAt: Instant? = null,
     val currency: CurrencyCode = CurrencyCode.CNY,
+    val observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
 )
 
 data class CreateExternalDraftCommand(
@@ -147,11 +152,31 @@ data class CreateExternalDraftCommand(
     val occurredAt: Instant? = null,
     val currency: CurrencyCode = CurrencyCode.CNY,
     val investmentAccountId: AccountId? = null,
+    val observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
+)
+
+data class UpdateDraftCommand(
+    val commandId: CommandId,
+    val draftId: DraftId,
+    val type: TransactionType,
+    val amountText: String,
+    val counterparty: String,
+    val note: String?,
+    val occurredAt: Instant,
+    val observedChannel: ObservedChannel,
+    val fundingAccountId: AccountId?,
+    val investmentAccountId: AccountId? = null,
 )
 
 data class ResolveReconciliationCommand(
     val commandId: CommandId,
     val caseId: String,
+)
+
+private data class FundedByKey(
+    val amount: Money,
+    val fundingAccountId: AccountId,
+    val normalizedCounterparty: String,
 )
 
 class BillService(
@@ -397,6 +422,9 @@ class BillService(
         if (!command.currency.isSupportedLedgerCurrency()) {
             return OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY)
         }
+        if (!command.observedChannel.allowsCurrency(command.currency)) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY)
+        }
         val amount = MoneyInput.parsePositive(command.amountText, command.currency)
             ?: return OperationResult.Failure(OperationError.INVALID_AMOUNT)
         if (command.counterparty.hasControlCharacter()) {
@@ -428,6 +456,7 @@ class BillService(
             createdAt = now,
             updatedAt = now,
             creationCommandId = command.commandId,
+            observedChannel = command.observedChannel,
         )
         return repository.createManualDraft(
             draft = draft,
@@ -458,6 +487,9 @@ class BillService(
             return OperationResult.Failure(OperationError.INVALID_STATE)
         }
         if (!command.currency.isSupportedLedgerCurrency()) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY)
+        }
+        if (!command.observedChannel.allowsCurrency(command.currency)) {
             return OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY)
         }
         val amount = MoneyInput.parsePositive(command.amountText, command.currency)
@@ -538,6 +570,7 @@ class BillService(
             updatedAt = now,
             creationCommandId = command.commandId,
             sourceMode = TransactionSourceMode.EXTERNAL,
+            observedChannel = command.observedChannel,
         )
         return sourceReviewRepository.completeSourceProposal(
             proposalId = command.proposalId,
@@ -548,6 +581,104 @@ class BillService(
                 action = AuditAction.EXTERNAL_DRAFT_CREATED,
                 entityType = "draft",
                 entityId = draft.id.value,
+                occurredAt = now,
+            ),
+        ).toOperationResult()
+    }
+
+    suspend fun updateDraft(command: UpdateDraftCommand): OperationResult {
+        val existing = repository.findDraft(command.draftId)
+            ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+        if (
+            command.type != TransactionType.EXPENSE &&
+            command.type != TransactionType.INCOME &&
+            command.type != TransactionType.INVEST_BUY
+        ) {
+            return OperationResult.Failure(OperationError.INVALID_STATE)
+        }
+        if (!command.observedChannel.allowsCurrency(existing.amount.currency)) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_CURRENCY)
+        }
+        val amount = MoneyInput.parsePositive(command.amountText, existing.amount.currency)
+            ?: return OperationResult.Failure(OperationError.INVALID_AMOUNT)
+        if (command.counterparty.hasControlCharacter()) {
+            return OperationResult.Failure(OperationError.INVALID_COUNTERPARTY)
+        }
+        val counterparty = command.counterparty.trim().replace(whitespace, " ")
+        if (
+            counterparty.isBlank() ||
+            counterparty.length > MAX_COUNTERPARTY_LENGTH ||
+            counterparty.hasControlCharacter()
+        ) {
+            return OperationResult.Failure(OperationError.INVALID_COUNTERPARTY)
+        }
+        val note = command.note?.trim()?.takeIf(String::isNotEmpty)
+        if (note != null && (note.length > MAX_NOTE_LENGTH || note.hasControlCharacter())) {
+            return OperationResult.Failure(OperationError.NOTE_TOO_LONG)
+        }
+        val now = clock.instant()
+        if (command.occurredAt > now) {
+            return OperationResult.Failure(OperationError.INVALID_TIME)
+        }
+
+        val investmentAccount = when (command.type) {
+            TransactionType.INVEST_BUY -> {
+                val investmentId = command.investmentAccountId
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_REQUIRED)
+                repository.findAccount(investmentId)
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+            }
+
+            TransactionType.EXPENSE,
+            TransactionType.INCOME,
+            -> {
+                if (command.investmentAccountId != null) {
+                    return OperationResult.Failure(OperationError.INVALID_STATE)
+                }
+                null
+            }
+
+        }
+        if (
+            investmentAccount != null &&
+            (
+                investmentAccount.type != AccountType.INVESTMENT_SECURITY ||
+                    investmentAccount.currency != existing.amount.currency ||
+                    investmentAccount.isSystem ||
+                    investmentAccount.isArchived ||
+                    repository.findInvestmentPositionByAccountId(investmentAccount.id) == null
+                )
+        ) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_ACCOUNT_TYPE)
+        }
+
+        val replacement = existing.copy(
+            state = DraftState.EDITED,
+            type = command.type,
+            amount = amount,
+            occurredAt = command.occurredAt,
+            counterparty = counterparty,
+            note = note,
+            fundingAccountId = command.fundingAccountId,
+            investmentAccountId = investmentAccount?.id,
+            updatedAt = now,
+            observedChannel = command.observedChannel,
+        )
+        val fundingAccount = command.fundingAccountId?.let { accountId ->
+            repository.findAccount(accountId)
+                ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+        }
+        if (fundingAccount != null && !fundingAccount.canFund(replacement)) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_ACCOUNT_TYPE)
+        }
+        return repository.updateDraft(
+            draft = replacement,
+            auditRecord = audit(
+                commandId = command.commandId,
+                suffix = "draft-edited",
+                action = AuditAction.DRAFT_EDITED,
+                entityType = "draft",
+                entityId = replacement.id.value,
                 occurredAt = now,
             ),
         ).toOperationResult()
@@ -787,6 +918,24 @@ class BillService(
                     confirmedAt = now,
                 )
             }
+
+            ReconciliationCaseKind.FUNDED_BY -> {
+                val channelDraft = draftsById[case.draftIds.getOrNull(0)]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val bankEvidenceDraft = draftsById[case.draftIds.getOrNull(1)]
+                    ?: return OperationResult.Failure(OperationError.NOT_FOUND)
+                val funding = case.sourceAccountId
+                    ?.let(accountsById::get)
+                    ?.account
+                    ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+                PostingFactory.fundedExpense(
+                    channelDraft = channelDraft,
+                    bankEvidenceDraft = bankEvidenceDraft,
+                    fundingAccount = funding,
+                    transactionId = transactionId,
+                    confirmedAt = now,
+                )
+            }
         }
         val validated = (build as? PostingBuildResult.Valid)?.transaction
             ?: return OperationResult.Failure(build.toOperationError())
@@ -839,6 +988,17 @@ class BillService(
                     ReconciliationDraftRole.REFUND_INBOUND,
                 ),
             )
+
+            ReconciliationCaseKind.FUNDED_BY -> listOf(
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds[0]),
+                    ReconciliationDraftRole.FUNDED_CHANNEL_EXPENSE,
+                ),
+                ReconciliationDraftLink(
+                    DraftId(case.draftIds[1]),
+                    ReconciliationDraftRole.FUNDED_BANK_EVIDENCE,
+                ),
+            )
         }
         val relations = if (case.kind == ReconciliationCaseKind.REFUND) {
             listOf(
@@ -864,6 +1024,7 @@ class BillService(
                         ReconciliationKind.LIABILITY_REPAYMENT
 
                     ReconciliationCaseKind.REFUND -> ReconciliationKind.REFUND
+                    ReconciliationCaseKind.FUNDED_BY -> ReconciliationKind.FUNDED_BY
                 },
                 transaction = transaction,
                 draftLinks = draftLinks,
@@ -975,6 +1136,7 @@ class BillService(
                     investmentAccountId = draft.investmentAccountId?.value,
                     occurredAt = draft.occurredAt,
                     sourceMode = draft.sourceMode,
+                    observedChannel = draft.observedChannel,
                 )
             }
 
@@ -1028,6 +1190,7 @@ class BillService(
                     suggestedCounterparty = record.candidate?.counterparty?.value,
                     suggestedOccurredAt = record.candidate?.occurredAt?.value
                         ?.resolveForReview(localZoneId),
+                    suggestedObservedChannel = record.sourceFamily.toObservedChannel(),
                     diagnosticCode = record.diagnostic?.code?.name,
                     isPossibleDuplicate = record.isPossibleDuplicate,
                 )
@@ -1215,6 +1378,80 @@ class BillService(
                 }
         }
 
+        val fundedBankDraftsByKey = outboundDrafts.asSequence()
+            .filter { draft ->
+                draft.sourceMode == TransactionSourceMode.EXTERNAL &&
+                    draft.observedChannel == ObservedChannel.BANK
+            }
+            .mapNotNull { draft ->
+                val accountId = draft.fundingAccountId ?: return@mapNotNull null
+                val account = accountsById[accountId]?.account ?: return@mapNotNull null
+                if (
+                    account.isSystem ||
+                    account.isArchived ||
+                    account.type !in fundedByAccountTypes ||
+                    account.currency != draft.amount.currency
+                ) {
+                    return@mapNotNull null
+                }
+                fundedByKey(draft) to draft
+            }
+            .groupBy(keySelector = { it.first }, valueTransform = { it.second })
+
+        outboundDrafts.asSequence()
+            .filter { draft ->
+                draft.sourceMode == TransactionSourceMode.EXTERNAL &&
+                    draft.observedChannel in walletObservedChannels
+            }
+            .forEach { channelDraft ->
+                val fundingId = channelDraft.fundingAccountId ?: return@forEach
+                val funding = accountsById[fundingId]?.account ?: return@forEach
+                if (
+                    funding.isSystem ||
+                    funding.isArchived ||
+                    funding.type !in fundedByAccountTypes ||
+                    funding.currency != channelDraft.amount.currency
+                ) {
+                    return@forEach
+                }
+                fundedBankDraftsByKey[fundedByKey(channelDraft)].orEmpty().asSequence()
+                    .filter { bankDraft ->
+                        bankDraft.id != channelDraft.id &&
+                            withinWindow(
+                                channelDraft.occurredAt,
+                                bankDraft.occurredAt,
+                                FUNDED_BY_MATCH_WINDOW,
+                            )
+                    }
+                    .sortedBy { bankDraft ->
+                        timeDistanceMillis(channelDraft.occurredAt, bankDraft.occurredAt)
+                    }
+                    .take(MAX_CASES_PER_DRAFT)
+                    .forEach { bankDraft ->
+                        cases += ReconciliationCaseSummary(
+                            id = reconciliationCaseId(
+                                ReconciliationCaseKind.FUNDED_BY,
+                                channelDraft.id.value,
+                                bankDraft.id.value,
+                            ),
+                            kind = ReconciliationCaseKind.FUNDED_BY,
+                            amount = channelDraft.amount,
+                            occurredAt = minOf(
+                                channelDraft.occurredAt,
+                                bankDraft.occurredAt,
+                            ),
+                            title = "${channelDraft.counterparty} · ${funding.name}",
+                            draftIds = listOf(
+                                channelDraft.id.value,
+                                bankDraft.id.value,
+                            ),
+                            sourceAccountId = funding.id.value,
+                            destinationAccountId = funding.id.value,
+                            relatedTransactionId = null,
+                        )
+                    }
+            }
+
         inboundDrafts.forEach { inbound ->
             refundSourceTransactions.asSequence()
                 .filter { original ->
@@ -1358,6 +1595,7 @@ class BillService(
             amount = amount,
             kind = kind,
             canUndo = draftId != null ||
+                (draftId == null && type == TransactionType.EXPENSE) ||
                 type == TransactionType.TRANSFER ||
                 type == TransactionType.REFUND ||
                 type == TransactionType.LIABILITY_REPAY,
@@ -1409,6 +1647,24 @@ class BillService(
         else -> null
     }
 
+    private fun SourceFamily.toObservedChannel(): ObservedChannel = when (this) {
+        SourceFamily.ALIPAY -> ObservedChannel.ALIPAY
+        SourceFamily.WECHAT -> ObservedChannel.WECHAT
+        SourceFamily.BANK -> ObservedChannel.BANK
+        SourceFamily.GENERIC,
+        SourceFamily.MANUAL,
+        -> ObservedChannel.UNKNOWN
+    }
+
+    private fun fundedByKey(draft: ManualDraft): FundedByKey = FundedByKey(
+        amount = draft.amount,
+        fundingAccountId = requireNotNull(draft.fundingAccountId),
+        normalizedCounterparty = draft.counterparty
+            .trim()
+            .replace(whitespace, " ")
+            .lowercase(Locale.ROOT),
+    )
+
     private fun audit(
         commandId: CommandId,
         suffix: String,
@@ -1439,8 +1695,11 @@ class BillService(
         const val MAX_RECONCILIATION_INPUT_TRANSACTIONS = 50
         val TRANSFER_MATCH_WINDOW: Duration = Duration.ofDays(3)
         val REFUND_MATCH_WINDOW: Duration = Duration.ofDays(180)
+        val FUNDED_BY_MATCH_WINDOW: Duration = Duration.ofMinutes(30)
         val whitespace = Regex("\\s+")
         val investmentCodePattern = Regex("[A-Z0-9][A-Z0-9._-]{0,31}")
+        val fundedByAccountTypes = setOf(AccountType.ASSET_BANK, AccountType.LIABILITY_CC)
+        val walletObservedChannels = setOf(ObservedChannel.ALIPAY, ObservedChannel.WECHAT)
         val creatableAccountTypes = setOf(
             AccountType.ASSET_CASH,
             AccountType.ASSET_BANK,

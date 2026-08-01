@@ -216,6 +216,9 @@ private fun ReconciliationRow(
 
                             ReconciliationCaseKind.LIABILITY_REPAYMENT ->
                                 R.string.reconciliation_kind_repayment
+
+                            ReconciliationCaseKind.FUNDED_BY ->
+                                R.string.reconciliation_kind_funded_by
                         },
                     ),
                     style = MaterialTheme.typography.labelLarge,

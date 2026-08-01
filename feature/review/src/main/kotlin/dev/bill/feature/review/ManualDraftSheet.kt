@@ -46,6 +46,8 @@ import dev.bill.application.SourceReviewKind
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.model.isSupportedLedgerCurrency
+import dev.bill.core.domain.ObservedChannel
+import dev.bill.core.domain.allowsCurrency
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -67,6 +69,7 @@ fun ManualDraftSheet(
         availableCurrencies = listOf(CurrencyCode.CNY, CurrencyCode.USD),
         initialAmount = "",
         initialCounterparty = "",
+        initialObservedChannel = ObservedChannel.UNKNOWN,
         submitLabel = stringResource(R.string.create_draft),
         submittingLabel = stringResource(R.string.creating_draft),
         isSubmitting = isSubmitting,
@@ -157,6 +160,7 @@ fun SourceDraftSheet(
             ?.toAmountInput()
             .orEmpty(),
         initialCounterparty = sourceReview.suggestedCounterparty.orEmpty(),
+        initialObservedChannel = sourceReview.suggestedObservedChannel,
         investmentPositions = investmentPositions,
         submitLabel = stringResource(R.string.continue_source_draft),
         submittingLabel = stringResource(R.string.saving_source_draft),
@@ -188,6 +192,7 @@ private fun DraftInputSheet(
     availableCurrencies: List<CurrencyCode>,
     initialAmount: String,
     initialCounterparty: String,
+    initialObservedChannel: ObservedChannel,
     investmentPositions: List<InvestmentPositionSummary> = emptyList(),
     submitLabel: String,
     submittingLabel: String,
@@ -209,12 +214,19 @@ private fun DraftInputSheet(
     var amount by rememberSaveable(formKey) { mutableStateOf(initialAmount) }
     var counterparty by rememberSaveable(formKey) { mutableStateOf(initialCounterparty) }
     var note by rememberSaveable(formKey) { mutableStateOf("") }
+    var selectedObservedChannelName by rememberSaveable(formKey) {
+        mutableStateOf(initialObservedChannel.name)
+    }
     var selectedInvestmentAccountId by rememberSaveable(formKey) {
         mutableStateOf(investmentPositions.singleOrNull()?.accountId)
     }
     var showIgnoreConfirmation by rememberSaveable(formKey) { mutableStateOf(false) }
     val selectedKind = DraftSummaryKind.valueOf(selectedKindName)
     val selectedCurrency = CurrencyCode(selectedCurrencyCode)
+    val selectedObservedChannel = ObservedChannel.valueOf(selectedObservedChannelName)
+    val availableObservedChannels = ObservedChannel.entries.filter { channel ->
+        channel.allowsCurrency(selectedCurrency)
+    }
     val selectedInvestmentPosition = investmentPositions.firstOrNull { position ->
         position.accountId == selectedInvestmentAccountId
     }
@@ -315,7 +327,12 @@ private fun DraftInputSheet(
                                 .selectable(
                                     selected = selectedCurrency == currency,
                                     enabled = !isSubmitting,
-                                    onClick = { selectedCurrencyCode = currency.value },
+                                    onClick = {
+                                        selectedCurrencyCode = currency.value
+                                        if (!selectedObservedChannel.allowsCurrency(currency)) {
+                                            selectedObservedChannelName = ObservedChannel.UNKNOWN.name
+                                        }
+                                    },
                                 )
                                 .padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -328,6 +345,46 @@ private fun DraftInputSheet(
                             )
                             Text(currency.localizedName())
                         }
+                    }
+                }
+            }
+
+            Text(
+                text = stringResource(R.string.observed_channel),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.observed_channel_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup(),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                availableObservedChannels.forEach { channel ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 48.dp)
+                            .selectable(
+                                selected = selectedObservedChannel == channel,
+                                enabled = !isSubmitting,
+                                onClick = { selectedObservedChannelName = channel.name },
+                            )
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = selectedObservedChannel == channel,
+                            onClick = null,
+                            enabled = !isSubmitting,
+                        )
+                        Text(channel.localizedName())
                     }
                 }
             }
@@ -451,6 +508,7 @@ private fun DraftInputSheet(
                             note = note,
                             currency = selectedCurrency,
                             investmentAccountId = selectedInvestmentPosition?.accountId,
+                            observedChannel = selectedObservedChannel,
                         ),
                     )
                 },
@@ -566,5 +624,16 @@ private fun CurrencyCode.inputPrefix(): String = when (this) {
     CurrencyCode.USD -> "$"
     else -> value
 }
+
+@Composable
+internal fun ObservedChannel.localizedName(): String = stringResource(
+    when (this) {
+        ObservedChannel.ALIPAY -> R.string.channel_alipay
+        ObservedChannel.WECHAT -> R.string.channel_wechat
+        ObservedChannel.BANK -> R.string.channel_bank
+        ObservedChannel.OTHER -> R.string.channel_other
+        ObservedChannel.UNKNOWN -> R.string.channel_unknown
+    },
+)
 
 private val sourceTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")

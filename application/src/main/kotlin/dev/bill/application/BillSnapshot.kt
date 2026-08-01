@@ -4,6 +4,7 @@ import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.domain.TransactionSourceMode
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.source.contract.SourceFamily
 import java.time.Instant
 import java.math.BigDecimal
@@ -44,6 +45,7 @@ data class DraftSummary(
     val investmentAccountId: String? = null,
     val occurredAt: Instant,
     val sourceMode: TransactionSourceMode = TransactionSourceMode.MANUAL,
+    val observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
 )
 
 enum class SourceReviewKind {
@@ -71,6 +73,7 @@ data class SourceReviewSummary(
     val diagnosticCode: String?,
     val isPossibleDuplicate: Boolean,
     val suggestedOccurredAt: Instant? = null,
+    val suggestedObservedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
     /** A locally bundled safe label for a notification route, never package/channel/body text. */
     val notificationRouteLabel: String? = null,
 )
@@ -79,6 +82,7 @@ enum class ReconciliationCaseKind {
     TRANSFER,
     REFUND,
     LIABILITY_REPAYMENT,
+    FUNDED_BY,
 }
 
 data class ReconciliationCaseSummary(
@@ -115,6 +119,13 @@ data class ReconciliationCaseSummary(
                 require(draftIds.size == 1)
                 require(sourceAccountId == null)
                 require(relatedTransactionId != null)
+            }
+
+            ReconciliationCaseKind.FUNDED_BY -> {
+                require(draftIds.size == 2)
+                require(sourceAccountId != null)
+                require(sourceAccountId == destinationAccountId)
+                require(relatedTransactionId == null)
             }
         }
     }

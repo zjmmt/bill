@@ -61,7 +61,7 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 
 ## 当前实现断面
 
-账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建普通账户后以平衡 `ADJUSTMENT` 表示期初余额；CNY 投资持仓以用户确认的名称和当前金额快照建立独立 `INVESTMENT_SECURITY` 账户，代码、份额和成本可选。手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries；`INVEST_BUY` 从资金账户转入既有持仓账户，不计普通支出，也不自动改写估值快照。Room schema v9 持久化账户、持仓、草稿及其投资目标、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
+账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建普通账户后以平衡 `ADJUSTMENT` 表示期初余额；CNY 投资持仓以用户确认的名称和当前金额快照建立独立 `INVESTMENT_SECURITY` 账户，代码、份额和成本可选。手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries；`INVEST_BUY` 从资金账户转入既有持仓账户，不计普通支出，也不自动改写估值快照。Room schema v10 持久化账户、持仓、草稿及其投资目标和用户审核渠道、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
 
 账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
 
@@ -91,7 +91,7 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 | `source:alipay` | 支付宝通知/导入格式适配 | source:contract |
 | `source:wechat` | 微信支付通知/导入格式适配 | source:contract |
 | `source:bank:*` | 银行通知和文件配置/适配器 | source:contract |
-| `data:local` | Room v9、迁移、账本/持仓/来源/生命周期/暂存/通知观察/导入批次/对账仓储与应用私有证据文件 | `core:domain` 与来源端口 |
+| `data:local` | Room v10、迁移、账本/持仓/来源/生命周期/暂存/通知观察/导入批次/对账仓储与应用私有证据文件 | `core:domain` 与来源端口 |
 | `platform:android` | 通知监听、SAF、WorkManager、Keystore | Android SDK、source:contract |
 | `security` | 加密、密钥、脱敏、导出封装 | 平台抽象 |
 
@@ -121,13 +121,13 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 - `Entry`：交易对账户的借贷/增减影响；同币种交易必须平衡。
 - `TxRelation`：表达 `DUPLICATE_OF`、`FUNDED_BY`、`REFUNDS`、`TRANSFER_PAIR`、`REPLACES` 等关系。
 
-当前已实现账户、CNY 投资持仓、Manual/外部来源 Draft、Transaction/Entry、Audit、`RawEvent -> ParseAttempt -> source proposal -> draft_source_evidence` 证据链，以及用户确认的 `TRANSFER`、`LIABILITY_REPAY`、`REFUND` 对账切片和 `INVEST_BUY` 资产转移。应用只在金额、币种、方向、账户角色和时间窗满足硬门时生成有限建议，用户确认后原子写入平衡交易、Draft 链接和关系；撤销会恢复相关 Draft。一般 `DUPLICATE_OF`、多证据自动合并、投资赎回/估值更新和完整 provider 适配仍未实现；“可能重复”只是复核信号。
+当前已实现账户、CNY 投资持仓、Manual/外部来源 Draft、完整审核字段编辑、Transaction/Entry、Audit、`RawEvent -> ParseAttempt -> source proposal -> draft_source_evidence` 证据链，以及用户确认的 `TRANSFER`、`LIABILITY_REPAY`、`REFUND`、绑卡支付 `FUNDED_BY` 对账切片和 `INVEST_BUY` 资产转移。应用只在关系特定的金额、币种、渠道、账户、商户和时间窗硬门满足时生成有限建议，用户确认后原子写入平衡交易与全部 Draft 链接；撤销会恢复相关 Draft 和证据链。一般 `DUPLICATE_OF`、pending/posted、多证据自动合并、投资赎回/估值更新和完整 provider 适配仍未实现；“可能重复”只是复核信号。
 
 渠道作为交易元数据；只有真实持有余额时，支付宝余额或微信零钱才是资产账户。绑卡支付时，银行/信用卡才是资金账户；钱包余额内收付没有银行资金腿，不能由银行卡流水或余额差推断。
 
 ## 存储与安全边界
 
-- 结构化数据进入应用私有 Room/SQLite；分享文本、不透明文件和 CSV/TSV 行证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 增加不含通知 key/正文的观察摘要与恢复租约，v7 增加不含单元格的导入批次/行状态和对账关系，v8 增加持仓快照，v9 增加投资草稿目标。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
+- 结构化数据进入应用私有 Room/SQLite；分享文本、不透明文件和 CSV/TSV 行证据进入 `noBackupFilesDir`。设置页已提供逐项清除、保留期限、容量治理和分页；Room v5 提供租约暂存与有界孤儿回收，v6 增加不含通知 key/正文的观察摘要与恢复租约，v7 增加不含单元格的导入批次/行状态和对账关系，v8 增加持仓快照，v9 增加投资草稿目标，v10 增加 Draft 用户审核渠道并把旧值迁移为 `UNKNOWN`。全部账本删除、加密备份、压力与真实系统强杀矩阵仍是发布门。
 - 目标状态是由 Android Keystore 保护备份密钥，并在数据离开应用私有目录前完成认证加密；当前加密备份、密钥恢复和轮换尚未实现，不得按现有能力宣传。
 - 导入使用 Storage Access Framework，不申请广泛文件访问。
 - 生产日志只记录事件 ID、规则版本和错误码；不记录金额、商户、账号、通知正文或文件内容。

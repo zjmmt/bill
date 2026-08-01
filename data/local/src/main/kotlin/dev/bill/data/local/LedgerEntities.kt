@@ -1,5 +1,6 @@
 package dev.bill.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
@@ -57,6 +58,8 @@ data class DraftEntity(
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
     val creationCommandId: String,
+    @ColumnInfo(defaultValue = "'UNKNOWN'")
+    val observedChannel: String = "UNKNOWN",
 )
 
 @Entity(

@@ -16,6 +16,7 @@ enum class ReconciliationKind {
     TRANSFER_PAIR,
     LIABILITY_REPAYMENT,
     REFUND,
+    FUNDED_BY,
 }
 
 enum class ReconciliationDraftRole {
@@ -23,6 +24,8 @@ enum class ReconciliationDraftRole {
     TRANSFER_INBOUND,
     REPAYMENT_OUTBOUND,
     REFUND_INBOUND,
+    FUNDED_CHANNEL_EXPENSE,
+    FUNDED_BANK_EVIDENCE,
 }
 
 data class ReconciliationDraftLink(
@@ -106,6 +109,19 @@ data class ReconciliationResolution(
                 require(
                     relations.singleOrNull()?.type == TransactionRelationType.REFUNDS,
                 )
+            }
+
+            ReconciliationKind.FUNDED_BY -> {
+                require(transaction.type == TransactionType.EXPENSE)
+                require(draftLinks.size == 2)
+                require(
+                    draftLinks.mapTo(mutableSetOf(), ReconciliationDraftLink::role) ==
+                        setOf(
+                            ReconciliationDraftRole.FUNDED_CHANNEL_EXPENSE,
+                            ReconciliationDraftRole.FUNDED_BANK_EVIDENCE,
+                        ),
+                )
+                require(relations.isEmpty())
             }
         }
     }

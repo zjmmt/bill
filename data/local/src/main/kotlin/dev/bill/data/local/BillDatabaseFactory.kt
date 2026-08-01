@@ -18,6 +18,7 @@ object BillDatabaseFactory {
             BillMigrations.Migration6To7,
             BillMigrations.Migration7To8,
             BillMigrations.Migration8To9,
+            BillMigrations.Migration9To10,
         )
         .addCallback(BillDatabaseCallbacks.EnsureSourceEvidencePolicy)
         .build()

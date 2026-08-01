@@ -317,6 +317,24 @@ class GenericPhotoOcrParserTest {
     }
 
     @Test
+    fun `provider display name never gates a fixed completed payment amount`() {
+        listOf(
+            "Weixin Pay" to "Payment successful",
+            "微信支付" to "支付成功",
+            "微信支付" to "付款成功",
+            "支付寶" to "交易成功",
+        ).forEach { (displayName, completedStatus) ->
+            val result = parseSpatial(
+                spatial(displayName, 500, 750),
+                spatial(completedStatus, 900, 1_150),
+                spatial("￥6.66", 1_500, 2_400),
+            ) as ParseResult.NeedsUserReview
+
+            assertEquals(666L, result.candidate?.amount?.value?.minorUnits)
+        }
+    }
+
+    @Test
     fun `simplified and traditional Chinese status variants keep the same semantics`() {
         listOf("入账成功", "入賬成功", "到账", "到賬", "到帳").forEach { status ->
             val result = parse(status, "￥8.00") as ParseResult.NeedsUserReview

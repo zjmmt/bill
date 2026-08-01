@@ -6,6 +6,8 @@ import dev.bill.application.DraftSummaryKind
 import dev.bill.application.OperationError
 import dev.bill.application.canFund
 import dev.bill.core.model.CurrencyCode
+import dev.bill.core.domain.ObservedChannel
+import java.time.Instant
 
 data class ReviewUiState(
     val draft: DraftSummary,
@@ -19,6 +21,8 @@ sealed interface ReviewAction {
     data class SelectFundingAccount(val accountId: String) : ReviewAction
 
     data object Confirm : ReviewAction
+
+    data object Edit : ReviewAction
 
     data object SaveForLater : ReviewAction
 
@@ -34,6 +38,18 @@ data class ManualDraftInput(
     val note: String,
     val currency: CurrencyCode = CurrencyCode.CNY,
     val investmentAccountId: String? = null,
+    val observedChannel: ObservedChannel = ObservedChannel.UNKNOWN,
+)
+
+data class EditDraftInput(
+    val kind: DraftSummaryKind,
+    val amount: String,
+    val counterparty: String,
+    val note: String,
+    val occurredAt: Instant,
+    val observedChannel: ObservedChannel,
+    val fundingAccountId: String?,
+    val investmentAccountId: String?,
 )
 
 object ReviewPresenter {

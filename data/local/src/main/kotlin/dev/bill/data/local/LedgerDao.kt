@@ -86,6 +86,36 @@ interface LedgerDao {
     @Query(
         """
         UPDATE drafts
+        SET state = 'EDITED',
+            type = :type,
+            amountMinorUnits = :amountMinorUnits,
+            occurredAtEpochMillis = :occurredAtEpochMillis,
+            counterparty = :counterparty,
+            note = :note,
+            fundingAccountId = :fundingAccountId,
+            investmentAccountId = :investmentAccountId,
+            observedChannel = :observedChannel,
+            updatedAtEpochMillis = :updatedAtEpochMillis
+        WHERE id = :draftId
+          AND state IN ('WAITING_USER', 'EDITED')
+        """,
+    )
+    suspend fun updateDraft(
+        draftId: String,
+        type: String,
+        amountMinorUnits: Long,
+        occurredAtEpochMillis: Long,
+        counterparty: String,
+        note: String?,
+        fundingAccountId: String?,
+        investmentAccountId: String?,
+        observedChannel: String,
+        updatedAtEpochMillis: Long,
+    ): Int
+
+    @Query(
+        """
+        UPDATE drafts
         SET state = 'CONFIRMED',
             updatedAtEpochMillis = :updatedAtEpochMillis
         WHERE id = :draftId
@@ -209,6 +239,11 @@ interface LedgerDao {
            OR draft.type NOT IN ('EXPENSE', 'INCOME', 'INVEST_BUY')
            OR draft.amountMinorUnits <= 0
            OR draft.currency NOT IN ('CNY', 'USD')
+           OR draft.observedChannel NOT IN ('ALIPAY', 'WECHAT', 'BANK', 'OTHER', 'UNKNOWN')
+           OR (
+               draft.observedChannel IN ('ALIPAY', 'WECHAT')
+               AND draft.currency != 'CNY'
+           )
            OR TRIM(draft.counterparty) = ''
            OR draft.createdAtEpochMillis > draft.updatedAtEpochMillis
            OR draft.occurredAtEpochMillis > draft.updatedAtEpochMillis
@@ -426,7 +461,9 @@ interface LedgerDao {
                'TRANSFER_OUTBOUND',
                'TRANSFER_INBOUND',
                'REPAYMENT_OUTBOUND',
-               'REFUND_INBOUND'
+               'REFUND_INBOUND',
+               'FUNDED_CHANNEL_EXPENSE',
+               'FUNDED_BANK_EVIDENCE'
            )
            OR (
                transaction_record.type = 'TRANSFER'
@@ -440,7 +477,13 @@ interface LedgerDao {
                transaction_record.type = 'REFUND'
                AND link.role != 'REFUND_INBOUND'
            )
-           OR transaction_record.type NOT IN ('TRANSFER', 'LIABILITY_REPAY', 'REFUND')
+           OR (
+               transaction_record.type = 'EXPENSE'
+               AND link.role NOT IN ('FUNDED_CHANNEL_EXPENSE', 'FUNDED_BANK_EVIDENCE')
+           )
+           OR transaction_record.type NOT IN (
+               'TRANSFER', 'LIABILITY_REPAY', 'REFUND', 'EXPENSE'
+           )
            OR (
                transaction_record.status = 'ACTIVE'
                AND (
@@ -510,7 +553,9 @@ interface LedgerDao {
               transaction_record.id IS NULL
               OR transaction_record.commandId != receipt.commandId
               OR transaction_record.draftId IS NOT NULL
-              OR transaction_record.type NOT IN ('TRANSFER', 'LIABILITY_REPAY', 'REFUND')
+              OR transaction_record.type NOT IN (
+                  'TRANSFER', 'LIABILITY_REPAY', 'REFUND', 'EXPENSE'
+              )
               OR (
                   transaction_record.type = 'TRANSFER'
                   AND (
@@ -570,6 +615,28 @@ interface LedgerDao {
                       (SELECT COUNT(*)
                        FROM transaction_relations AS relation_record
                        WHERE relation_record.fromTransactionId = transaction_record.id) != 1
+                  )
+              )
+              OR (
+                  transaction_record.type = 'EXPENSE'
+                  AND (
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id) != 2
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'FUNDED_CHANNEL_EXPENSE') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM reconciliation_draft_links AS link
+                       WHERE link.transactionId = transaction_record.id
+                         AND link.role = 'FUNDED_BANK_EVIDENCE') != 1
+                      OR
+                      (SELECT COUNT(*)
+                       FROM transaction_relations AS relation_record
+                       WHERE relation_record.fromTransactionId = transaction_record.id) != 0
                   )
               )
           )

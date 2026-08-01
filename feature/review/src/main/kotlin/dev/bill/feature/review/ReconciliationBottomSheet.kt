@@ -205,6 +205,7 @@ private fun ReconciliationCaseKind.localizedName(): String = stringResource(
         ReconciliationCaseKind.REFUND -> R.string.reconciliation_kind_refund
         ReconciliationCaseKind.LIABILITY_REPAYMENT ->
             R.string.reconciliation_kind_repayment
+        ReconciliationCaseKind.FUNDED_BY -> R.string.reconciliation_kind_funded_by
     },
 )
 
@@ -215,6 +216,7 @@ private fun ReconciliationCaseKind.localizedImpact(): String = stringResource(
         ReconciliationCaseKind.REFUND -> R.string.reconciliation_refund_impact
         ReconciliationCaseKind.LIABILITY_REPAYMENT ->
             R.string.reconciliation_repayment_impact
+        ReconciliationCaseKind.FUNDED_BY -> R.string.reconciliation_funded_by_impact
     },
 )
 

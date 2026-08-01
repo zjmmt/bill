@@ -5,6 +5,7 @@ import androidx.room.withTransaction
 import dev.bill.core.domain.AuditAction
 import dev.bill.core.domain.AuditRecord
 import dev.bill.core.domain.DraftState
+import dev.bill.core.domain.ObservedChannel
 import dev.bill.core.domain.RepositoryWriteResult
 import dev.bill.core.domain.RepositoryWriteStatus
 import dev.bill.core.domain.ReviewDraft
@@ -471,6 +472,15 @@ private fun externalDraftFingerprint(proposalId: String, draft: ReviewDraft): St
         .add(draft.amount.currency.value)
         .add(draft.counterparty)
         .addNullable(draft.note)
+        .also { fingerprint ->
+            // Existing v9 receipts predate reviewed channels. UNKNOWN must retain their exact
+            // fingerprint, while an explicit channel is immutable command intent from v10 on.
+            if (draft.observedChannel != ObservedChannel.UNKNOWN) {
+                fingerprint
+                    .add("observed-channel-v1")
+                    .add(draft.observedChannel.name)
+            }
+        }
         .finish()
 
 private class SourceFingerprint {

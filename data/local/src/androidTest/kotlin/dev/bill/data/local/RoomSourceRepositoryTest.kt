@@ -9,11 +9,25 @@ import dev.bill.core.domain.AuditRecord
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
+import dev.bill.core.domain.LedgerAccount
+import dev.bill.core.domain.ObservedChannel
+import dev.bill.core.domain.PostedTransaction
+import dev.bill.core.domain.ReconciliationDraftLink
+import dev.bill.core.domain.ReconciliationDraftRole
+import dev.bill.core.domain.ReconciliationKind
+import dev.bill.core.domain.ReconciliationResolution
 import dev.bill.core.domain.RepositoryWriteStatus
 import dev.bill.core.domain.ReviewDraft
 import dev.bill.core.domain.TransactionSourceMode
+import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.ledger.PostingBuildResult
+import dev.bill.core.ledger.PostingFactory
+import dev.bill.core.model.AccountId
+import dev.bill.core.model.AccountType
 import dev.bill.core.model.CurrencyCode
+import dev.bill.core.model.EntryRole
 import dev.bill.core.model.Money
+import dev.bill.core.model.TransactionId
 import dev.bill.core.model.TransactionType
 import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.CaptureScopeId
@@ -147,6 +161,14 @@ class RoomSourceRepositoryTest {
 
         assertEquals(RepositoryWriteStatus.APPLIED, first.status)
         assertEquals(RepositoryWriteStatus.ALREADY_APPLIED, replay.status)
+        assertEquals(
+            RepositoryWriteStatus.COMMAND_COLLISION,
+            sourceRepository.completeSourceProposal(
+                proposal.id.value,
+                draft.copy(observedChannel = ObservedChannel.ALIPAY),
+                audit,
+            ).status,
+        )
         assertTrue(sourceRepository.observePendingSourceProposals().first().isEmpty())
         assertEquals(
             TransactionSourceMode.EXTERNAL,
@@ -157,6 +179,257 @@ class RoomSourceRepositoryTest {
         assertEquals(proposal.id.value, evidence?.proposalId)
         assertEquals(attempt.rawEventId.value, evidence?.rawEventId)
         assertEquals(attempt.id.value, evidence?.parseAttemptId)
+    }
+
+    @Test
+    fun editedExternalDraftsFundedByAndVoidPreserveBothEvidenceChains() = runBlocking {
+        val ledgerRepository = RoomLedgerRepository(database)
+        val base = Instant.parse("2026-07-19T12:00:00Z")
+        val bank = LedgerAccount(
+            id = AccountId("account:funded-by-bank"),
+            name = "TEST BANK",
+            normalizedName = "test bank",
+            type = AccountType.ASSET_BANK,
+            currency = CurrencyCode.CNY,
+            isSystem = false,
+            isArchived = false,
+            createdAt = base,
+            creationCommandId = CommandId("create-funded-by-bank"),
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            ledgerRepository.createAccount(
+                account = bank,
+                openingTransaction = null,
+                auditRecords = listOf(
+                    audit(
+                        commandId = bank.creationCommandId,
+                        suffix = "account-created",
+                        action = AuditAction.ACCOUNT_CREATED,
+                        entityType = "account",
+                        entityId = bank.id.value,
+                        occurredAt = base,
+                    ),
+                ),
+            ).status,
+        )
+
+        suspend fun completeExternalDraft(
+            suffix: String,
+            contentHash: String,
+            occurredAt: Instant,
+        ): ReviewDraft {
+            appendRawEvent(
+                rawEvent(
+                    id = "source-event-$suffix",
+                    contentHash = contentHash,
+                ),
+            )
+            val (attempt, proposal) = attemptAndProposal(suffix = suffix)
+            assertEquals(ParseCommitResult.Committed, sourceRepository.commit(attempt, proposal))
+            val draft = externalDraft(
+                commandId = "$suffix-external-command",
+                occurredAt = occurredAt,
+                counterparty = "TEST MERCHANT",
+            )
+            assertEquals(
+                RepositoryWriteStatus.APPLIED,
+                sourceRepository.completeSourceProposal(
+                    proposal.id.value,
+                    draft,
+                    externalAudit(draft),
+                ).status,
+            )
+            return draft
+        }
+
+        val channelOriginal = completeExternalDraft(
+            suffix = "channel",
+            contentHash = "a".repeat(64),
+            occurredAt = base.plusSeconds(60),
+        )
+        val bankOriginal = completeExternalDraft(
+            suffix = "bank",
+            contentHash = "b".repeat(64),
+            occurredAt = base.plusSeconds(120),
+        )
+        val channelEvidence = requireNotNull(
+            database.sourceDao().findDraftSourceEvidence(channelOriginal.id.value),
+        )
+        val bankEvidence = requireNotNull(
+            database.sourceDao().findDraftSourceEvidence(bankOriginal.id.value),
+        )
+
+        suspend fun editDraft(
+            original: ReviewDraft,
+            channel: ObservedChannel,
+            commandValue: String,
+            editedAt: Instant,
+        ): ReviewDraft {
+            val commandId = CommandId(commandValue)
+            val edited = original.copy(
+                state = DraftState.EDITED,
+                fundingAccountId = bank.id,
+                observedChannel = channel,
+                updatedAt = editedAt,
+            )
+            val editAudit = audit(
+                commandId = commandId,
+                suffix = "draft-edited",
+                action = AuditAction.DRAFT_EDITED,
+                entityType = "draft",
+                entityId = edited.id.value,
+                occurredAt = editedAt,
+            )
+            assertEquals(
+                RepositoryWriteStatus.APPLIED,
+                ledgerRepository.updateDraft(edited, editAudit).status,
+            )
+            assertEquals(
+                RepositoryWriteStatus.ALREADY_APPLIED,
+                ledgerRepository.updateDraft(edited, editAudit).status,
+            )
+            assertEquals(
+                RepositoryWriteStatus.COMMAND_COLLISION,
+                ledgerRepository.updateDraft(
+                    edited.copy(note = "DIFFERENT RETRY"),
+                    editAudit,
+                ).status,
+            )
+            return requireNotNull(ledgerRepository.findDraft(edited.id))
+        }
+
+        val channelDraft = editDraft(
+            original = channelOriginal,
+            channel = ObservedChannel.ALIPAY,
+            commandValue = "edit-channel-draft",
+            editedAt = base.plusSeconds(360),
+        )
+        val bankDraft = editDraft(
+            original = bankOriginal,
+            channel = ObservedChannel.BANK,
+            commandValue = "edit-bank-draft",
+            editedAt = base.plusSeconds(420),
+        )
+        assertEquals(
+            channelEvidence,
+            database.sourceDao().findDraftSourceEvidence(channelDraft.id.value),
+        )
+        assertEquals(
+            bankEvidence,
+            database.sourceDao().findDraftSourceEvidence(bankDraft.id.value),
+        )
+
+        val confirmedAt = base.plusSeconds(480)
+        val commandId = CommandId("resolve-funded-by")
+        val validated = (
+            PostingFactory.fundedExpense(
+                channelDraft = channelDraft,
+                bankEvidenceDraft = bankDraft,
+                fundingAccount = bank,
+                transactionId = TransactionId("transaction:funded-by"),
+                confirmedAt = confirmedAt,
+            ) as PostingBuildResult.Valid
+            ).transaction
+        val transaction = PostedTransaction(
+            id = validated.id,
+            draftId = null,
+            type = validated.type,
+            status = TransactionStatus.ACTIVE,
+            sourceMode = TransactionSourceMode.EXTERNAL,
+            occurredAt = validated.occurredAt,
+            confirmedAt = confirmedAt,
+            title = channelDraft.counterparty,
+            note = channelDraft.note,
+            commandId = commandId,
+            entries = validated.entries,
+        )
+        val resolution = ReconciliationResolution(
+            kind = ReconciliationKind.FUNDED_BY,
+            transaction = transaction,
+            draftLinks = listOf(
+                ReconciliationDraftLink(
+                    channelDraft.id,
+                    ReconciliationDraftRole.FUNDED_CHANNEL_EXPENSE,
+                ),
+                ReconciliationDraftLink(
+                    bankDraft.id,
+                    ReconciliationDraftRole.FUNDED_BANK_EVIDENCE,
+                ),
+            ),
+            relations = emptyList(),
+        )
+        val resolutionAudit = audit(
+            commandId = commandId,
+            suffix = "reconciliation-confirmed",
+            action = AuditAction.RECONCILIATION_CONFIRMED,
+            entityType = "transaction",
+            entityId = transaction.id.value,
+            occurredAt = confirmedAt,
+        )
+
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            ledgerRepository.resolveReconciliation(resolution, resolutionAudit).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.ALREADY_APPLIED,
+            ledgerRepository.resolveReconciliation(resolution, resolutionAudit).status,
+        )
+        val reconciled = ledgerRepository.observeState().first()
+        assertEquals(Money.cny(-2_500L), reconciled.accountBalances.single().balance)
+        assertTrue(reconciled.pendingDrafts.isEmpty())
+        assertEquals(1, transaction.entries.count { it.role == EntryRole.EXPENSE })
+        assertEquals(1, transaction.entries.count { it.role == EntryRole.FUNDING })
+        assertEquals(
+            channelEvidence,
+            database.sourceDao().findDraftSourceEvidence(channelDraft.id.value),
+        )
+        assertEquals(
+            bankEvidence,
+            database.sourceDao().findDraftSourceEvidence(bankDraft.id.value),
+        )
+
+        val voidedAt = base.plusSeconds(540)
+        val voidCommand = CommandId("void-funded-by")
+        val voidAudit = audit(
+            commandId = voidCommand,
+            suffix = "transaction-voided",
+            action = AuditAction.TRANSACTION_VOIDED,
+            entityType = "transaction",
+            entityId = transaction.id.value,
+            occurredAt = voidedAt,
+        )
+        assertEquals(
+            RepositoryWriteStatus.APPLIED,
+            ledgerRepository.voidTransaction(transaction.id, voidAudit).status,
+        )
+        assertEquals(
+            RepositoryWriteStatus.ALREADY_APPLIED,
+            ledgerRepository.voidTransaction(transaction.id, voidAudit).status,
+        )
+        val restored = ledgerRepository.observeState().first()
+        assertEquals(Money.cny(0L), restored.accountBalances.single().balance)
+        assertEquals(
+            setOf(channelDraft.id, bankDraft.id),
+            restored.pendingDrafts.mapTo(mutableSetOf()) { it.id },
+        )
+        assertEquals(
+            setOf(ObservedChannel.ALIPAY, ObservedChannel.BANK),
+            restored.pendingDrafts.mapTo(mutableSetOf()) { it.observedChannel },
+        )
+        assertEquals(
+            TransactionStatus.VOIDED,
+            requireNotNull(ledgerRepository.findTransaction(transaction.id)).status,
+        )
+        assertEquals(
+            channelEvidence,
+            database.sourceDao().findDraftSourceEvidence(channelDraft.id.value),
+        )
+        assertEquals(
+            bankEvidence,
+            database.sourceDao().findDraftSourceEvidence(bankDraft.id.value),
+        )
     }
 
     @Test
@@ -317,11 +590,13 @@ class RoomSourceRepositoryTest {
 
     private fun attemptAndProposal(
         sourceFamily: SourceFamily = SourceFamily.GENERIC,
+        suffix: String = "1",
     ): Pair<ParseAttempt, DraftProposal> {
-        val attemptId = ParseAttemptId("attempt-1")
+        val attemptId = ParseAttemptId("attempt-$suffix")
+        val rawEventId = RawEventId("source-event-$suffix")
         val attempt = ParseAttempt(
             id = attemptId,
-            rawEventId = RawEventId("source-event-1"),
+            rawEventId = rawEventId,
             sourceIdentity = SourceIdentity(
                 parserId = ParserId("generic-share-text"),
                 providerId = ProviderId("generic"),
@@ -342,9 +617,9 @@ class RoomSourceRepositoryTest {
             ),
         )
         return attempt to DraftProposal(
-            id = DraftProposalId("proposal-1"),
+            id = DraftProposalId("proposal-$suffix"),
             parseAttemptId = attemptId,
-            rawEventId = attempt.rawEventId,
+            rawEventId = rawEventId,
             reviewState = DraftProposalReviewState.WAITING_USER,
             candidate = null,
         )
@@ -352,30 +627,49 @@ class RoomSourceRepositoryTest {
 
     private fun externalDraft(
         currency: CurrencyCode = CurrencyCode.CNY,
+        commandId: String = "external-command",
+        occurredAt: Instant = Instant.parse("2026-07-19T12:00:00Z"),
+        counterparty: String = "午饭",
     ): ReviewDraft {
-        val now = Instant.parse("2026-07-19T12:05:00Z")
+        val now = occurredAt.plusSeconds(300)
         return ReviewDraft(
-            id = DraftId("draft:external-command"),
+            id = DraftId("draft:$commandId"),
             state = DraftState.WAITING_USER,
             type = TransactionType.EXPENSE,
             amount = Money(2_500, currency),
-            occurredAt = Instant.parse("2026-07-19T12:00:00Z"),
-            counterparty = "午饭",
+            occurredAt = occurredAt,
+            counterparty = counterparty,
             note = null,
             fundingAccountId = null,
             createdAt = now,
             updatedAt = now,
-            creationCommandId = CommandId("external-command"),
+            creationCommandId = CommandId(commandId),
             sourceMode = TransactionSourceMode.EXTERNAL,
         )
     }
 
     private fun externalAudit(draft: ReviewDraft) = AuditRecord(
-        id = AuditEventId("audit-external-command"),
+        id = AuditEventId("audit-${draft.creationCommandId.value}"),
         commandId = draft.creationCommandId,
         action = AuditAction.EXTERNAL_DRAFT_CREATED,
         entityType = "draft",
         entityId = draft.id.value,
         occurredAt = draft.createdAt,
+    )
+
+    private fun audit(
+        commandId: CommandId,
+        suffix: String,
+        action: AuditAction,
+        entityType: String,
+        entityId: String,
+        occurredAt: Instant,
+    ) = AuditRecord(
+        id = AuditEventId("audit:${commandId.value}:$suffix"),
+        commandId = commandId,
+        action = action,
+        entityType = entityType,
+        entityId = entityId,
+        occurredAt = occurredAt,
     )
 }

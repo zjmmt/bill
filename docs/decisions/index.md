@@ -21,5 +21,7 @@
 | [0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md](0012-user-triggered-quick-tile-screenshot-and-bundled-ocr.md) | 下拉磁贴只触发一次专用无障碍截图，OCR 模型随包本地运行 | 已接受，实现与真机资源验收进行中 |
 | [0013-bank-card-only-usd-without-fx.md](0013-bank-card-only-usd-without-fx.md) | USD 只允许银行卡/信用卡；钱包固定 CNY，分币种展示且不做汇率换算 | 已接受，实现进行中 |
 | [0014-investment-position-snapshots-and-confirmed-events.md](0014-investment-position-snapshots-and-confirmed-events.md) | 基金持仓由手工/OCR 人工确认；通知只提出已确认投资事件，受理和行情提醒不入账 | 已接受，实现进行中 |
+| [0015-immutable-balance-snapshots-and-explicit-differences.md](0015-immutable-balance-snapshots-and-explicit-differences.md) | 账户余额快照保持不可变；按快照时点计算差异且不自动制造收支或调整 | 已接受，实现进行中 |
+| [0016-user-reviewed-channel-and-explicit-funded-by.md](0016-user-reviewed-channel-and-explicit-funded-by.md) | 证据来源与用户复核的业务渠道分离；银行卡证据只经显式 FUNDED_BY 合并为一笔支出 | 已接受，实现进行中 |
 
 ADR 记录长期决定，不替代详细产品规格或设计文档。被新决定取代时保留原文件并互相链接。
