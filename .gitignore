@@ -9,3 +9,5 @@
 /.tools/
 /.agents/
 *.local
+*.jks
+*.keystore
