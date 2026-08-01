@@ -3,7 +3,7 @@
 - 状态：部分实现；用户确认的转账、信用卡还款、退款与绑卡支付 `FUNDED_BY` 切片已有自动化证据，其他关系与阈值仍待样本校准
 - 所有者：项目维护者
 - 最后核验：2026-08-01
-- 事实来源：原设计报告的关联思路，经多来源与反例扩展；ADR-0009；[ADR-0016](../decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)；[完整可编辑审核与 FUNDED_BY ExecPlan](../exec-plans/completed/0011-editable-review-ocr-funded-by.md)；当前领域、应用与 Room v10 实现
+- 事实来源：原设计报告的关联思路，经多来源与反例扩展；ADR-0009；[ADR-0015](../decisions/0015-immutable-balance-snapshots-and-explicit-differences.md)；[ADR-0016](../decisions/0016-user-reviewed-channel-and-explicit-funded-by.md)；[完整可编辑审核与 FUNDED_BY ExecPlan](../exec-plans/completed/0011-editable-review-ocr-funded-by.md)；当前领域、应用与 Room v11 实现
 
 ## 两个不同问题
 
@@ -75,7 +75,7 @@ flowchart TD
 - 钱包余额提现至银行卡同理只证明一笔转出；银行入账不能反推原始钱包收入。
 - 未领取红包、未接受即退还的个人转账、过期的待领取事件不产生收款方正式交易。没有金额或没有“已进入本人余额”的证据时，解析必须停在待处理/数据缺口。
 - 若先领取/接受并入余额，之后另行转回，则两笔钱包资金流可在未来由显式“转回”关系关联；它不是默认的 `REFUNDS`，也不应被改写成普通支出。
-- 钱包余额快照只能创建 `ReconcileCase`。差额不是自动收入、支出或调整的授权。
+- 钱包余额快照当前只创建账户级“待解释”差异，不生成交易；未来进入专用 `ReconcileCase` 时仍需用户选择解释。差额不是自动收入、支出或调整的授权。
 
 ## 初始决策区间
 
@@ -112,8 +112,8 @@ flowchart TD
 
 ## 余额对账
 
-余额快照不是自动收入/支出。系统比较快照与分录运行余额：
+余额快照不是自动收入/支出。当前实现按快照 `asOf` 汇总活动分录并显示带符号差异；专用解释候选仍是后续能力：
 
 - 差异可由遗漏导入、错误账户映射、期初余额或未识别费用解释。
-- 系统先生成 `ReconcileCase`，列出候选解释。
+- 后续系统可生成 `ReconcileCase`，列出候选解释；当前只保留不可变快照并标记待解释。
 - 只有用户明确选择时才创建 `ADJUSTMENT`，并标注原因和期间。

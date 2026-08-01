@@ -61,7 +61,7 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 
 ## 当前实现断面
 
-账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建普通账户后以平衡 `ADJUSTMENT` 表示期初余额；CNY 投资持仓以用户确认的名称和当前金额快照建立独立 `INVESTMENT_SECURITY` 账户，代码、份额和成本可选。手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries；`INVEST_BUY` 从资金账户转入既有持仓账户，不计普通支出，也不自动改写估值快照。Room schema v10 持久化账户、持仓、草稿及其投资目标和用户审核渠道、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
+账本断面为 CNY/USD：现金、支付宝余额和微信零钱仅 CNY；银行卡和信用卡可为 CNY 或 USD；总览按币种分开，不提供汇率换算。创建普通账户后以平衡 `ADJUSTMENT` 表示期初余额；CNY 投资持仓以用户确认的名称和当前金额快照建立独立 `INVESTMENT_SECURITY` 账户，代码、份额和成本可选。手工或来源 Draft 选择同币种资金账户后再确认成平衡 Entries；`INVEST_BUY` 从资金账户转入既有持仓账户，不计普通支出，也不自动改写估值快照。现金、银行、钱包余额和信用卡还可保存不可变的用户观察余额；比较层按快照 `asOf` 汇总活动分录，信用卡转换为正数欠款视角，差异只标记待解释而不自动过账。Room schema v11 持久化账户、余额快照、持仓、草稿及其投资目标和用户审核渠道、交易、分录、RawEvent、ParseAttempt、来源建议、Draft 证据链接、载荷生命周期/保留策略、暂存租约、通知观察摘要、导入批次/行结果、对账链接/关系、审计与幂等命令回执，状态 Flow 驱动总览、账户、草稿和流水。
 
 账本内部约定资产/费用增加为正，负债/收入/权益增加为负；信用卡欠款因此存为负数，UI 再转换为用户视角的正数。未分类费用、未分类收入与期初权益使用隐藏系统账户，不得出现在资金账户选择或净资产账户列表中。撤销把交易标记为 `VOIDED`、从余额汇总排除，并把来源 Draft 恢复为待复核；不删除交易或 Entries。
 
@@ -91,7 +91,7 @@ SAF OpenDocument(CSV, TSV) + explicit column mapping
 | `source:alipay` | 支付宝通知/导入格式适配 | source:contract |
 | `source:wechat` | 微信支付通知/导入格式适配 | source:contract |
 | `source:bank:*` | 银行通知和文件配置/适配器 | source:contract |
-| `data:local` | Room v10、迁移、账本/持仓/来源/生命周期/暂存/通知观察/导入批次/对账仓储与应用私有证据文件 | `core:domain` 与来源端口 |
+| `data:local` | Room v11、迁移、账本/余额快照/持仓/来源/生命周期/暂存/通知观察/导入批次/对账仓储与应用私有证据文件 | `core:domain` 与来源端口 |
 | `platform:android` | 通知监听、SAF、WorkManager、Keystore | Android SDK、source:contract |
 | `security` | 加密、密钥、脱敏、导出封装 | 平台抽象 |
 

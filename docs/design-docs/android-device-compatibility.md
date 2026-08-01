@@ -1,9 +1,9 @@
 # Android 设备兼容与真机验收
 
-- 状态：已确认测试范围；`S24U-HK` 已有受限应用级冒烟、14 个 app、47 个 Room、随包/空间 OCR 合成、11 张本机私有真实页面与简中合成状态回归；完整真机、真实简中页面、通知 callback 与来源结论待验证
+- 状态：已确认测试范围；`S24U-HK` 已有受限应用级冒烟、最终 16 个 app、55 个 Room、随包/空间 OCR 合成、11 张本机私有真实页面与简中合成状态回归；完整真机、真实简中页面、通知 callback 与来源结论待验证
 - 所有者：项目维护者
 - 最后核验：2026-08-01
-- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求、2026-07-25 的脱敏 `S24U-HK` 应用级冒烟、2026-07-31 的 app/Room/OCR 合成 instrumentation，以及 2026-08-01 的本机私有真实页面与简中合成状态回归
+- 事实来源：首批可用测试设备、Android 官方平台边界、来源采集与可靠性要求、2026-07-25 的脱敏 `S24U-HK` 应用级冒烟、2026-07-31 的 app/Room/OCR 合成 instrumentation，以及 2026-08-01 的本机私有真实页面、简中合成状态、Room v11 余额快照与应用回归
 
 本文是地区版本、OEM 行为和真机验收的唯一事实来源。它定义要验证什么；除逐项明确记录的受限证据外，不声明任何设备已通过完整真机用例、来源适配或发布门。页面视觉规则见 [UI 设计系统](ui-design-system.md)，通知与导入边界见 [来源适配器设计](ingestion-and-source-adapters.md)，通用测试原则见 [RELIABILITY.md](../RELIABILITY.md)。
 
@@ -23,7 +23,7 @@
 
 | 设备代号 | 已知信息 | 执行前必须补齐 | 当前角色 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟、最终工作树 16/16 app、50/50 Room、1/1 随包 OCR 合成、空间 OCR、11/11 本机私有真实页面与 1/1 简中四状态页定向 instrumentation，未完成任一完整真机用例 |
+| `S24U-HK` | Samsung Galaxy S24 Ultra，`SM-S9280`、`TGY`、Android 16/API 36、`BP4A.251205.006.S9280ZHS6DZF2`、2026-06-05 安全补丁、`arm64-v8a`；当前繁体中文环境、`sw411dp` / `411×891dp` 窗口 | RAM/存储档、GMS 实际状态、自动旋转、安装/升级路径与完整 One UI 版本字段 | 地区差异、繁体/英文、One UI 竖屏主视觉与权限回归 | 已建档；有应用级合成冒烟、最终工作树 16/16 app、55/55 Room v11、1/1 随包 OCR 合成、空间 OCR、11/11 本机私有真实页面与 1/1 简中四状态页定向 instrumentation，未完成任一完整真机用例 |
 | `S24U-CN` | 国行 Samsung Galaxy S24 Ultra | 型号代码、CSC/地区、Android 与 One UI 完整构建、安全补丁、RAM/存储档、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | 无 GMS 核心路径主验证、One UI 后台与竖屏主视觉验证 | 待建档、未实测 |
 | `XIAOMI-CN` | 国行小米，具体型号未知 | **具体型号**、SoC/RAM/存储档、Android 与 HyperOS 完整构建、安全补丁、系统语言/地区、GMS 实际状态、安装渠道、实际 sw/window dp、自动旋转状态 | HyperOS 权限、后台、文件入口和竖屏主视觉压力验证 | **研究门未满足，不得声称代表任何小米机型或性能档** |
 | `MUMU-API32` | MuMu 模拟器；当前 ADB 建档为 API 32、`x86_64`，上报型号 `SM-S9280` | MuMu 版本、镜像版本、分辨率/密度、sw/window dp、旋转与窗口设置 | 快速安装、竖屏布局和合成流程冒烟 | 仅模拟器；不是 Samsung 硬件、国行固件、One UI 或真 S24 Ultra 证据 |
@@ -149,6 +149,18 @@ Room 套件首次运行有 2 条旧夹具失败：夹具绕过了生产要求的
 首轮真机测试曾暴露 4 个测试失败：两个旧迁移测试的当前数据库 builder 只注册到 v7，一个 `FUNDED_BY` 断言错误假定账本只有一个账户余额，一个 App 断言仍期待 4 条生产 route。新增 v9→v10 迁移本身从首次执行起即通过。修复只补全迁移测试链、按银行卡 ID 验证余额并锁定全部 5 个 route ID，没有修改或放宽生产实现；三个模块复跑共 67/67 通过。
 
 因此本节补齐 ExecPlan 0011 要求的组件级真机运行证据，但仍不把 `INSTALL-01`、`NLS-01`、`ORIENT-01` 或任一 provider 完成门标为通过。
+
+## 2026-08-01 `S24U-HK` Room v11 与余额快照回归
+
+这轮只访问测试数据库与 Bill 自身安装包；没有读取通知历史、来源 App、本机私有截图或真实财务内容，也没有执行 `pm clear`。
+
+| 范围 | 执行结果 | 能证明 | 不能证明 |
+| --- | --- | --- | --- |
+| Room instrumentation | `:data:local:connectedDebugAndroidTest` 55/55 通过 | v10→v11 显式迁移、不可变余额快照、同 command 重放/碰撞、CNY/USD、信用卡正数欠款、历史 `asOf` 汇总、补录/撤销重算、最新投影/历史保留、归档兼容与损坏失败关闭在当前 arm64/API 36 设备执行通过 | 真正人工操作账户页、系统强杀、数据库加密、其他 OEM 或完整设备矩阵 |
+| App instrumentation | `:app:connectedDebugAndroidTest` 16/16 通过 | 新代码合入后既有采样隔离、route 控制与空间 OCR 应用测试未回归 | 余额快照 Compose 手势、旋转/进程死亡、系统通知 callback 或 provider 支持 |
+| 安装与启动 | 最终 arm64 Debug APK 以 `adb install -r` 覆盖安装成功；`MainActivity` 冷启动 `Status: ok`、`LaunchState: COLD`、`TotalTime: 1413 ms` | Room v11 主包可覆盖安装并完成一次冷启动，既有应用数据未主动清除 | 完整升级数据人工核对、表单视觉、长时间稳定性或发布包 |
+
+这组组件证据补齐 ExecPlan 0010 的 Room/安装门，但没有自动化 Compose 交互，因此不把 `INSTALL-01`、`ORIENT-01` 或完整余额快照 UI 验收标为通过。
 
 ## 完成门
 
