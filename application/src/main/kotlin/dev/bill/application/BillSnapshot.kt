@@ -15,6 +15,22 @@ data class AccountSummary(
     val type: AccountType,
     val displayBalance: Money,
     val isLiability: Boolean,
+    val latestBalanceSnapshot: BalanceSnapshotSummary? = null,
+)
+
+enum class BalanceSnapshotStatus {
+    RECONCILED,
+    NEEDS_EXPLANATION,
+}
+
+data class BalanceSnapshotSummary(
+    val observedBalance: Money,
+    val ledgerBalance: Money,
+    val difference: Money,
+    val asOf: Instant,
+    val recordedAt: Instant,
+    val note: String?,
+    val status: BalanceSnapshotStatus,
 )
 
 data class InvestmentPositionSummary(

@@ -4,6 +4,9 @@ import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditAction
 import dev.bill.core.domain.AuditEventId
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -27,6 +30,7 @@ import dev.bill.core.domain.ReviewDraft
 import dev.bill.core.domain.SystemAccountIds
 import dev.bill.core.domain.TransactionSourceMode
 import dev.bill.core.domain.TransactionStatus
+import dev.bill.core.domain.supportsBalanceSnapshots
 import dev.bill.core.domain.TransactionRelation
 import dev.bill.core.domain.TransactionRelationId
 import dev.bill.core.domain.TransactionRelationType
@@ -52,7 +56,11 @@ import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -129,6 +137,14 @@ data class CreateInvestmentPositionCommand(
     val costBasisText: String?,
     val asOf: Instant? = null,
     val sourceMode: InvestmentPositionSourceMode = InvestmentPositionSourceMode.MANUAL,
+)
+
+data class CreateBalanceSnapshotCommand(
+    val commandId: CommandId,
+    val accountId: AccountId,
+    val observedBalanceText: String,
+    val asOfText: String,
+    val note: String?,
 )
 
 data class CreateManualDraftCommand(
@@ -408,6 +424,60 @@ class BillService(
                     entityId = position.id.value,
                     occurredAt = now,
                 ),
+            ),
+        ).toOperationResult()
+    }
+
+    suspend fun createBalanceSnapshot(
+        command: CreateBalanceSnapshotCommand,
+    ): OperationResult {
+        val account = repository.findAccount(command.accountId)
+            ?: return OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND)
+        if (
+            account.isSystem ||
+            account.isArchived ||
+            !account.type.supportsBalanceSnapshots() ||
+            !account.type.allowsUserAccountCurrency(account.currency)
+        ) {
+            return OperationResult.Failure(OperationError.UNSUPPORTED_ACCOUNT_TYPE)
+        }
+        if (command.observedBalanceText.isBlank()) {
+            return OperationResult.Failure(OperationError.INVALID_AMOUNT)
+        }
+        val observedBalance = MoneyInput.parseNonNegative(
+            command.observedBalanceText,
+            account.currency,
+        ) ?: return OperationResult.Failure(OperationError.INVALID_AMOUNT)
+        val note = command.note?.trim()?.takeIf(String::isNotEmpty)
+        if (note != null && (note.length > MAX_NOTE_LENGTH || note.hasControlCharacter())) {
+            return OperationResult.Failure(OperationError.NOTE_TOO_LONG)
+        }
+        val asOf = BalanceSnapshotTimeInput.parse(command.asOfText, localZoneId)
+            ?: return OperationResult.Failure(OperationError.INVALID_TIME)
+        val now = clock.instant()
+        if (asOf > now) {
+            return OperationResult.Failure(OperationError.INVALID_TIME)
+        }
+
+        val snapshot = BalanceSnapshot(
+            id = BalanceSnapshotId("balance-snapshot:${command.commandId.value}"),
+            accountId = account.id,
+            observedBalance = observedBalance,
+            asOf = asOf,
+            recordedAt = now,
+            note = note,
+            sourceMode = BalanceSnapshotSourceMode.MANUAL,
+            creationCommandId = command.commandId,
+        )
+        return repository.createBalanceSnapshot(
+            snapshot = snapshot,
+            auditRecord = audit(
+                commandId = command.commandId,
+                suffix = "balance-snapshot-recorded",
+                action = AuditAction.BALANCE_SNAPSHOT_RECORDED,
+                entityType = "balance_snapshot",
+                entityId = snapshot.id.value,
+                occurredAt = now,
             ),
         ).toOperationResult()
     }
@@ -1098,6 +1168,17 @@ class BillService(
                 )
             }
 
+        val balanceComparisonsByAccountId = state.balanceSnapshotComparisons
+            .associateBy { comparison -> comparison.snapshot.accountId.value }
+        check(balanceComparisonsByAccountId.size == state.balanceSnapshotComparisons.size) {
+            "Ledger snapshot contains duplicate latest balance snapshots"
+        }
+        check(
+            balanceComparisonsByAccountId.keys.all { accountId ->
+                userBalances.any { balance -> balance.account.id.value == accountId }
+            },
+        ) { "Ledger snapshot contains a balance snapshot for an unavailable account" }
+
         val accounts = userBalances
             .sortedWith(compareBy<AccountBalance> { it.account.createdAt }.thenBy { it.account.id.value })
             .map { accountBalance ->
@@ -1114,6 +1195,23 @@ class BillService(
                         accountBalance.balance
                     },
                     isLiability = isLiability,
+                    latestBalanceSnapshot = balanceComparisonsByAccountId[
+                        accountBalance.account.id.value
+                    ]?.let { comparison ->
+                        BalanceSnapshotSummary(
+                            observedBalance = comparison.snapshot.observedBalance,
+                            ledgerBalance = comparison.ledgerBalance,
+                            difference = comparison.difference,
+                            asOf = comparison.snapshot.asOf,
+                            recordedAt = comparison.snapshot.recordedAt,
+                            note = comparison.snapshot.note,
+                            status = if (comparison.isReconciled) {
+                                BalanceSnapshotStatus.RECONCILED
+                            } else {
+                                BalanceSnapshotStatus.NEEDS_EXPLANATION
+                            },
+                        )
+                    },
                 )
             }
 
@@ -1747,6 +1845,21 @@ private object MoneyInput {
                 .toLongExactCompat()
             Money(minorUnits, currency)
         }.getOrNull()
+    }
+}
+
+private object BalanceSnapshotTimeInput {
+    private val formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
+        .withResolverStyle(ResolverStyle.STRICT)
+
+    fun parse(text: String, zoneId: ZoneId): Instant? {
+        val localDateTime = try {
+            LocalDateTime.parse(text.trim(), formatter)
+        } catch (_: DateTimeParseException) {
+            return null
+        }
+        val offset = zoneId.rules.getValidOffsets(localDateTime).singleOrNull() ?: return null
+        return localDateTime.toInstant(offset)
     }
 }
 

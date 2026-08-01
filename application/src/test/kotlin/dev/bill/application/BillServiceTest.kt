@@ -3,6 +3,10 @@ package dev.bill.application
 import dev.bill.core.domain.AccountBalance
 import dev.bill.core.domain.AuditAction
 import dev.bill.core.domain.AuditRecord
+import dev.bill.core.domain.BalanceSnapshot
+import dev.bill.core.domain.BalanceSnapshotComparison
+import dev.bill.core.domain.BalanceSnapshotId
+import dev.bill.core.domain.BalanceSnapshotSourceMode
 import dev.bill.core.domain.CommandId
 import dev.bill.core.domain.DraftId
 import dev.bill.core.domain.DraftState
@@ -152,6 +156,210 @@ class BillServiceTest {
             )
             assertNull(repository.createDraftCall)
         }
+    }
+
+    @Test
+    fun `manual balance snapshot records immutable account evidence without posting`() = runBlocking {
+        val bank = account(
+            id = "snapshot-bank",
+            type = AccountType.ASSET_BANK,
+            createdAt = now.minusSeconds(3_600),
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(balances = listOf(AccountBalance(bank, Money.cny(10_000L)))),
+        )
+
+        val result = BillService(repository, clock, localZoneId = ZoneOffset.UTC)
+            .createBalanceSnapshot(
+                CreateBalanceSnapshotCommand(
+                    commandId = CommandId("snapshot-command"),
+                    accountId = bank.id,
+                    observedBalanceText = "123.45",
+                    asOfText = "2026-07-19 07:55",
+                    note = "  bank app  ",
+                ),
+            )
+
+        assertEquals(OperationResult.Success("balance-snapshot:snapshot-command"), result)
+        val call = requireNotNull(repository.createBalanceSnapshotCall)
+        assertEquals(BalanceSnapshotId("balance-snapshot:snapshot-command"), call.snapshot.id)
+        assertEquals(bank.id, call.snapshot.accountId)
+        assertEquals(Money.cny(12_345L), call.snapshot.observedBalance)
+        assertEquals(Instant.parse("2026-07-19T07:55:00Z"), call.snapshot.asOf)
+        assertEquals(now, call.snapshot.recordedAt)
+        assertEquals("bank app", call.snapshot.note)
+        assertEquals(BalanceSnapshotSourceMode.MANUAL, call.snapshot.sourceMode)
+        assertEquals(AuditAction.BALANCE_SNAPSHOT_RECORDED, call.auditRecord.action)
+        assertEquals("balance_snapshot", call.auditRecord.entityType)
+        assertEquals(call.snapshot.id.value, call.auditRecord.entityId)
+        assertTrue(repository.state.value.recentTransactions.isEmpty())
+    }
+
+    @Test
+    fun `balance snapshot accepts zero but rejects invalid amount time and unsupported account`() = runBlocking {
+        val bank = account(
+            id = "snapshot-bank",
+            type = AccountType.ASSET_BANK,
+            createdAt = now.minusSeconds(3_600),
+        )
+        val investment = account(
+            id = "snapshot-investment",
+            type = AccountType.INVESTMENT_SECURITY,
+            createdAt = now.minusSeconds(3_600),
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(
+                balances = listOf(
+                    AccountBalance(bank, Money.cny(0L)),
+                    AccountBalance(investment, Money.cny(0L)),
+                ),
+            ),
+        )
+        val service = BillService(repository, clock, localZoneId = ZoneOffset.UTC)
+
+        assertEquals(
+            OperationResult.Success("balance-snapshot:snapshot-zero"),
+            service.createBalanceSnapshot(
+                CreateBalanceSnapshotCommand(
+                    CommandId("snapshot-zero"),
+                    bank.id,
+                    "0",
+                    "2026-07-19 08:00",
+                    null,
+                ),
+            ),
+        )
+        listOf("", "-0.01", "1.001", "not-money").forEachIndexed { index, amount ->
+            assertEquals(
+                OperationResult.Failure(OperationError.INVALID_AMOUNT),
+                service.createBalanceSnapshot(
+                    CreateBalanceSnapshotCommand(
+                        CommandId("snapshot-invalid-amount-$index"),
+                        bank.id,
+                        amount,
+                        "2026-07-19 08:00",
+                        null,
+                    ),
+                ),
+            )
+        }
+        listOf("2026-02-30 08:00", "2026-07-19 08:01", "2026/07/19 08:00").forEachIndexed {
+                index,
+                asOf,
+            ->
+            assertEquals(
+                OperationResult.Failure(OperationError.INVALID_TIME),
+                service.createBalanceSnapshot(
+                    CreateBalanceSnapshotCommand(
+                        CommandId("snapshot-invalid-time-$index"),
+                        bank.id,
+                        "1.00",
+                        asOf,
+                        null,
+                    ),
+                ),
+            )
+        }
+        assertEquals(
+            OperationResult.Failure(OperationError.UNSUPPORTED_ACCOUNT_TYPE),
+            service.createBalanceSnapshot(
+                CreateBalanceSnapshotCommand(
+                    CommandId("snapshot-investment"),
+                    investment.id,
+                    "1.00",
+                    "2026-07-19 08:00",
+                    null,
+                ),
+            ),
+        )
+        assertEquals(
+            OperationResult.Failure(OperationError.ACCOUNT_NOT_FOUND),
+            service.createBalanceSnapshot(
+                CreateBalanceSnapshotCommand(
+                    CommandId("snapshot-missing"),
+                    AccountId("missing"),
+                    "1.00",
+                    "2026-07-19 08:00",
+                    null,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `balance snapshot rejects nonexistent and ambiguous local times`() = runBlocking {
+        val bank = account(
+            id = "snapshot-dst-bank",
+            type = AccountType.ASSET_BANK,
+            createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(balances = listOf(AccountBalance(bank, Money.cny(0L)))),
+        )
+        val service = BillService(
+            repository = repository,
+            clock = Clock.fixed(Instant.parse("2026-12-01T12:00:00Z"), ZoneOffset.UTC),
+            localZoneId = ZoneId.of("America/New_York"),
+        )
+
+        listOf(
+            "2026-03-08 02:30",
+            "2026-11-01 01:30",
+        ).forEachIndexed { index, localTime ->
+            assertEquals(
+                OperationResult.Failure(OperationError.INVALID_TIME),
+                service.createBalanceSnapshot(
+                    CreateBalanceSnapshotCommand(
+                        CommandId("snapshot-dst-$index"),
+                        bank.id,
+                        "1.00",
+                        localTime,
+                        null,
+                    ),
+                ),
+            )
+        }
+        assertNull(repository.createBalanceSnapshotCall)
+    }
+
+    @Test
+    fun `snapshot projection uses positive credit card debt and explicit difference status`() = runBlocking {
+        val creditCard = account(
+            id = "credit-card",
+            type = AccountType.LIABILITY_CC,
+            createdAt = now.minusSeconds(3_600),
+        )
+        val snapshot = BalanceSnapshot(
+            id = BalanceSnapshotId("balance-snapshot:credit-card"),
+            accountId = creditCard.id,
+            observedBalance = Money.cny(5_500L),
+            asOf = now.minusSeconds(300),
+            recordedAt = now,
+            note = null,
+            sourceMode = BalanceSnapshotSourceMode.MANUAL,
+            creationCommandId = CommandId("snapshot-credit-card"),
+        )
+        val repository = FakeLedgerRepository(
+            ledgerState(
+                balances = listOf(AccountBalance(creditCard, Money.cny(-5_000L))),
+                balanceSnapshots = listOf(
+                    BalanceSnapshotComparison(
+                        snapshot = snapshot,
+                        ledgerBalance = Money.cny(5_000L),
+                        difference = Money.cny(500L),
+                    ),
+                ),
+            ),
+        )
+
+        val summary = BillService(repository, clock).observeSnapshot().first().accounts.single()
+
+        assertEquals(Money.cny(5_000L), summary.displayBalance)
+        val latest = requireNotNull(summary.latestBalanceSnapshot)
+        assertEquals(Money.cny(5_500L), latest.observedBalance)
+        assertEquals(Money.cny(5_000L), latest.ledgerBalance)
+        assertEquals(Money.cny(500L), latest.difference)
+        assertEquals(BalanceSnapshotStatus.NEEDS_EXPLANATION, latest.status)
     }
 
     @Test
@@ -1819,12 +2027,14 @@ class BillServiceTest {
         transactions: List<PostedTransaction> = emptyList(),
         activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
         positions: List<InvestmentPosition> = emptyList(),
+        balanceSnapshots: List<BalanceSnapshotComparison> = emptyList(),
     ) = LedgerState(
         accountBalances = balances,
         pendingDrafts = drafts,
         recentTransactions = transactions,
         activeRefundTotals = activeRefundTotals,
         investmentPositions = positions,
+        balanceSnapshotComparisons = balanceSnapshots,
     )
 }
 
@@ -1873,6 +2083,7 @@ private class FakeLedgerRepository(
 
     var createAccountResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var createInvestmentPositionResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
+    var createBalanceSnapshotResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var createDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var updateDraftResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
     var selectFundingResult = RepositoryWriteResult(RepositoryWriteStatus.APPLIED)
@@ -1883,6 +2094,7 @@ private class FakeLedgerRepository(
 
     var createAccountCall: CreateAccountCall? = null
     var createInvestmentPositionCall: CreateInvestmentPositionCall? = null
+    var createBalanceSnapshotCall: CreateBalanceSnapshotCall? = null
     var createDraftCall: CreateDraftCall? = null
     var updateDraftCall: UpdateDraftCall? = null
     var selectFundingCall: SelectFundingCall? = null
@@ -1953,6 +2165,14 @@ private class FakeLedgerRepository(
             )
         }
         return createInvestmentPositionResult.withDefaultEntityId(position.id.value)
+    }
+
+    override suspend fun createBalanceSnapshot(
+        snapshot: BalanceSnapshot,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult {
+        createBalanceSnapshotCall = CreateBalanceSnapshotCall(snapshot, auditRecord)
+        return createBalanceSnapshotResult.withDefaultEntityId(snapshot.id.value)
     }
 
     override suspend fun createManualDraft(
@@ -2079,6 +2299,11 @@ private class FakeLedgerRepository(
         val account: LedgerAccount,
         val openingTransaction: PostedTransaction,
         val auditRecords: List<AuditRecord>,
+    )
+
+    data class CreateBalanceSnapshotCall(
+        val snapshot: BalanceSnapshot,
+        val auditRecord: AuditRecord,
     )
 
     data class CreateDraftCall(
