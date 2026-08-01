@@ -104,6 +104,7 @@ import dev.bill.app.quickcapture.requestQuickCaptureTile
 import dev.bill.core.designsystem.component.PosterPanel
 import dev.bill.core.designsystem.theme.BillTheme
 import dev.bill.feature.accounts.AccountsScreen
+import dev.bill.feature.accounts.CreateBalanceSnapshotInput
 import dev.bill.feature.accounts.CreateInvestmentPositionInput
 import dev.bill.feature.ledger.LedgerScreen
 import dev.bill.feature.overview.OverviewAction
@@ -126,6 +127,9 @@ import dev.bill.source.review.EvidencePayloadState
 import dev.bill.source.review.SourceEvidenceItem
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 
@@ -333,6 +337,9 @@ private fun BillApp(
     var showManualDraft by rememberSaveable { mutableStateOf(false) }
     var createAccountCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var createInvestmentCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedBalanceSnapshotAccountId by rememberSaveable { mutableStateOf<String?>(null) }
+    var balanceSnapshotCommandId by rememberSaveable { mutableStateOf<String?>(null) }
+    var submittedBalanceSnapshotDigest by rememberSaveable { mutableStateOf<String?>(null) }
     var investmentFormSeed by remember { mutableStateOf(CreateInvestmentPositionInput()) }
     var manualDraftCommandId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedDraftId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -366,6 +373,12 @@ private fun BillApp(
         createInvestmentCommandId = createInvestmentCommandId ?: viewModel.newCommandId()
         investmentFormSeed = seed
         showCreateInvestment = true
+    }
+
+    fun openBalanceSnapshot(accountId: String) {
+        selectedBalanceSnapshotAccountId = accountId
+        balanceSnapshotCommandId = viewModel.newCommandId()
+        submittedBalanceSnapshotDigest = null
     }
 
     fun openManualDraft() {
@@ -460,6 +473,11 @@ private fun BillApp(
             createInvestmentCommandId = viewModel.newCommandId()
         }
     }
+    LaunchedEffect(selectedBalanceSnapshotAccountId) {
+        if (selectedBalanceSnapshotAccountId != null && balanceSnapshotCommandId == null) {
+            balanceSnapshotCommandId = viewModel.newCommandId()
+        }
+    }
     LaunchedEffect(showManualDraft) {
         if (showManualDraft && manualDraftCommandId == null) {
             manualDraftCommandId = viewModel.newCommandId()
@@ -479,6 +497,11 @@ private fun BillApp(
                         BillOperationKind.CREATE_ACCOUNT -> {
                             showCreateAccount = false
                             createAccountCommandId = null
+                        }
+                        BillOperationKind.CREATE_BALANCE_SNAPSHOT -> {
+                            selectedBalanceSnapshotAccountId = null
+                            balanceSnapshotCommandId = null
+                            submittedBalanceSnapshotDigest = null
                         }
                         BillOperationKind.CREATE_INVESTMENT_POSITION -> {
                             showCreateInvestment = false
@@ -810,6 +833,11 @@ private fun BillApp(
                     operationError = state.operationError,
                     showCreateSheet = showCreateAccount,
                     showInvestmentSheet = showCreateInvestment,
+                    balanceSnapshotAccount = selectedBalanceSnapshotAccountId?.let { accountId ->
+                        snapshot.accounts.firstOrNull { account -> account.id == accountId }
+                    },
+                    isBalanceSnapshotSubmitting =
+                        state.activeOperation?.kind == BillOperationKind.CREATE_BALANCE_SNAPSHOT,
                     investmentFormSeed = investmentFormSeed,
                     onCreateRequested = {
                         viewModel.clearOperationFeedback()
@@ -838,6 +866,16 @@ private fun BillApp(
                         investmentFormSeed = CreateInvestmentPositionInput()
                         viewModel.clearOperationFeedback()
                     },
+                    onBalanceSnapshotRequested = { accountId ->
+                        viewModel.clearOperationFeedback()
+                        openBalanceSnapshot(accountId)
+                    },
+                    onDismissBalanceSnapshot = {
+                        selectedBalanceSnapshotAccountId = null
+                        balanceSnapshotCommandId = null
+                        submittedBalanceSnapshotDigest = null
+                        viewModel.clearOperationFeedback()
+                    },
                     onCreateAccount = { input ->
                         createAccountCommandId?.let { commandId ->
                             viewModel.createAccount(
@@ -859,6 +897,29 @@ private fun BillApp(
                                 units = input.units,
                                 costBasis = input.costBasis,
                                 wasOcrPrefilled = input.wasOcrPrefilled,
+                            )
+                        }
+                    },
+                    onCreateBalanceSnapshot = { input ->
+                        selectedBalanceSnapshotAccountId?.let { accountId ->
+                            val digest = input.intentDigest(accountId)
+                            if (
+                                submittedBalanceSnapshotDigest != null &&
+                                submittedBalanceSnapshotDigest != digest
+                            ) {
+                                balanceSnapshotCommandId = viewModel.newCommandId()
+                            }
+                            val commandId = balanceSnapshotCommandId
+                                ?: viewModel.newCommandId().also {
+                                    balanceSnapshotCommandId = it
+                                }
+                            submittedBalanceSnapshotDigest = digest
+                            viewModel.createBalanceSnapshot(
+                                commandId = commandId,
+                                accountId = accountId,
+                                observedBalance = input.observedBalance,
+                                asOf = input.asOf,
+                                note = input.note,
                             )
                         }
                     },
@@ -1933,6 +1994,22 @@ private fun CreateInvestmentPositionInput.merge(
         costBasis = costBasis.ifBlank { prefill.costBasis.orEmpty() },
         wasOcrPrefilled = wasOcrPrefilled || usedOcrValue,
     )
+}
+
+private fun CreateBalanceSnapshotInput.intentDigest(accountId: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    listOf(accountId, observedBalance, asOf, note).forEach { value ->
+        val bytes = value.toByteArray(StandardCharsets.UTF_8)
+        try {
+            digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+            digest.update(bytes)
+        } finally {
+            bytes.fill(0)
+        }
+    }
+    return digest.digest().joinToString(separator = "") { byte ->
+        "%02x".format(byte.toInt() and 0xff)
+    }
 }
 
 @Composable

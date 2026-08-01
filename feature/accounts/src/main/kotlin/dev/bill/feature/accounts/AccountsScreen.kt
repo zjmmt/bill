@@ -20,6 +20,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -47,6 +48,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.bill.application.AccountSummary
+import dev.bill.application.BalanceSnapshotStatus
 import dev.bill.application.OperationError
 import dev.bill.application.InvestmentPositionSummary
 import dev.bill.core.designsystem.component.LedgerCard
@@ -59,6 +61,7 @@ import dev.bill.core.model.CurrencyCode
 import dev.bill.core.model.Money
 import dev.bill.core.model.allowsUserAccountCurrency
 import java.time.ZoneId
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 data class CreateAccountInput(
@@ -77,6 +80,12 @@ data class CreateInvestmentPositionInput(
     val wasOcrPrefilled: Boolean = false,
 )
 
+data class CreateBalanceSnapshotInput(
+    val observedBalance: String,
+    val asOf: String,
+    val note: String,
+)
+
 @Composable
 fun AccountsScreen(
     accounts: List<AccountSummary>,
@@ -88,14 +97,19 @@ fun AccountsScreen(
     operationError: OperationError?,
     showCreateSheet: Boolean,
     showInvestmentSheet: Boolean,
+    balanceSnapshotAccount: AccountSummary?,
+    isBalanceSnapshotSubmitting: Boolean,
     investmentFormSeed: CreateInvestmentPositionInput,
     onCreateRequested: () -> Unit,
     onInvestmentCreateRequested: () -> Unit,
     onInvestmentOcrRequested: (CreateInvestmentPositionInput) -> Unit,
     onDismissCreate: () -> Unit,
     onDismissInvestment: () -> Unit,
+    onBalanceSnapshotRequested: (String) -> Unit,
+    onDismissBalanceSnapshot: () -> Unit,
     onCreateAccount: (CreateAccountInput) -> Unit,
     onCreateInvestment: (CreateInvestmentPositionInput) -> Unit,
+    onCreateBalanceSnapshot: (CreateBalanceSnapshotInput) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -191,7 +205,13 @@ fun AccountsScreen(
                 }
             }
             items(fundingAccounts, key = AccountSummary::id) { account ->
-                AccountRow(account = account, amountsMasked = amountsMasked)
+                AccountRow(
+                    account = account,
+                    amountsMasked = amountsMasked,
+                    onBalanceSnapshotRequested = {
+                        onBalanceSnapshotRequested(account.id)
+                    },
+                )
             }
         }
 
@@ -215,6 +235,15 @@ fun AccountsScreen(
             onOcrRequested = onInvestmentOcrRequested,
             onDismiss = onDismissInvestment,
             onSubmit = onCreateInvestment,
+        )
+    }
+    balanceSnapshotAccount?.let { account ->
+        CreateBalanceSnapshotSheet(
+            account = account,
+            isSubmitting = isBalanceSnapshotSubmitting,
+            operationError = operationError,
+            onDismiss = onDismissBalanceSnapshot,
+            onSubmit = onCreateBalanceSnapshot,
         )
     }
 }
@@ -495,43 +524,387 @@ private fun CreateInvestmentPositionSheet(
 private fun AccountRow(
     account: AccountSummary,
     amountsMasked: Boolean,
+    onBalanceSnapshotRequested: () -> Unit,
 ) {
     LedgerCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = account.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = account.type.localizedName(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    MoneyText(
+                        amount = account.displayBalance,
+                        masked = amountsMasked,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    if (account.isLiability) {
+                        Text(
+                            text = stringResource(R.string.amount_owed),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            account.latestBalanceSnapshot?.let { snapshot ->
+                HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.balance_check_heading),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = stringResource(
+                            if (snapshot.status == BalanceSnapshotStatus.RECONCILED) {
+                                R.string.balance_check_reconciled
+                            } else {
+                                R.string.balance_check_needs_explanation
+                            },
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (snapshot.status == BalanceSnapshotStatus.RECONCILED) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                }
+                SnapshotMoneyRow(
+                    label = stringResource(
+                        if (account.isLiability) {
+                            R.string.balance_check_observed_debt
+                        } else {
+                            R.string.balance_check_observed_balance
+                        },
+                    ),
+                    amount = snapshot.observedBalance,
+                    amountsMasked = amountsMasked,
+                )
+                SnapshotMoneyRow(
+                    label = stringResource(R.string.balance_check_ledger_balance),
+                    amount = snapshot.ledgerBalance,
+                    amountsMasked = amountsMasked,
+                )
+                SnapshotMoneyRow(
+                    label = stringResource(R.string.balance_check_difference),
+                    amount = snapshot.difference,
+                    amountsMasked = amountsMasked,
+                    emphasize = true,
+                )
+                Text(
+                    text = stringResource(
+                        R.string.balance_check_as_of,
+                        snapshot.asOf.atZone(ZoneId.systemDefault())
+                            .format(balanceSnapshotDateFormatter),
+                    ),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                snapshot.note?.let { note ->
+                    Text(
+                        text = stringResource(R.string.balance_check_note, note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (account.type in balanceSnapshotAccountTypes) {
+                OutlinedButton(
+                    onClick = onBalanceSnapshotRequested,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        stringResource(
+                            if (account.latestBalanceSnapshot == null) {
+                                R.string.record_balance_snapshot
+                            } else {
+                                R.string.record_balance_snapshot_again
+                            },
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SnapshotMoneyRow(
+    label: String,
+    amount: Money,
+    amountsMasked: Boolean,
+    emphasize: Boolean = false,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        MoneyText(
+            amount = amount,
+            masked = amountsMasked,
+            style = if (emphasize) {
+                MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+            } else {
+                MaterialTheme.typography.bodyLarge
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CreateBalanceSnapshotSheet(
+    account: AccountSummary,
+    isSubmitting: Boolean,
+    operationError: OperationError?,
+    onDismiss: () -> Unit,
+    onSubmit: (CreateBalanceSnapshotInput) -> Unit,
+) {
+    val initialAsOf = rememberSaveable(account.id) {
+        LocalDateTime.now().format(balanceSnapshotDateFormatter)
+    }
+    var observedBalance by rememberSaveable(account.id) { mutableStateOf("") }
+    var asOf by rememberSaveable(account.id) { mutableStateOf(initialAsOf) }
+    var note by rememberSaveable(account.id) { mutableStateOf("") }
+    var showDiscardConfirmation by rememberSaveable(account.id) { mutableStateOf(false) }
+    val hasUnsavedChanges = observedBalance.isNotBlank() || note.isNotBlank() || asOf != initialAsOf
+    val amountError = operationError == OperationError.INVALID_AMOUNT
+    val timeError = operationError == OperationError.INVALID_TIME
+    val noteError = operationError == OperationError.NOTE_TOO_LONG
+
+    fun requestDismiss() {
+        if (isSubmitting) return
+        if (hasUnsavedChanges) {
+            showDiscardConfirmation = true
+        } else {
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = ::requestDismiss,
+        containerColor = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.record_balance_snapshot_title),
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text(
+                text = stringResource(R.string.record_balance_snapshot_explanation),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PosterPanel(contentPadding = PaddingValues(16.dp)) {
                 Text(
                     text = account.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = account.type.localizedName(),
+                    text = stringResource(
+                        R.string.balance_snapshot_account_context,
+                        account.type.localizedName(),
+                        account.displayBalance.currency.value,
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                MoneyText(
-                    amount = account.displayBalance,
-                    masked = amountsMasked,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                if (account.isLiability) {
+            OutlinedTextField(
+                value = observedBalance,
+                onValueChange = { observedBalance = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = {
                     Text(
-                        text = stringResource(R.string.amount_owed),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        stringResource(
+                            if (account.isLiability) {
+                                R.string.balance_snapshot_observed_debt
+                            } else {
+                                R.string.balance_snapshot_observed_balance
+                            },
+                        ),
                     )
+                },
+                prefix = { Text(account.displayBalance.currency.inputPrefix()) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (amountError) {
+                                R.string.error_invalid_balance_snapshot_amount
+                            } else {
+                                R.string.balance_snapshot_amount_hint
+                            },
+                        ),
+                    )
+                },
+                isError = amountError,
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Next,
+                ),
+            )
+            OutlinedTextField(
+                value = asOf,
+                onValueChange = { asOf = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.balance_snapshot_as_of)) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (timeError) {
+                                R.string.error_invalid_balance_snapshot_time
+                            } else {
+                                R.string.balance_snapshot_as_of_hint
+                            },
+                        ),
+                    )
+                },
+                isError = timeError,
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            )
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.balance_snapshot_note_optional)) },
+                supportingText = {
+                    Text(
+                        stringResource(
+                            if (noteError) {
+                                R.string.error_invalid_balance_snapshot_note
+                            } else {
+                                R.string.balance_snapshot_note_hint
+                            },
+                        ),
+                    )
+                },
+                isError = noteError,
+                singleLine = true,
+                enabled = !isSubmitting,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            )
+
+            operationError?.balanceSnapshotGeneralErrorMessage()?.let { errorMessage ->
+                Text(
+                    text = errorMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            HorizontalDivider()
+            Button(
+                onClick = {
+                    onSubmit(
+                        CreateBalanceSnapshotInput(
+                            observedBalance = observedBalance,
+                            asOf = asOf,
+                            note = note,
+                        ),
+                    )
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 56.dp),
+                enabled = !isSubmitting && observedBalance.isNotBlank() && asOf.isNotBlank(),
+                shape = MaterialTheme.shapes.small,
+            ) {
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(end = 8.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text(stringResource(R.string.recording_balance_snapshot))
+                } else {
+                    Text(stringResource(R.string.record_balance_snapshot_action))
                 }
             }
+            TextButton(
+                onClick = ::requestDismiss,
+                modifier = Modifier
+                    .align(Alignment.End)
+                    .heightIn(min = 48.dp),
+                enabled = !isSubmitting,
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+            Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text(stringResource(R.string.discard_balance_snapshot_title)) },
+            text = { Text(stringResource(R.string.discard_balance_snapshot_body)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardConfirmation = false
+                        onDismiss()
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.discard_balance_snapshot_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDiscardConfirmation = false },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text(stringResource(R.string.keep_editing))
+                }
+            },
+        )
     }
 }
 
@@ -772,6 +1145,18 @@ private fun OperationError.investmentErrorMessage(): String? = when (this) {
     else -> null
 }
 
+@Composable
+private fun OperationError.balanceSnapshotGeneralErrorMessage(): String? = when (this) {
+    OperationError.ACCOUNT_NOT_FOUND -> stringResource(R.string.error_balance_snapshot_account_missing)
+    OperationError.UNSUPPORTED_ACCOUNT_TYPE,
+    OperationError.UNSUPPORTED_CURRENCY,
+    -> stringResource(R.string.error_balance_snapshot_account_unsupported)
+    OperationError.CONFLICT,
+    OperationError.INVALID_STATE,
+    -> stringResource(R.string.error_balance_snapshot_conflict)
+    else -> null
+}
+
 private val creatableAccountTypes = listOf(
     AccountType.ASSET_CASH,
     AccountType.ASSET_BANK,
@@ -779,7 +1164,15 @@ private val creatableAccountTypes = listOf(
     AccountType.LIABILITY_CC,
 )
 
+private val balanceSnapshotAccountTypes = setOf(
+    AccountType.ASSET_CASH,
+    AccountType.ASSET_BANK,
+    AccountType.ASSET_EWALLET_BALANCE,
+    AccountType.LIABILITY_CC,
+)
+
 private val investmentDateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val balanceSnapshotDateFormatter = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 780)
 @Preview(
@@ -810,14 +1203,19 @@ private fun AccountsPreview() {
             operationError = null,
             showCreateSheet = false,
             showInvestmentSheet = false,
+            balanceSnapshotAccount = null,
+            isBalanceSnapshotSubmitting = false,
             investmentFormSeed = CreateInvestmentPositionInput(),
             onCreateRequested = {},
             onInvestmentCreateRequested = {},
             onInvestmentOcrRequested = {},
             onDismissCreate = {},
             onDismissInvestment = {},
+            onBalanceSnapshotRequested = {},
+            onDismissBalanceSnapshot = {},
             onCreateAccount = {},
             onCreateInvestment = {},
+            onCreateBalanceSnapshot = {},
             contentPadding = PaddingValues(),
         )
     }
