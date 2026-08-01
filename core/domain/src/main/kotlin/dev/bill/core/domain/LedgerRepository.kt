@@ -48,6 +48,13 @@ interface LedgerRepository {
         status = RepositoryWriteStatus.INVALID_STATE,
     )
 
+    suspend fun createBalanceSnapshot(
+        snapshot: BalanceSnapshot,
+        auditRecord: AuditRecord,
+    ): RepositoryWriteResult = RepositoryWriteResult(
+        status = RepositoryWriteStatus.INVALID_STATE,
+    )
+
     suspend fun createManualDraft(
         draft: ReviewDraft,
         auditRecord: AuditRecord,

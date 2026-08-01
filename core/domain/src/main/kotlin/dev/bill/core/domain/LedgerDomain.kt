@@ -74,6 +74,7 @@ fun ObservedChannel.allowsCurrency(currency: CurrencyCode): Boolean = when (this
 enum class AuditAction {
     ACCOUNT_CREATED,
     OPENING_BALANCE_POSTED,
+    BALANCE_SNAPSHOT_RECORDED,
     MANUAL_DRAFT_CREATED,
     EXTERNAL_DRAFT_CREATED,
     SOURCE_PROPOSAL_DISMISSED,
@@ -209,6 +210,7 @@ data class LedgerState(
     val recentTransactions: List<PostedTransaction>,
     val activeRefundTotals: Map<TransactionId, Money> = emptyMap(),
     val investmentPositions: List<InvestmentPosition> = emptyList(),
+    val balanceSnapshotComparisons: List<BalanceSnapshotComparison> = emptyList(),
 )
 
 object SystemAccountIds {
