@@ -410,9 +410,26 @@ class GenericPhotoOcrParserTest {
     }
 
     @Test
-    fun `empty OCR still produces no evidence envelope`() {
+    fun `ordinary encoder still rejects empty input`() {
         assertNull(OcrTranscript.encode(emptyList()))
         assertNull(OcrTranscript.encode(listOf(" ", "\t")))
+    }
+
+    @Test
+    fun `explicit empty OCR evidence opens a blank manual review`() {
+        val evidence = OcrTranscript.encodeEmpty()
+
+        val decoded = OcrTranscript.decode(evidence)
+        val result = parser.parse(
+            rawEvent(evidence),
+            EvidenceInput(OcrTranscript.MEDIA_TYPE, evidence),
+        )
+        evidence.fill(0)
+
+        assertEquals(0, decoded?.lines?.size)
+        assertTrue(result is ParseResult.NeedsUserReview)
+        assertNull((result as ParseResult.NeedsUserReview).candidate)
+        assertEquals(DiagnosticCode.INSUFFICIENT_FIELDS, result.diagnostic.code)
     }
 
     @Test

@@ -74,6 +74,14 @@ object OcrTranscript {
         recognizedLines.map { line -> RecognizedLine(value = line, bounds = null) },
     )
 
+    /**
+     * Records that image capture and OCR completed but produced no usable text.
+     *
+     * The empty v2 envelope is evidence of an explicit local capture, not evidence of any
+     * transaction field. Its parser result therefore remains an editable, blank review item.
+     */
+    fun encodeEmpty(): ByteArray = checkNotNull(boundedUtf8(HEADER_V2))
+
     fun encodeSpatial(recognizedLines: List<RecognizedLine>): ByteArray? {
         if (recognizedLines.isEmpty() || recognizedLines.size > MAX_LINES) return null
         val normalized = recognizedLines.mapNotNull { line ->
@@ -134,6 +142,9 @@ object OcrTranscript {
     }
 
     private fun decodeV2(text: String): Decoded? {
+        if (text == HEADER_V2) {
+            return Decoded(text = text, lines = emptyList(), mediaType = MEDIA_TYPE)
+        }
         val lines = decodeLines(text, HEADER_V2.length) { cursor, end ->
             val separator = text.indexOf('\t', cursor)
             if (separator !in (cursor + 1) until end) return@decodeLines null

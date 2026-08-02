@@ -401,6 +401,11 @@ class BillViewModel(
                                 BillUiEvent.InvestmentOcrPrefillFailed(parsed.error.toUiError())
                         }
 
+                        SelectedImageOcrReadResult.Empty ->
+                            BillUiEvent.InvestmentOcrPrefillFailed(
+                                InvestmentOcrPrefillUiError.NO_RECOGNIZED_FIELDS,
+                            )
+
                         is SelectedImageOcrReadResult.Failure ->
                             BillUiEvent.InvestmentOcrPrefillFailed(
                                 read.error.toInvestmentOcrUiError(),
@@ -822,16 +827,24 @@ class BillViewModel(
             var firstFailure: SourceCaptureError? = null
             try {
                 boundedUris.forEachIndexed { index, documentUri ->
-                    val commandId = service.newCommandId().value
-                    val result = try {
-                        selectedPhotoOcrImporter.ingest(commandId, documentUri)
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (_: Exception) {
-                        SourceCaptureResult.Failure(
-                            error = SourceCaptureError.COMMIT_FAILED,
-                            diagnosticCode = null,
-                        )
+                    suspend fun ingestOnce(): SourceCaptureResult {
+                        val commandId = service.newCommandId().value
+                        return try {
+                            selectedPhotoOcrImporter.ingest(commandId, documentUri)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (_: Exception) {
+                            SourceCaptureResult.Failure(
+                                error = SourceCaptureError.COMMIT_FAILED,
+                                diagnosticCode = null,
+                            )
+                        }
+                    }
+                    var result = ingestOnce()
+                    if (result is SourceCaptureResult.Failure && result.error.isIdCollision()) {
+                        // A stale pre-commit artifact or an astronomically rare opaque-ID clash
+                        // must not make an explicitly selected image permanently unusable.
+                        result = ingestOnce()
                     }
                     when (result) {
                         is SourceCaptureResult.ReadyForReview -> {
@@ -875,6 +888,15 @@ class BillViewModel(
                 photoOcrJob = null
             }
         }
+    }
+
+    private fun SourceCaptureError.isIdCollision(): Boolean = when (this) {
+        SourceCaptureError.INVALID_COMMAND,
+        SourceCaptureError.EVIDENCE_COLLISION,
+        SourceCaptureError.RAW_EVENT_COLLISION,
+        -> true
+
+        else -> false
     }
 
     fun dismissSourceProposal(commandId: String, proposalId: String) {

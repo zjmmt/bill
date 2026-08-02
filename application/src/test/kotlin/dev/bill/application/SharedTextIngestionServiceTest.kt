@@ -390,6 +390,23 @@ class SharedTextIngestionServiceTest {
     }
 
     @Test
+    fun `empty OCR envelope persists a blank editable review item`() = runBlocking {
+        val fixture = Fixture()
+        val bytes = OcrTranscript.encodeEmpty()
+
+        val result = fixture.photoOcrService().ingest(
+            commandId = "empty-ocr",
+            evidence = PhotoOcrTranscriptEvidence(bytes),
+        )
+
+        assertTrue(result is SourceCaptureResult.ReadyForReview)
+        val proposal = fixture.commitStore.persisted.values.single().proposal
+        assertNotNull(proposal)
+        assertNull(proposal?.candidate)
+        assertTrue(bytes.all { it == 0.toByte() })
+    }
+
+    @Test
     fun `malformed OCR transcript is rejected and wiped before staging`() = runBlocking {
         val fixture = Fixture()
         val bytes = "not-an-ocr-envelope".toByteArray()

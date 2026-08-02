@@ -34,6 +34,9 @@ sealed interface SelectedImageOcrReadResult {
         val values: List<OcrTranscript.RecognizedLine>,
     ) : SelectedImageOcrReadResult
 
+    /** Image decoding and OCR succeeded, but no usable text was recognized. */
+    data object Empty : SelectedImageOcrReadResult
+
     data class Failure(
         val error: SourceCaptureError,
     ) : SelectedImageOcrReadResult
@@ -77,7 +80,7 @@ class ContentResolverSelectedImageOcrReader(
                     bitmap = decodeBounded(bytes) ?: return@withContext rejected()
                     when (val ocr = BundledLocalOcrEngine.recognize(applicationContext, bitmap)) {
                         is LocalOcrResult.Lines -> SelectedImageOcrReadResult.Lines(ocr.values)
-                        LocalOcrResult.Empty -> failed(SourceCaptureError.EMPTY_CONTENT)
+                        LocalOcrResult.Empty -> SelectedImageOcrReadResult.Empty
                         LocalOcrResult.Failed -> rejected()
                     }
                 } catch (cancellation: CancellationException) {
@@ -236,6 +239,11 @@ class ContentResolverSelectedPhotoOcrImporter(
                 ?: return failure(SourceCaptureError.CONTENT_TOO_LARGE)
             capture.ingest(commandId, PhotoOcrTranscriptEvidence(transcript))
         }
+
+        SelectedImageOcrReadResult.Empty -> capture.ingest(
+            commandId,
+            PhotoOcrTranscriptEvidence(OcrTranscript.encodeEmpty()),
+        )
 
         is SelectedImageOcrReadResult.Failure -> failure(read.error)
     }

@@ -2,6 +2,7 @@ package dev.bill.data.local
 
 import android.database.sqlite.SQLiteConstraintException
 import androidx.room.withTransaction
+import dev.bill.source.contract.CaptureMethod
 import dev.bill.source.contract.RawEvent
 import dev.bill.source.contract.RawEventAppendResult
 import dev.bill.source.contract.RawEventId
@@ -205,9 +206,11 @@ private fun SourceEvidencePayloadEntity.canReplay(expectedSize: Long?): Boolean 
 private fun RawEventEntity.requiresStaging(): Boolean = captureMethod in stagedCaptureMethods
 
 private val stagedCaptureMethods = setOf(
-    "SHARE_TEXT",
-    "STATEMENT_IMPORT",
-    "NOTIFICATION",
+    CaptureMethod.SHARE_TEXT.name,
+    CaptureMethod.SHARE_FILE.name,
+    CaptureMethod.STATEMENT_IMPORT.name,
+    CaptureMethod.NOTIFICATION.name,
+    CaptureMethod.PHOTO_OCR.name,
 )
 
 private fun SourceEvidenceStagingEntity.matchesActive(

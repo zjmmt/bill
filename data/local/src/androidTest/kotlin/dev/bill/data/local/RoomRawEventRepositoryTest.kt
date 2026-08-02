@@ -69,7 +69,7 @@ class RoomRawEventRepositoryTest {
         val second = event(
             "fixture-event-2",
             capturedAt = first.capturedAt.plusSeconds(1),
-        ).copy(captureMethod = CaptureMethod.SHARE_FILE)
+        )
         assertEquals(
             RawEventAppendResult.DuplicateObservation(existingObservationCount = 1),
             repository.append(second),
@@ -143,8 +143,8 @@ class RoomRawEventRepositoryTest {
         sourceFamily = SourceFamily.BANK,
         connectorId = ConnectorId("fixture-connector"),
         // This repository test exercises observation identity, not staged-evidence admission.
-        // Statement imports have a separate staging requirement covered by the staging tests.
-        captureMethod = CaptureMethod.SHARE_FILE,
+        // User-provided file, text, notification and OCR captures require a staging lease.
+        captureMethod = CaptureMethod.MANUAL,
         captureScope = CaptureScopeId("FIXTURE_ONLY"),
         contentHash = EvidenceHash(hash),
         capturedAt = capturedAt,

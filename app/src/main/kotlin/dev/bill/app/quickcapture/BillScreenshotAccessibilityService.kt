@@ -292,16 +292,16 @@ private class OnDeviceScreenshotOcrProcessor(
                 ?: return failed(QuickCaptureFailure.IMAGE_TOO_LARGE)
 
             cancellation.throwIfCancelled()
-            val lines = when (
+            transcriptBytes = when (
                 val recognized = BundledLocalOcrEngine.recognize(applicationContext, ocrBitmap)
             ) {
-                is LocalOcrResult.Lines -> recognized.values
-                LocalOcrResult.Empty -> return failed(QuickCaptureFailure.EMPTY_OCR)
+                is LocalOcrResult.Lines -> OcrTranscript.encodeSpatial(recognized.values)
+                    ?: return failed(QuickCaptureFailure.OCR_OUTPUT_TOO_LARGE)
+
+                LocalOcrResult.Empty -> OcrTranscript.encodeEmpty()
                 LocalOcrResult.Failed -> return failed(QuickCaptureFailure.OCR_FAILED)
             }
             cancellation.throwIfCancelled()
-            transcriptBytes = OcrTranscript.encodeSpatial(lines)
-                ?: return failed(QuickCaptureFailure.OCR_OUTPUT_TOO_LARGE)
         } finally {
             ocrBitmap?.recycle()
             hardwareBitmap?.recycle()

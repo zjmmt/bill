@@ -562,6 +562,41 @@ class BillViewModelTest {
         }
 
     @Test
+    fun `photo OCR retries one opaque identity collision with a fresh command`() =
+        runTest(dispatcher) {
+            val importer = FakeSelectedPhotoOcrImporter(
+                results = listOf(
+                    failedPhotoResult(SourceCaptureError.EVIDENCE_COLLISION),
+                    readyPhotoResult("retried-photo-proposal"),
+                ),
+            )
+            val viewModel = viewModel(
+                repository = FakeLedgerRepository(),
+                selectedPhotoOcrImporter = importer,
+            )
+            advanceUntilIdle()
+
+            viewModel.ingestSelectedPhotos(listOf("content://test/retried-photo"))
+            advanceUntilIdle()
+
+            assertEquals(2, importer.commandIds.size)
+            assertEquals(2, importer.commandIds.distinct().size)
+            assertEquals(
+                listOf("content://test/retried-photo", "content://test/retried-photo"),
+                importer.uriStrings,
+            )
+            assertEquals(
+                BillUiEvent.PhotoOcrBatchCompleted(
+                    firstProposalId = "retried-photo-proposal",
+                    readyForReviewCount = 1,
+                    failedCount = 0,
+                    firstFailure = null,
+                ),
+                viewModel.events.first(),
+            )
+        }
+
+    @Test
     fun `evidence manager runs maintenance loads metadata and applies retention`() =
         runTest(dispatcher) {
             val manager = FakeSourceEvidenceManager()
