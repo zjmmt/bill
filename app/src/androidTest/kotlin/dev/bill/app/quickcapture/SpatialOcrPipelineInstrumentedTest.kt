@@ -3,7 +3,10 @@ package dev.bill.app.quickcapture
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.Paint
+import android.os.Build
+import androidx.test.filters.SdkSuppress
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.bill.source.contract.CaptureMethod
@@ -18,6 +21,8 @@ import dev.bill.source.contract.RawEventId
 import dev.bill.source.contract.SourceFamily
 import dev.bill.source.genericphotoocr.GenericPhotoOcrParser
 import dev.bill.source.genericphotoocr.OcrTranscript
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -28,6 +33,54 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SpatialOcrPipelineInstrumentedTest {
+    @Test
+    @SdkSuppress(minSdkVersion = Build.VERSION_CODES.P)
+    fun hardwareScreenshotBitmapIsScaledAndCopiedBeforeOcr() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val softwareFixture = tallPaymentFixture()
+        val encoded = ByteArrayOutputStream()
+        try {
+            assertTrue(softwareFixture.compress(Bitmap.CompressFormat.PNG, 100, encoded))
+        } finally {
+            softwareFixture.recycle()
+        }
+        val hardware = ImageDecoder.decodeBitmap(
+            ImageDecoder.createSource(ByteBuffer.wrap(encoded.toByteArray())),
+        ) { decoder, _, _ ->
+            decoder.allocator = ImageDecoder.ALLOCATOR_HARDWARE
+        }
+        try {
+            assertEquals(Bitmap.Config.HARDWARE, hardware.config)
+            val converted = copyScreenshotToBoundedSoftwareBitmap(hardware)
+            assertTrue(converted != null)
+            requireNotNull(converted)
+            try {
+                assertEquals(Bitmap.Config.ARGB_8888, converted.config)
+                assertTrue(converted.width <= 1_600)
+                assertTrue(converted.height <= 1_600)
+
+                val recognized = BundledLocalOcrEngine.recognize(context, converted)
+                assertTrue(recognized is LocalOcrResult.Lines)
+                val lines = (recognized as LocalOcrResult.Lines).values
+                assertTrue(lines.any { "9.90" in it.value })
+                val evidence = requireNotNull(OcrTranscript.encodeSpatial(lines))
+                try {
+                    val result = GenericPhotoOcrParser().parse(
+                        rawEvent(evidence),
+                        EvidenceInput(OcrTranscript.MEDIA_TYPE, evidence),
+                    ) as ParseResult.NeedsUserReview
+                    assertEquals(990L, result.candidate?.amount?.value?.minorUnits)
+                } finally {
+                    evidence.fill(0)
+                }
+            } finally {
+                converted.recycle()
+            }
+        } finally {
+            hardware.recycle()
+        }
+    }
+
     @Test
     fun bundledEngineCarriesLayoutIntoDominantPaymentAmountProposal() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -141,6 +194,21 @@ class SpatialOcrPipelineInstrumentedTest {
         paint.textSize = 48f
         canvas.drawText("商品金额 ¥3.50", 80f, 560f, paint)
         canvas.drawText("优惠 - ¥0.33", 80f, 690f, paint)
+        return bitmap
+    }
+
+    private fun tallPaymentFixture(): Bitmap {
+        val bitmap = Bitmap.createBitmap(1_440, 3_120, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(Color.WHITE)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+
+        paint.textSize = 72f
+        canvas.drawText("Payment successful", 120f, 360f, paint)
+        paint.textSize = 190f
+        canvas.drawText("¥9.90", 420f, 900f, paint)
+        paint.textSize = 58f
+        canvas.drawText("Merchant Cotti Coffee", 120f, 1_420f, paint)
         return bitmap
     }
 

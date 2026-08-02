@@ -2,10 +2,7 @@ package dev.bill.app.quickcapture
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.ColorSpace
-import android.graphics.Paint
-import android.graphics.Rect
 import android.hardware.HardwareBuffer
 import android.os.Build
 import android.view.Display
@@ -288,18 +285,20 @@ private class OnDeviceScreenshotOcrProcessor(
             cancellation.throwIfCancelled()
             hardwareBitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
                 ?: return failed(QuickCaptureFailure.SCREENSHOT_FAILED)
-            ocrBitmap = boundedSoftwareCopy(hardwareBitmap)
-                ?: return failed(QuickCaptureFailure.IMAGE_TOO_LARGE)
+            ocrBitmap = copyScreenshotToBoundedSoftwareBitmap(hardwareBitmap)
 
             cancellation.throwIfCancelled()
-            transcriptBytes = when (
-                val recognized = BundledLocalOcrEngine.recognize(applicationContext, ocrBitmap)
-            ) {
-                is LocalOcrResult.Lines -> OcrTranscript.encodeSpatial(recognized.values)
-                    ?: return failed(QuickCaptureFailure.OCR_OUTPUT_TOO_LARGE)
+            transcriptBytes = if (ocrBitmap == null) {
+                OcrTranscript.encodeEmpty()
+            } else {
+                when (val recognized = BundledLocalOcrEngine.recognize(applicationContext, ocrBitmap)) {
+                    is LocalOcrResult.Lines -> OcrTranscript.encodeSpatial(recognized.values)
+                        ?: OcrTranscript.encodeEmpty()
 
-                LocalOcrResult.Empty -> OcrTranscript.encodeEmpty()
-                LocalOcrResult.Failed -> return failed(QuickCaptureFailure.OCR_FAILED)
+                    LocalOcrResult.Empty,
+                    LocalOcrResult.Failed,
+                    -> OcrTranscript.encodeEmpty()
+                }
             }
             cancellation.throwIfCancelled()
         } finally {
@@ -315,44 +314,46 @@ private class OnDeviceScreenshotOcrProcessor(
         )
     }
 
-    private fun boundedSoftwareCopy(source: Bitmap): Bitmap? {
-        val sourceWidth = source.width
-        val sourceHeight = source.height
-        if (sourceWidth <= 0 || sourceHeight <= 0) return null
-        val sourcePixels = sourceWidth.toLong() * sourceHeight.toLong()
-        if (sourcePixels > MAX_SOURCE_PIXELS) return null
-
-        val scale = minOf(
-            1.0,
-            MAX_OCR_WIDTH.toDouble() / sourceWidth.toDouble(),
-            MAX_OCR_HEIGHT.toDouble() / sourceHeight.toDouble(),
-            kotlin.math.sqrt(MAX_OCR_PIXELS.toDouble() / sourcePixels.toDouble()),
-        )
-        val targetWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
-        val targetHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
-        val target = Bitmap.createBitmap(
-            targetWidth,
-            targetHeight,
-            Bitmap.Config.ARGB_8888,
-        )
-        Canvas(target).drawBitmap(
-            source,
-            null,
-            Rect(0, 0, targetWidth, targetHeight),
-            Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG),
-        )
-        return target
-    }
-
     private fun failed(reason: QuickCaptureFailure) = QuickCaptureOutcome.Failed(reason)
+}
 
-    private companion object {
-        const val MAX_SOURCE_PIXELS = 32_000_000L
-        const val MAX_OCR_PIXELS = 2_560_000L
-        const val MAX_OCR_WIDTH = 1_600
-        const val MAX_OCR_HEIGHT = 1_600
+/** Converts the screenshot API's hardware bitmap before any software rendering or OCR access. */
+internal fun copyScreenshotToBoundedSoftwareBitmap(source: Bitmap): Bitmap? {
+    val sourceWidth = source.width
+    val sourceHeight = source.height
+    if (sourceWidth <= 0 || sourceHeight <= 0) return null
+    val sourcePixels = sourceWidth.toLong() * sourceHeight.toLong()
+    if (sourcePixels > SCREENSHOT_MAX_SOURCE_PIXELS) return null
+
+    val scale = minOf(
+        1.0,
+        SCREENSHOT_MAX_OCR_WIDTH.toDouble() / sourceWidth.toDouble(),
+        SCREENSHOT_MAX_OCR_HEIGHT.toDouble() / sourceHeight.toDouble(),
+        kotlin.math.sqrt(SCREENSHOT_MAX_OCR_PIXELS.toDouble() / sourcePixels.toDouble()),
+    )
+    val targetWidth = (sourceWidth * scale).toInt().coerceAtLeast(1)
+    val targetHeight = (sourceHeight * scale).toInt().coerceAtLeast(1)
+    var scaledSource: Bitmap? = null
+    return try {
+        val boundedSource = if (sourceWidth == targetWidth && sourceHeight == targetHeight) {
+            source
+        } else {
+            Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true).also {
+                scaledSource = it
+            }
+        }
+        boundedSource.copy(Bitmap.Config.ARGB_8888, false)
+    } catch (_: RuntimeException) {
+        null
+    } finally {
+        scaledSource?.recycle()
     }
 }
+
+private const val SCREENSHOT_MAX_SOURCE_PIXELS = 32_000_000L
+private const val SCREENSHOT_MAX_OCR_PIXELS = 2_560_000L
+private const val SCREENSHOT_MAX_OCR_WIDTH = 1_600
+private const val SCREENSHOT_MAX_OCR_HEIGHT = 1_600
 
 internal suspend fun ingestQuickCaptureTranscript(
     commandId: String,

@@ -11,7 +11,7 @@ import org.junit.runner.RunWith
 class QuickCaptureOutcomeStoreInstrumentedTest {
     @Test
     fun outcomeIsDeliveredOnceAndExpiredWithoutFinancialPayload() {
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val saved = QuickCaptureOutcome.Saved(alreadyPresent = false)
         QuickCaptureOutcomeStore.record(context, saved, nowEpochMillis = 1_000L)
 

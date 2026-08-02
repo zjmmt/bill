@@ -37,7 +37,7 @@ internal object BundledLocalOcrEngine {
         context: Context,
         bitmap: Bitmap,
     ): LocalOcrResult {
-        if (!executionMutex.tryLock()) return LocalOcrResult.Failed
+        executionMutex.lock()
         var recognizer: PaddleOCR? = null
         return try {
             try {

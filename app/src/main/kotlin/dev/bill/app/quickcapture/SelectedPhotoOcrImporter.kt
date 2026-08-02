@@ -81,7 +81,8 @@ class ContentResolverSelectedImageOcrReader(
                     when (val ocr = BundledLocalOcrEngine.recognize(applicationContext, bitmap)) {
                         is LocalOcrResult.Lines -> SelectedImageOcrReadResult.Lines(ocr.values)
                         LocalOcrResult.Empty -> SelectedImageOcrReadResult.Empty
-                        LocalOcrResult.Failed -> rejected()
+                        // The user still needs an editable draft when the local model cannot run.
+                        LocalOcrResult.Failed -> SelectedImageOcrReadResult.Empty
                     }
                 } catch (cancellation: CancellationException) {
                     throw cancellation

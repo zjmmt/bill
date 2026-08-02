@@ -36,7 +36,7 @@ import org.junit.runner.RunWith
 class PhotoOcrPersistenceInstrumentedTest {
     @Test
     fun photoOcrPersistsDistinctBlankAndDuplicateCapturesForReview() = runBlocking {
-        val context = InstrumentationRegistry.getInstrumentation().context
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.inMemoryDatabaseBuilder(context, BillDatabase::class.java)
             .addCallback(BillDatabaseCallbacks.EnsureSourceEvidencePolicy)
             .allowMainThreadQueries()
