@@ -137,6 +137,7 @@
 - `code-review` 随后识别出“固定文件名不等于固定身份”：若本机 keystore 丢失，旧入口可生成同名新证书并让覆盖安装永久断裂。仓库现提交上述公开证书 SHA-256 pin；交互构建在调用 Gradle 前用 Java PKCS12 API验证 alias、私钥条目和证书摘要，pin 已存在而本机 keystore 缺失时，`create` 失败并要求从备份恢复。子进程环境也先清掉会话遗留的全部签名变量，再只注入本次值。
 - 产物级复审又补上第二道门：`release.cmd` 在普通验签后调用仓库内 Java 校验器，以 SDK `apksigner.jar` 独立要求每个 APK 恰有 1 个 signer 且证书摘要等于公开 pin，避免 Gradle 复用一份签名有效但身份错误的旧产物。项目负责人完成 pin 后的交互重跑；两包摘要未变，并再次通过身份、v2 签名与 16 KiB 对齐复验。
 - 2026-08-02 将 `3/0.1.0-internal.3` arm64-v8a APK（90,770,509 bytes，SHA-256 `925292dcb097e6aa2aa7b8045aab83c2150b28f9d8539c03b589d66f3fe1b929`）以 `adb install --no-streaming -r` 覆盖安装到 `S24U-HK` 成功；PackageManager 显示 `flags=0x0` 且无 `DEBUGGABLE`，冷启动 `Status: ok`、`TotalTime: 462 ms`。启动声明、总览与设置页完成繁体中文目视检查，未打开通知使用权或来源开关。当前工作树随后仅把两条详细通知范围说明移到开关之前；项目负责人明确选择不为这一处文案位置单独生成 v4，所交付 v3 不包含该后续源码调整。
+- 同日将友好命名的 `6/0.1.0-internal.6` arm64-v8a APK（90,772,937 bytes，SHA-256 `871c0ef19898ede45abdf2b7cfd6c78c133edac79a8b08e17d7e25dff31eeb35`）以 `adb install -r` 保留数据覆盖安装成功；设备返回正确版本、未报告 `DEBUGGABLE`，强行停止后由 launcher 启动且进程存在。该包的固定证书、v2 单 signer、16 KiB 对齐、最终权限、本地化标签和图标资源已离线复核；磁贴反馈、无关页空白草稿和桌面图标仍等项目负责人目视，不提前记为通过。详细边界见 [Android 设备兼容与真机验收](design-docs/android-device-compatibility.md)。
 
 质量状态仍为“部分实现”：支付宝、微信支付和招商银行已有 5 条窄范围实验通知适配器，但来源健康仍为 `FALLBACK_REQUIRED`；CSV/TSV 与对账只证明通用本地能力。大量/恶意 Intent、自动化 Compose、真实系统强杀切点、新 route 的 callback/更新/重启语义和完整设备矩阵未完成。没有真机回放和发布证据时，不声称任一 provider 已稳定支持。
 
