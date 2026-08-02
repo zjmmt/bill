@@ -14,5 +14,6 @@
 | [capture-review-reconcile.md](capture-review-reconcile.md) | 采集、导入、草稿确认、关联与撤销体验 |
 | [accounts-liabilities-investments.md](accounts-liabilities-investments.md) | 账户、负债、投资和资金移动的用户语义 |
 | [analytics-charts.md](analytics-charts.md) | 后续独立收支图表页的数据口径、隐私和验收边界 |
+| [next-version-account-fund-and-charts.md](next-version-account-fund-and-charts.md) | 后续版本的账户维护、账本调整、基金每日估值/精度与图表汇总需求 |
 
 若产品行为与设计文档冲突，先确认用户期望，再同步两者；不要让实现细节静默改写产品语义。

@@ -23,6 +23,7 @@
 | 港版/国行 Samsung 与小米怎样真机验收 | [Android 设备兼容](design-docs/android-device-compatibility.md) | [RELIABILITY.md](RELIABILITY.md) |
 | 没学过 Java，怎样开始 Android 开发 | [Android 开发入门](development/android-getting-started.md) | [Android 技术基线](decisions/0004-android-compose-baseline.md) |
 | 账户、负债、投资怎样表示 | [账户/负债/投资规格](product-specs/accounts-liabilities-investments.md) | [领域模型](design-docs/domain-model.md) |
+| 后续账户修改、账本调整、基金日常录入怎样做 | [后续版本汇总](product-specs/next-version-account-fund-and-charts.md) | [账户/负债/投资规格](product-specs/accounts-liabilities-investments.md) |
 | 后续收支图表页统计什么 | [收支图表页规格](product-specs/analytics-charts.md) | [对账与关联](design-docs/reconciliation.md) |
 | 哪些权限和数据处理允许 | [SECURITY.md](SECURITY.md) | [来源覆盖矩阵](product-specs/source-coverage.md) |
 | 失败后如何恢复、怎样测试 | [RELIABILITY.md](RELIABILITY.md) | [QUALITY_SCORE.md](QUALITY_SCORE.md) |
