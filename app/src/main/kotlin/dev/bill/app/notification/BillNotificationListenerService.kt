@@ -123,9 +123,11 @@ class BillNotificationListenerService : NotificationListenerService() {
 
     private fun updateListenerConnection(connected: Boolean) {
         val application = application as? BillApplication ?: return
-        val hasSystemAccess = application.container.refreshNotificationCaptureConfiguration()
-        application.container.notificationCaptureHealth.onListenerConnectionChanged(
-            connected && hasSystemAccess,
+        val container = application.container
+        publishNotificationListenerConnection(
+            connected = connected,
+            refreshConfiguration = { container.refreshNotificationCaptureConfiguration() },
+            health = container.notificationCaptureHealth,
         )
     }
 

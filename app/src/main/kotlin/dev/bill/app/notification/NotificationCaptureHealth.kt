@@ -52,9 +52,6 @@ internal class NotificationCaptureHealth(
     ) {
         this.hasEnabledRoutes = hasEnabledRoutes
         this.hasSystemAccess = hasSystemAccess
-        if (!hasSystemAccess) {
-            hasListenerConnection = false
-        }
         publish()
     }
 
@@ -85,23 +82,42 @@ internal class NotificationCaptureHealth(
         mutableState.value = snapshot()
     }
 
-    private fun snapshot() = NotificationCaptureHealthSnapshot(
-        state = when {
-            !hasVerifiedTemplates -> NotificationCaptureHealthState.NO_VERIFIED_TEMPLATES
-            !hasEnabledRoutes -> NotificationCaptureHealthState.NO_ENABLED_ROUTES
-            !hasSystemAccess -> NotificationCaptureHealthState.SYSTEM_ACCESS_REQUIRED
-            !hasListenerConnection ->
-                NotificationCaptureHealthState.LISTENER_CONNECTION_PENDING
-            failures > 0L -> NotificationCaptureHealthState.RECENT_FAILURE
-            dropped > 0L -> NotificationCaptureHealthState.BACKPRESSURE
-            else -> NotificationCaptureHealthState.READY
-        },
-        hasSystemAccess = hasSystemAccess,
-        hasListenerConnection = hasListenerConnection,
-        droppedInThisProcess = dropped,
-        failuresInThisProcess = failures,
-    )
+    private fun snapshot(): NotificationCaptureHealthSnapshot {
+        // A live platform callback proves access even if the package query is briefly stale.
+        val effectiveSystemAccess = hasSystemAccess || hasListenerConnection
+        return NotificationCaptureHealthSnapshot(
+            state = when {
+                !hasVerifiedTemplates -> NotificationCaptureHealthState.NO_VERIFIED_TEMPLATES
+                !hasEnabledRoutes -> NotificationCaptureHealthState.NO_ENABLED_ROUTES
+                !effectiveSystemAccess -> NotificationCaptureHealthState.SYSTEM_ACCESS_REQUIRED
+                !hasListenerConnection ->
+                    NotificationCaptureHealthState.LISTENER_CONNECTION_PENDING
+                failures > 0L -> NotificationCaptureHealthState.RECENT_FAILURE
+                dropped > 0L -> NotificationCaptureHealthState.BACKPRESSURE
+                else -> NotificationCaptureHealthState.READY
+            },
+            hasSystemAccess = effectiveSystemAccess,
+            hasListenerConnection = hasListenerConnection,
+            droppedInThisProcess = dropped,
+            failuresInThisProcess = failures,
+        )
+    }
 
     private fun incrementSafely(value: Long): Long =
         if (value == Long.MAX_VALUE) Long.MAX_VALUE else value + 1L
+}
+
+/**
+ * Publishes the platform callback after refreshing configuration.
+ *
+ * The callback itself is authoritative for connection state. Android's enabled-listener package
+ * query may briefly lag immediately after a grant, so it must not mask a real connected callback.
+ */
+internal fun publishNotificationListenerConnection(
+    connected: Boolean,
+    refreshConfiguration: () -> Unit,
+    health: NotificationCaptureHealth,
+) {
+    refreshConfiguration()
+    health.onListenerConnectionChanged(connected)
 }

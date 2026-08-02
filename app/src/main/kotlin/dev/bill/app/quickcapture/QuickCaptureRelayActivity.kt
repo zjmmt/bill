@@ -41,6 +41,7 @@ class QuickCaptureRelayActivity : Activity() {
         ) {
             val disposition = BillQuickCaptureRuntime.controller.request(commandId) { outcome ->
                 Handler(Looper.getMainLooper()).post {
+                    QuickCaptureOutcomeStore.record(context, outcome)
                     showOutcome(context, outcome)
                     BillQuickCaptureTileService.requestTileRefresh(context)
                 }
@@ -55,7 +56,7 @@ class QuickCaptureRelayActivity : Activity() {
             }
         }
 
-        private fun showOutcome(
+        internal fun showOutcome(
             context: Context,
             outcome: QuickCaptureOutcome,
         ) {

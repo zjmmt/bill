@@ -2,9 +2,11 @@ package dev.bill.app.notification
 
 import android.app.Activity
 import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.service.notification.NotificationListenerService
 import androidx.core.app.NotificationManagerCompat
 
 internal fun interface NotificationListenerAccess {
@@ -44,4 +46,14 @@ internal fun openNotificationListenerSettings(context: Context): Boolean {
         }
     }
     return false
+}
+
+/** Requests one system-managed bind attempt without starting a background service ourselves. */
+internal fun requestBillNotificationListenerRebind(context: Context): Boolean = try {
+    NotificationListenerService.requestRebind(
+        ComponentName(context, BillNotificationListenerService::class.java),
+    )
+    true
+} catch (_: RuntimeException) {
+    false
 }

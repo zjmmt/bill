@@ -94,11 +94,14 @@ import dev.bill.app.notification.NotificationCaptureHealthState
 import dev.bill.app.notification.NotificationRouteSettings
 import dev.bill.app.notification.NotificationRouteSettingsSnapshot
 import dev.bill.app.notification.openNotificationListenerSettings
+import dev.bill.app.notification.requestBillNotificationListenerRebind
 import dev.bill.app.quickcapture.BillQuickCaptureRuntime
 import dev.bill.app.quickcapture.BillQuickCaptureTileService
 import dev.bill.app.quickcapture.ContentResolverSelectedPhotoOcrImporter
 import dev.bill.app.quickcapture.ContentResolverSelectedImageOcrReader
 import dev.bill.app.quickcapture.QuickCaptureConnectionState
+import dev.bill.app.quickcapture.QuickCaptureOutcomeStore
+import dev.bill.app.quickcapture.QuickCaptureRelayActivity
 import dev.bill.app.quickcapture.openQuickCaptureAccessibilitySettings
 import dev.bill.app.quickcapture.requestQuickCaptureTile
 import dev.bill.core.designsystem.component.PosterPanel
@@ -214,7 +217,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        (application as BillApplication).container.refreshNotificationCaptureConfiguration()
+        val container = (application as BillApplication).container
+        val hasNotificationAccess = container.refreshNotificationCaptureConfiguration()
+        if (
+            hasNotificationAccess &&
+            !container.notificationCaptureHealth.state.value.hasListenerConnection
+        ) {
+            requestBillNotificationListenerRebind(this)
+        }
+        QuickCaptureOutcomeStore.consumeUnread(applicationContext)?.let { outcome ->
+            QuickCaptureRelayActivity.showOutcome(applicationContext, outcome)
+        }
         billViewModel.revealForForeground()
         window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }

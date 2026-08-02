@@ -84,6 +84,13 @@ class NotificationCaptureHealthTest {
             hasEnabledRoutes = true,
             hasSystemAccess = false,
         )
+        assertEquals(NotificationCaptureHealthState.READY, health.state.value.state)
+
+        health.onListenerConnectionChanged(connected = false)
+        assertEquals(
+            NotificationCaptureHealthState.SYSTEM_ACCESS_REQUIRED,
+            health.state.value.state,
+        )
         health.onConfigurationChanged(
             hasEnabledRoutes = true,
             hasSystemAccess = true,
@@ -107,6 +114,30 @@ class NotificationCaptureHealthTest {
         assertEquals(NotificationCaptureHealthState.RECENT_FAILURE, health.state.value.state)
         assertEquals(1L, health.state.value.droppedInThisProcess)
         assertEquals(1L, health.state.value.failuresInThisProcess)
+    }
+
+    @Test
+    fun `connected callback survives a temporarily stale access query`() {
+        val health = NotificationCaptureHealth(
+            hasVerifiedTemplates = true,
+            hasEnabledRoutes = true,
+            hasSystemAccess = false,
+        )
+
+        publishNotificationListenerConnection(
+            connected = true,
+            refreshConfiguration = {
+                health.onConfigurationChanged(
+                    hasEnabledRoutes = true,
+                    hasSystemAccess = false,
+                )
+            },
+            health = health,
+        )
+
+        assertEquals(NotificationCaptureHealthState.READY, health.state.value.state)
+        assertEquals(true, health.state.value.hasSystemAccess)
+        assertEquals(true, health.state.value.hasListenerConnection)
     }
 
     @Test
