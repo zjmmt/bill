@@ -40,8 +40,8 @@ class GenericPhotoOcrParser : SourceParser {
             SourceCapability.COUNTERPARTY,
         ),
         supportedCaptureMethods = setOf(CaptureMethod.PHOTO_OCR),
-        parserVersion = VersionId("parser-3"),
-        ruleVersion = VersionId("rules-3"),
+        parserVersion = VersionId("parser-4"),
+        ruleVersion = VersionId("rules-4"),
     )
 
     override fun parse(rawEvent: RawEvent, evidenceInput: EvidenceInput): ParseResult {
@@ -310,12 +310,22 @@ class GenericPhotoOcrParser : SourceParser {
         )
     }
 
-    private fun hasNonPostingStatus(transcript: OcrTranscript.Decoded): Boolean =
-        transcript.lines.any { line ->
+    private fun hasNonPostingStatus(transcript: OcrTranscript.Decoded): Boolean {
+        val nonPostingLines = transcript.lines.filter { line ->
             nonPostingStatusPhrases.any { phrase ->
                 line.value.contains(phrase, ignoreCase = true)
             } || normalizedStatusLine(line.value) in nonPostingWholeLineStatuses
         }
+        if (nonPostingLines.isEmpty()) return false
+        if (nonPostingLines.any { it.bounds == null }) return true
+        val lastNonPostingTop = nonPostingLines.maxOf { requireNotNull(it.bounds).top }
+        return transcript.lines.none { line ->
+            val completionTop = line.bounds?.top ?: return@none false
+            completionTop > lastNonPostingTop && authoritativeCompletionPhrases.any { phrase ->
+                line.value.contains(phrase, ignoreCase = true)
+            }
+        }
+    }
 
     private fun normalizedStatusLine(value: String): String = value
         .trim()
@@ -535,6 +545,11 @@ class GenericPhotoOcrParser : SourceParser {
             "canceled",
             "pending",
             "processing",
+        )
+        val authoritativeCompletionPhrases = listOf(
+            "银行告知已到账",
+            "銀行告知已到賬",
+            "銀行告知已到帳",
         )
         val counterpartyPattern = Regex(
             """(?:商户|商戶|收款方|付款方|对方|對方|收款人|付款人)\s*[:：]\s*(?<value>\S.{0,79})""",

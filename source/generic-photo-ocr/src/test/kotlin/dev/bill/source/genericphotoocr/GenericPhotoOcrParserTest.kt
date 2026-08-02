@@ -285,6 +285,7 @@ class GenericPhotoOcrParserTest {
             "Estimated to arrive by 22:38",
             "Request Withdrawal",
             "提现处理中",
+            "预计到账时间 22:38",
             "預計到帳",
             "手続き中",
         ).forEach { pendingLine ->
@@ -298,6 +299,39 @@ class GenericPhotoOcrParserTest {
             assertNull(result.candidate?.amount)
             assertNull(result.candidate?.moneyDirection)
         }
+    }
+
+    @Test
+    fun `completed withdrawal keeps amount after historical processing step`() {
+        listOf(
+            "银行告知已到账",
+            "銀行告知已到賬",
+            "銀行告知已到帳",
+        ).forEach { completedLine ->
+            val result = parseSpatial(
+                spatial("零钱提现-到建设银行(7495)", 1_100, 1_350),
+                spatial("0.01", 1_600, 2_350),
+                spatial("银行处理中", 3_700, 3_950),
+                spatial(completedLine, 4_600, 4_900),
+                spatial("提现金额 ¥0.01", 6_100, 6_350),
+                spatial("服务费 ¥0.00", 6_600, 6_850),
+            ) as ParseResult.NeedsUserReview
+
+            assertEquals(1L, result.candidate?.amount?.value?.minorUnits)
+            assertNull(result.candidate?.moneyDirection)
+        }
+    }
+
+    @Test
+    fun `later non-posting status is not overridden by earlier completion text`() {
+        val result = parseSpatial(
+            spatial("银行告知已到账", 1_000, 1_250),
+            spatial("提现处理中", 2_000, 2_250),
+            spatial("¥0.01", 2_700, 3_500),
+        ) as ParseResult.NeedsUserReview
+
+        assertNull(result.candidate?.amount)
+        assertNull(result.candidate?.moneyDirection)
     }
 
     @Test
