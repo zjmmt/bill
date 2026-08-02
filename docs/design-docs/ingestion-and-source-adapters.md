@@ -1,6 +1,6 @@
 # 采集、导入与来源适配器
 
-- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界/控制面、持久观察去重与证据生命周期已实现；支付宝、微信和招商银行有 5 条默认关闭的实验通知 route，生产 catalog/registry 的五路整链内存回放已通过；CNY 持仓手填/单图 OCR 预填和基金申购待复核已有代码，单次截图/Photo Picker 本地 OCR 已有 11 张本机私有真实页面、简中合成真机回归及固定内部签名 APK 身份/对齐证据，但新增 route 真机验收、通知 callback、真实简中页面和签名包完整资源发布门均未完成
+- 状态：部分实现；来源中立显式文本、本地 CSV/TSV 显式映射、单次 PNG 收据证据、受控通知 route 边界/控制面、持久观察去重与证据生命周期已实现；支付宝、微信和招商银行有 5 条默认关闭的实验通知 route，生产 catalog/registry 的五路整链内存回放已通过；CNY 持仓手填/单图 OCR 预填和基金申购待复核已有代码，单次截图/Photo Picker 本地 OCR 已有 13 张本机私有真实页面、简中合成真机回归及固定内部签名 APK 身份/对齐证据，但新增 route 真机验收、通知 callback、真实简中页面和签名包完整资源发布门均未完成
 - 所有者：项目维护者
 - 最后核验：2026-08-02
 - 事实来源：多来源产品要求、Android 官方能力边界、当前来源/Room/Application 实现、ADR-0006、ADR-0007、ADR-0008、ADR-0009、ADR-0010、ADR-0011、ADR-0012
@@ -70,7 +70,7 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 - 自由文本在创建完整字符串/字节副本前检查字符上限，严格 UTF-8 编码后再次检查 64 KiB 字节上限。结构化 CSV/TSV 当次最多读取 2 MiB、5000 数据行、64 列、1024 字符/单元格和 16 Ki 字符/记录；用户必须显式选择必填列，预览计算以 250 ms 去抖在主线程外运行。确认后只把每个有效行的版本化证据接入私有链，停止后可用同文件+同映射续传缺失行。Sharesheet PNG 只在用户明确分享的当次 `content://` 临时授权中读取，要求声明与解析后 MIME 都为 `image/png`，最多 4 MiB，并校验签名、IHDR、尺寸、分块 CRC、非空 IDAT 与终止 IEND。该 Sharesheet 路径不解码像素、不预览、不读取图中文字、不运行 OCR。独立的磁贴/Photo Picker 路径会在用户动作后把一帧或每批前 1–5 张逐张像素作为瞬时输入，只持久化有界转录。转录 v2 为每行保存可选的 0..10000 归一化整数矩形；原始像素、颜色、logo 和应用身份不进入证据，既有 v1 文本转录仍可重放。完成状态先于金额：失败、拒绝、取消、未领取/未打开、处理中、预计到账或待完成时连金额和方向都不提议；其余多金额页面仍只在一个独立金额相对正文与其他独立金额的高度明确占优时预填。明确完成上下文允许恢复 OCR 拆开的显著纯小数主金额，正负号只作用于被选中且位于交易详情上下文的金额；真正的退款/转账/红包/充值/提现不推断普通收支，普通付款页促销红包文案不覆盖完成支出语义。截图 command 先持有 90 秒可取消租约；完成纯读取校验后，在任何 evidence admission、容量清理或写入之前以 `ACTIVE -> COMMITTING` CAS 线性化取消与提交。cancellation handle 注册中的超时只登记待取消，不能提前报告成功。CAS 胜出后，像素资源先释放，再在独立的 15 秒协作式截止内运行无网络的 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回 `COMMIT_STATUS_UNKNOWN`。提交或既成结果不可取消但回调缺失时，controller 只给一次 15 秒收尾宽限，再显示“结果未确认”并释放，opaque request identity 隔离迟到回调。Photo Picker 单飞串行、显示已处理数量且每批只汇总一次。PP-OCRv6 small 静态随包，运行时零排队、两条 CPU 线程、batch 1、最长边 1600，并逐任务释放会话。畸形 Unicode、损坏/缺失文件、无效图像、哈希不一致和 ID 冲突均安全失败。
 - 自由文本解析器不提取或猜测金额、方向、账户、商户或 provider；映射 CSV/TSV 只采用用户确认的列、格式、方向值和币种，不按未知表头猜列或 provider。OCR 也不根据版式推断 provider，只保守提出金额/方向候选。三类结果都始终 `WAITING_USER`，必须由用户核对并选择资金账户；没有自动确认路径。
 - 同 `(connectorId, contentHash, captureScope)` 的既有观察只产生 `isPossibleDuplicate`，UI 提醒检查已有草稿/流水但不会自动合并。
-- 所有会先复制外部字节到 app-private 证据目录的入口都必须在同一 RawEvent 事务消费暂存租约；当前集合为 `SHARE_TEXT`、`SHARE_FILE`、`STATEMENT_IMPORT`、`NOTIFICATION` 与 `PHOTO_OCR`。OCR 成功但无可用文字时使用显式空 v2 转录，parser 只创建 `candidate = null` 的可编辑待复核项；不得用零金额或猜测字段填充。快捷截图结果回执只保存安全结果枚举和过期时间，不保存财务内容。
+- 所有会先复制外部字节到 app-private 证据目录的入口都必须在同一 RawEvent 事务消费暂存租约；当前集合为 `SHARE_TEXT`、`SHARE_FILE`、`STATEMENT_IMPORT`、`NOTIFICATION` 与 `PHOTO_OCR`。OCR 成功但无可用文字时使用显式空 v2 转录，parser 只创建 `candidate = null` 的可编辑待复核项；不得用零金额或猜测字段填充。快捷截图已经成功取得画面后，HardwareBuffer 转换失败或本地模型运行失败也进入同一空转录回退；只有系统截图 API 未取得画面时才报告截图失败。快捷截图结果回执只保存安全结果枚举和过期时间，不保存财务内容。
 - 用户可将来源建议标记为 `DISMISSED`；该动作有幂等回执和审计，默认仍保留 RawEvent、ParseAttempt 与证据文件。
 - 设置页提供 7/30/90 天或永久保留、20 项 keyset 分页和逐项清除。清除采用 `AVAILABLE -> CLEAR_PENDING -> CLEARED`，文件失败保持可重试；待复核建议会被 dismiss，已完成 Draft/provenance 和结构化审计保留。
 - 已提交生命周期与暂存租约共用 16 MiB/512 份预算。入口先测量旧版未知大小并只清理最旧、无待复核项的载荷；没有安全候选时返回可操作的容量错误。
@@ -93,7 +93,9 @@ SAF OpenDocument(CSV, TSV) + user-confirmed mapping
 
 ## 被动无障碍读取（研究门）
 
-当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。本地 OCR 的未签名 APK 静态门、港版 S24 Ultra 合成中/英/日模型加载推理、11 张本机私有真实繁中/英文过程页回放和简中四状态页合成回归已完成；真实简中微信页面、系统截图/选图 UI、Release 资源、签名和三台目标真机门尚未完成。用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
+当前 Manifest 的 `BillScreenshotAccessibilityService` 是专用单次截图服务，不是支付结果观察器：它声明 `canTakeScreenshot=true`、`canRetrieveWindowContent=false`，只响应用户点击 Bill 磁贴后的一个 command，不读取节点、事件、目标包、窗口标题，不执行手势、点击或滚动。本地 OCR 的未签名 APK 静态门、港版 S24 Ultra 合成中/英/日模型加载推理、13 张本机私有真实繁中/英文过程页回放和简中四状态页合成回归已完成；真实简中微信页面、系统截图/选图 UI、Release 资源、签名和三台目标真机门尚未完成。用户不应把它理解为支付宝、微信支付或银行的被动监听能力。
+
+Android 截图回调提供的 `HardwareBuffer` 先按 1600 长边和像素上限在硬件位图上缩放，再复制为 `ARGB_8888` 软件位图供 OCR 使用；不得把硬件位图绘制到软件 Canvas，也不得先制造全分辨率软件副本。S24 Ultra 仪器回归已覆盖真实硬件位图转换、OCR 和金额解析，但真实磁贴点击仍需内部签名包上的用户交互验收。
 
 当前没有可用的页面文字/节点观察 service。若项目负责人在有脱敏页面样本后明确选择被动读取路线，必须另建只读 `AccessibilityService`：系统只对微信/支付宝的明确目标包和最小窗口事件类型回调，服务只在疑似交易结果/账单详情窗口读取一次节点树并提交待复核证据。它不得取得截图、录屏、轮询、自动点击、打开页面、发起交易或保留非交易窗口内容；实现必须在事件回调外完成有界解析并清除临时节点/文本。
 
