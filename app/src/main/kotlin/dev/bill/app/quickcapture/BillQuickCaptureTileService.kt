@@ -37,6 +37,8 @@ class BillQuickCaptureTileService : TileService() {
             openBillSetup()
             return
         }
+        showProcessingState()
+        showToast(R.string.quick_capture_started)
         launchCaptureRelay()
     }
 
@@ -53,13 +55,26 @@ class BillQuickCaptureTileService : TileService() {
         }
         tile.label = getString(R.string.quick_capture_tile_label)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            tile.subtitle = getString(
-                if (connected) {
-                    R.string.quick_capture_tile_ready
-                } else {
-                    R.string.quick_capture_tile_setup
-                },
-            )
+            tile.subtitle = getString(tileSubtitle(connected))
+        }
+        tile.updateTile()
+    }
+
+    private fun tileSubtitle(connected: Boolean): Int {
+        if (!connected) return R.string.quick_capture_tile_setup
+        return when (QuickCaptureOutcomeStore.peekUnread(applicationContext)) {
+            is QuickCaptureOutcome.Saved -> R.string.quick_capture_tile_last_saved
+            is QuickCaptureOutcome.Failed -> R.string.quick_capture_tile_last_failed
+            null -> R.string.quick_capture_tile_ready
+        }
+    }
+
+    private fun showProcessingState() {
+        val tile = qsTile ?: return
+        tile.state = Tile.STATE_ACTIVE
+        tile.label = getString(R.string.quick_capture_tile_label)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            tile.subtitle = getString(R.string.quick_capture_tile_processing)
         }
         tile.updateTile()
     }

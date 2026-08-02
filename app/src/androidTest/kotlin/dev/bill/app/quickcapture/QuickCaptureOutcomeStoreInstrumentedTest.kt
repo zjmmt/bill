@@ -17,6 +17,14 @@ class QuickCaptureOutcomeStoreInstrumentedTest {
 
         assertEquals(
             saved,
+            QuickCaptureOutcomeStore.peekUnread(context, nowEpochMillis = 1_050L),
+        )
+        assertEquals(
+            saved,
+            QuickCaptureOutcomeStore.peekUnread(context, nowEpochMillis = 1_075L),
+        )
+        assertEquals(
+            saved,
             QuickCaptureOutcomeStore.consumeUnread(context, nowEpochMillis = 1_100L),
         )
         assertNull(QuickCaptureOutcomeStore.consumeUnread(context, nowEpochMillis = 1_200L))

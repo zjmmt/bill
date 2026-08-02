@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Bill</string>
+    <string name="app_name">Bill · Offline Ledger</string>
     <string name="nav_overview">Overview</string>
     <string name="nav_drafts">Drafts</string>
     <string name="nav_ledger">Ledger</string>
@@ -64,6 +64,10 @@
     <string name="quick_capture_tile_label">Capture receipt</string>
     <string name="quick_capture_tile_ready">Ready</string>
     <string name="quick_capture_tile_setup">Off</string>
+    <string name="quick_capture_tile_processing">Recognizing…</string>
+    <string name="quick_capture_tile_last_saved">Draft created</string>
+    <string name="quick_capture_tile_last_failed">Last capture incomplete</string>
+    <string name="quick_capture_started">Capturing and recognizing on this device…</string>
     <string name="quick_capture_unlock_first">Unlock the phone before capturing a receipt.</string>
     <string name="quick_capture_unsupported">This requires Android 11 or newer. Use screenshot sharing instead.</string>
     <string name="quick_capture_enable_accessibility">Enable one-shot receipt capture first.</string>

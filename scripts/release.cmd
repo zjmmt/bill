@@ -5,6 +5,8 @@ for %%I in ("%~dp0..") do set "BILL_PROJECT_ROOT=%%~fI"
 set "BILL_RELEASE_OUTPUT=%BILL_PROJECT_ROOT%\app\build\outputs\apk\release"
 set "BILL_ARM64_APK=%BILL_RELEASE_OUTPUT%\app-arm64-v8a-release.apk"
 set "BILL_X86_64_APK=%BILL_RELEASE_OUTPUT%\app-x86_64-release.apk"
+set "BILL_ARM64_DELIVERY_APK=%BILL_RELEASE_OUTPUT%\Bill-Local-Ledger-Android-arm64-v8a.apk"
+set "BILL_X86_64_DELIVERY_APK=%BILL_RELEASE_OUTPUT%\Bill-Local-Ledger-Android-x86_64.apk"
 
 if not defined BILL_VERSION_CODE (
     echo Missing required environment variable BILL_VERSION_CODE.
@@ -36,6 +38,13 @@ if not exist "%BILL_RELEASE_STORE_FILE%" (
     echo BILL_RELEASE_STORE_FILE does not point to an existing file.
     exit /b 2
 )
+
+for %%F in (
+    "%BILL_ARM64_APK%"
+    "%BILL_X86_64_APK%"
+    "%BILL_ARM64_DELIVERY_APK%"
+    "%BILL_X86_64_DELIVERY_APK%"
+) do if exist "%%~F" del /f /q "%%~F"
 
 set "BILL_REQUIRE_SIGNED_RELEASE=true"
 call "%~dp0android.cmd" :app:assembleRelease --no-daemon --console=plain
@@ -89,6 +98,28 @@ if errorlevel 1 (
     exit /b 6
 )
 
+copy /b /y "%BILL_ARM64_APK%" "%BILL_ARM64_DELIVERY_APK%" >nul
+if errorlevel 1 (
+    echo Friendly arm64-v8a delivery APK could not be created.
+    exit /b 7
+)
+copy /b /y "%BILL_X86_64_APK%" "%BILL_X86_64_DELIVERY_APK%" >nul
+if errorlevel 1 (
+    echo Friendly x86_64 delivery APK could not be created.
+    exit /b 7
+)
+
+call "%BILL_APKSIGNER%" verify --verbose "%BILL_ARM64_DELIVERY_APK%" >nul
+if errorlevel 1 (
+    echo Friendly arm64-v8a delivery APK signature verification failed.
+    exit /b 7
+)
+call "%BILL_APKSIGNER%" verify --verbose "%BILL_X86_64_DELIVERY_APK%" >nul
+if errorlevel 1 (
+    echo Friendly x86_64 delivery APK signature verification failed.
+    exit /b 7
+)
+
 "%JAVA_HOME%\bin\java.exe" -Dfile.encoding=UTF-8 "%BILL_PROJECT_ROOT%\scripts\InternalSigning.java" verify-release
 if errorlevel 1 (
     echo Signed APK identity verification failed.
@@ -97,4 +128,6 @@ if errorlevel 1 (
 
 echo Signed release verified in:
 echo %BILL_RELEASE_OUTPUT%
+echo Install on a physical arm64 Android phone with:
+echo %BILL_ARM64_DELIVERY_APK%
 exit /b 0

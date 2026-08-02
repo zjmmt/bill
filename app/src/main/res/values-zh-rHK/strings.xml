@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Bill</string>
+    <string name="app_name">Bill · 本機記帳</string>
     <string name="nav_overview">總覽</string>
     <string name="nav_drafts">草稿</string>
     <string name="nav_ledger">帳本</string>
@@ -64,6 +64,10 @@
     <string name="quick_capture_tile_label">截圖記帳</string>
     <string name="quick_capture_tile_ready">已就緒</string>
     <string name="quick_capture_tile_setup">未開啟</string>
+    <string name="quick_capture_tile_processing">識別中…</string>
+    <string name="quick_capture_tile_last_saved">草稿已建立</string>
+    <string name="quick_capture_tile_last_failed">上次未完成</string>
+    <string name="quick_capture_started">正在截取並在本機識別…</string>
     <string name="quick_capture_unlock_first">請先解鎖手機，再使用截圖記帳。</string>
     <string name="quick_capture_unsupported">需要 Android 11 或以上版本。你仍可分享截圖或手動輸入。</string>
     <string name="quick_capture_enable_accessibility">請先開啟「單次截圖記帳」。</string>

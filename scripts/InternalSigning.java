@@ -24,7 +24,9 @@ public final class InternalSigning {
     private static final int MAXIMUM_PASSWORD_LENGTH = 256;
     private static final List<String> RELEASE_APK_PATHS = List.of(
         "app/build/outputs/apk/release/app-arm64-v8a-release.apk",
-        "app/build/outputs/apk/release/app-x86_64-release.apk"
+        "app/build/outputs/apk/release/app-x86_64-release.apk",
+        "app/build/outputs/apk/release/Bill-Local-Ledger-Android-arm64-v8a.apk",
+        "app/build/outputs/apk/release/Bill-Local-Ledger-Android-x86_64.apk"
     );
 
     private final Path projectRoot;

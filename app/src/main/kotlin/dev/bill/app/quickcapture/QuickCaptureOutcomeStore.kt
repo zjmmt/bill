@@ -42,9 +42,21 @@ internal object QuickCaptureOutcomeStore {
     }
 
     @Synchronized
+    fun peekUnread(
+        context: Context,
+        nowEpochMillis: Long = System.currentTimeMillis(),
+    ): QuickCaptureOutcome? = readUnread(context, nowEpochMillis, consume = false)
+
+    @Synchronized
     fun consumeUnread(
         context: Context,
         nowEpochMillis: Long = System.currentTimeMillis(),
+    ): QuickCaptureOutcome? = readUnread(context, nowEpochMillis, consume = true)
+
+    private fun readUnread(
+        context: Context,
+        nowEpochMillis: Long,
+        consume: Boolean,
     ): QuickCaptureOutcome? {
         val preferences = preferences(context)
         if (!preferences.getBoolean(KeyUnread, false)) return null
@@ -75,7 +87,9 @@ internal object QuickCaptureOutcomeStore {
             preferences.edit().clear().apply()
             return null
         }
-        preferences.edit().putBoolean(KeyUnread, false).apply()
+        if (consume) {
+            preferences.edit().putBoolean(KeyUnread, false).apply()
+        }
         return outcome
     }
 
