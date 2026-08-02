@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_background">#F4E9D1</color>
+    <color name="quick_capture_flash_fill">#5CFFFFFF</color>
+    <color name="quick_capture_flash_stroke">#E6C5282F</color>
 </resources>

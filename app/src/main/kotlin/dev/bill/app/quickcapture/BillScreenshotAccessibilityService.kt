@@ -26,7 +26,11 @@ import kotlinx.coroutines.launch
  * A screenshot exists only after the process-local Quick Settings command gate calls [capture].
  */
 class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreenshotGateway {
+    private var screenshotFlashFeedback: QuickCaptureFlashFeedback? = null
+
     override fun onServiceConnected() {
+        screenshotFlashFeedback?.clear()
+        screenshotFlashFeedback = createQuickCaptureFlashFeedback(this)
         BillQuickCaptureRuntime.controller.attach(this)
     }
 
@@ -71,6 +75,9 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
                             closeBuffer()
                             return
                         }
+                        // The screenshot already exists, so this cannot contaminate captured pixels.
+                        // It is purely a visible receipt on the still-current external page.
+                        screenshotFlashFeedback?.show()
                         val processor = try {
                             screenshotProcessor()
                         } catch (_: RuntimeException) {
@@ -182,6 +189,8 @@ class BillScreenshotAccessibilityService : AccessibilityService(), QuickScreensh
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
+        screenshotFlashFeedback?.clear()
+        screenshotFlashFeedback = null
         BillQuickCaptureRuntime.controller.detach(this)
         super.onDestroy()
     }
