@@ -39,7 +39,7 @@
 
 开发中的 Quick Settings/Photo Picker OCR 是独立于 Sharesheet PNG 的路径：专用无障碍 service 只在用户点磁贴后调用一次 `takeScreenshot`，`canRetrieveWindowContent=false`、无手势、无目标包/窗口读取。单次 command 先持有 90 秒可取消租约；在证据准入、容量清理或写入之前，capture lease 以一次 `ACTIVE -> COMMITTING` CAS 交出取消权。CAS 前的超时/断连会取消 Job 且不得进入有副作用的准入路径；cancellation handle 仍在注册时只登记待取消并进入收尾，不会提前宣称取消成功。CAS 后先释放 HardwareBuffer/Bitmap，再在独立的 15 秒协作式截止内运行有界、无网络的本地 admit/stage/parse/Room 路径；此后的超时、取消或非致命异常统一返回中性的“结果未确认”，不把可能已经落盘的工作误报成 OCR 失败。若提交或既成结果未及时回调，再等一次 15 秒收尾宽限后释放单飞门，opaque request identity 隔离其后任何迟到回调且不让处理 Job 持有已销毁的 service。编码后的转录字节在所有取消、异常和成功路径都会擦除；本地提交未知态产生的暂存中间态由既有 5 分钟 staging recovery 回收。Photo Picker 每批只取得用户明确选择的前 1–5 张图片并逐张处理，活动批次拒绝第二批，只发布一次汇总。两条路径将原始像素作为瞬时输入，仅把有界 OCR 转录接入既有私有证据链。转录 v2 只保留每行文本与 0..10000 归一化整数矩形；不保留像素、颜色、logo 或 provider 身份，v1 仍可重放。OCR 值对象的字符串表示会遮蔽识别文本，生产代码也不得记录转录。当前运行时是随包 PP-OCRv6 small、ONNX Runtime Android 1.24.3 与 OpenCV Android 4.12.0；模型哈希固定，任务零排队、两条 CPU 线程、batch 1、最长边 1600，建会话前显式关闭 telemetry，并在任务结束释放会话。依赖 AAR 与未签名 Release 分包的静态审计只发现应用自身签名级权限，没有网络、短信、媒体库权限或传输/调度组件；固定内部测试签名 APK 已构建并完成身份/对齐验证，arm64 正式签名包已在港版 S24 Ultra 覆盖安装并冷启动。合成三语推理已通过，但真实支付页面、ELF 页兼容、签名 Release 资源和目标设备矩阵尚未完成，因此仍标为 Experimental。
 
-截图成功的即时可见回执仍留在上述专用 service 内：只有平台成功回调才添加一个 180 ms 的 `TYPE_ACCESSIBILITY_OVERLAY`，并在定时到期、下一次闪屏或 service 销毁时移除。覆盖层只绘制半透明纯色和边框，不读取或持有截图、转录或账务字段；窗口为全屏但同时设置 `FLAG_NOT_TOUCHABLE` 与 `FLAG_NOT_FOCUSABLE`，视图从无障碍树排除，不请求 `SYSTEM_ALERT_WINDOW`。显示发生在系统已经取得该帧之后，不会进入被分析的像素；添加失败时不扩大权限或中断既有本地处理。生命周期单元回归和窗口参数 AndroidTest 源码已通过编译，下一签名包仍需真机目视。
+截图成功的即时可见回执仍留在上述专用 service 内：只有平台成功回调才添加一个 180 ms 的 `TYPE_ACCESSIBILITY_OVERLAY`，并在定时到期、下一次闪屏或 service 销毁时移除。覆盖层只绘制半透明纯色和边框，不读取或持有截图、转录或账务字段；窗口为全屏但同时设置 `FLAG_NOT_TOUCHABLE` 与 `FLAG_NOT_FOCUSABLE`，视图从无障碍树排除，不请求 `SYSTEM_ALERT_WINDOW`。显示发生在系统已经取得该帧之后，不会进入被分析的像素；添加失败时不扩大权限或中断既有本地处理。生命周期单元回归和窗口参数 AndroidTest 源码已通过编译，固定签名 v7 在目标 One UI 上的可见性也由项目负责人目视确认；定时清理仍以自动化生命周期测试为证据。
 
 通知服务是另一条边界：它不调用 `getActiveNotifications()`，不读 history、不取消/点击外部通知、不启动 UI、前台服务、周期任务或唤醒锁。生产 catalog 现有 5 条默认关闭 route；空目录、不匹配 metadata、关闭 runtime 都不调用正文读取器。用户开启后，只有包名、具体 channel 和 category 精确匹配才读取五个有界字段；正文规则不匹配即在内存丢弃。微信支付与普通微信消息共用频道，因此微信 route 的安全标签明确披露会在本机检查同频道消息；同名联系人发送完全相同格式时仍可能生成待复核建议，绝不能自动过账。支付宝基金 route 只输出唯一确认金额、方向和 `INVEST_BUY` 提示，不从通知提取或猜测标的，必须由用户绑定既有持仓。Samsung 短信 route 因无法在正文前排除普通短信、OTP 和私人消息而未加入。候选最多进入容量 16 的单消费者队列，满队列直接丢弃。观察去重在证据前取得独立租约，进程死亡恢复时复用 command。匹配信封只生成可证明的来源建议并进入待复核链，不能直接正式入账。首次启动和设置页明确声明本地、不走网络，并把通知、读屏和单次截图权限拆开说明。
 
@@ -61,7 +61,7 @@ Room v5 在文件写入前登记不含原文的 5 分钟租约，RawEvent 事务
 
 - 内部签名 `7/0.1.0-internal.7` 双 ABI 原始产物及友好命名副本再次匹配仓库证书 pin；arm64 交付包为 90,773,049 bytes、SHA-256 `1033ddb8c753c626208b2d503063b5a1d9eb7f6aa906a6f51f330d99cc8003ff`，使用 v2 单 signer 并通过 16 KiB ZIP 对齐。
 - 最终 arm64 APK 为 `dev.bill.app`、`arm64-v8a`，简中/港澳台标签与图标资源存在；权限仍只有应用自身的签名级动态接收器权限，没有网络、媒体库、短信、悬浮窗或前台服务权限。仓库证书 pin 核验器对双 ABI 产物通过。
-- 该包尚未覆盖安装或目视闪屏，因此只证明产物身份与静态边界，不证明 `TYPE_ACCESSIBILITY_OVERLAY` 在目标 One UI 上实际可见或能按时清除。
+- 该包已在项目负责人明确连接后以 `adb install -r` 保留数据覆盖安装；设备版本、无障碍 service 仍启用和应用启动均通过，项目负责人目视确认 `TYPE_ACCESSIBILITY_OVERLAY` 在目标 One UI 上可见。自动移除由生命周期回归覆盖，未通过录屏或读取屏幕内容验证。
 
 ## 权限策略
 

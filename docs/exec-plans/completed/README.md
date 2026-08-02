@@ -11,3 +11,4 @@
 - [0010：账户余额快照与待解释差异](0010-account-balance-snapshots.md)（2026-08-01）
 - [0011：完整可编辑审核、单帧 OCR 回退与跨来源 FUNDED_BY](0011-editable-review-ocr-funded-by.md)（2026-08-01）
 - [0013：发布界面文案收口](0013-product-copy-audit.md)（2026-08-02）
+- [0014：采集入口可靠性收口](0014-capture-entry-reliability.md)（2026-08-02）
