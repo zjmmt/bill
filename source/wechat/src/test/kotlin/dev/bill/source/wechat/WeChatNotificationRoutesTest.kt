@@ -68,6 +68,8 @@ class WeChatNotificationRoutesTest {
         listOf(
             content("微信支付", "你收到一个红包"),
             content("微信支付", "Transfer request is waiting for acceptance"),
+            content("Contact", "[Transfer] Accept transfer"),
+            content("Weixin Pay", "零钱提现已到账"),
             content("Weixin Pay", "Withdrawal is processing"),
             content("Private Chat", "¥12.34 paid"),
             content("Weixin Pay", "¥12.34 not paid"),
